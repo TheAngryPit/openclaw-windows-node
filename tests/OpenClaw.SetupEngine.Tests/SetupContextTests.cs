@@ -71,6 +71,25 @@ public class SetupContextTests
     }
 
     [Fact]
+    public void Constructor_ExplicitDirectoriesOverrideReleaseDefaults()
+    {
+        using var logger = new SetupLogger(filePath: null);
+        var journal = new TransactionJournal(filePath: null);
+        var commands = new CommandRunner(logger);
+        var ctx = new SetupContext(
+            new SetupConfig(),
+            logger,
+            journal,
+            commands,
+            CancellationToken.None,
+            dataDir: @"C:\custom\roaming-dev",
+            localDataDir: @"C:\custom\local-dev");
+
+        Assert.Equal(@"C:\custom\roaming-dev", ctx.DataDir);
+        Assert.Equal(@"C:\custom\local-dev", ctx.LocalDataDir);
+    }
+
+    [Fact]
     public void WslPathPrefix_UsesConfiguredUser()
     {
         var config = new SetupConfig();
@@ -113,7 +132,7 @@ public class SetupContextTests
     {
         var config = new SetupConfig { GatewayPort = 5555 };
         var ctx = CreateContext(config);
-        Assert.Equal("ws://localhost:5555", ctx.GatewayUrl);
+        Assert.Equal("ws://127.0.0.1:5555", ctx.GatewayUrl);
     }
 
     private static SetupContext CreateContext(SetupConfig? config = null)

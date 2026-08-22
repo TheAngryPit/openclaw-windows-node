@@ -26,6 +26,7 @@ public sealed partial class VoiceSettingsPage : Page
 
     private CancellationTokenSource? _whisperDownloadCts;
     private CancellationTokenSource? _piperDownloadCts;
+    private bool _piperPreviewInProgress;
 
     public VoiceSettingsPage()
     {
@@ -85,8 +86,6 @@ public sealed partial class VoiceSettingsPage : Page
         {
             var settings = CurrentApp.Settings;
 
-            SttEnabledToggle.IsOn = settings.NodeSttEnabled;
-
             // Select model in combo
             for (int i = 0; i < ModelCombo.Items.Count; i++)
             {
@@ -117,7 +116,7 @@ public sealed partial class VoiceSettingsPage : Page
 
             LoadTtsSettings(settings);
             UpdateModelStatus();
-            UpdateCardVisibility();
+            UpdateCapabilityState();
         }
         finally
         {
@@ -155,20 +154,21 @@ public sealed partial class VoiceSettingsPage : Page
         }
     }
 
-    private void UpdateCardVisibility()
+    private void UpdateCapabilityState()
     {
-        ModelCard.Opacity = SttEnabledToggle.IsOn ? 1.0 : 0.5;
-        ModelCard.IsHitTestVisible = SttEnabledToggle.IsOn;
-    }
+        var settings = CurrentApp.Settings;
+        if (settings == null)
+        {
+            SttCapabilityNotice.Visibility = Visibility.Collapsed;
+            TtsCapabilityNotice.Visibility = Visibility.Collapsed;
+            return;
+        }
 
-    private void OnSttToggled(object sender, RoutedEventArgs e)
-    {
-        if (_suppressEvents || CurrentApp.Settings == null) return;
-        CurrentApp.Settings.NodeSttEnabled = SttEnabledToggle.IsOn;
-        CurrentApp.Settings.Save();
-        UpdateCardVisibility();
-        UpdateModelStatus();
-        ((IAppCommands)CurrentApp).NotifySettingsSaved();
+        var sttEnabled = settings?.NodeSttEnabled == true;
+        var ttsEnabled = settings?.NodeTtsEnabled == true;
+
+        SttCapabilityNotice.Visibility = sttEnabled ? Visibility.Collapsed : Visibility.Visible;
+        TtsCapabilityNotice.Visibility = ttsEnabled ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnModelChanged(object sender, SelectionChangedEventArgs e)
@@ -300,6 +300,7 @@ public sealed partial class VoiceSettingsPage : Page
         {
             DownloadButton.IsEnabled = true;
             DownloadProgress.Visibility = Visibility.Collapsed;
+            UpdateCapabilityState();
         }
     }
 
@@ -572,6 +573,7 @@ public sealed partial class VoiceSettingsPage : Page
 
         UpdateTtsProviderVisibility();
         UpdatePiperVoiceState();
+        UpdateCapabilityState();
     }
 
     private void PopulatePiperVoices(SettingsManager settings)
@@ -626,6 +628,7 @@ public sealed partial class VoiceSettingsPage : Page
         PiperDownloadIcon.Glyph = downloaded ? "\uE73E" : "\uE896";  // checkmark vs download arrow
         PiperDeleteButton.Visibility = downloaded ? Visibility.Visible : Visibility.Collapsed;
         PiperPreviewButton.Visibility = downloaded ? Visibility.Visible : Visibility.Collapsed;
+        PiperPreviewButton.IsEnabled = downloaded && !_piperPreviewInProgress;
 
         if (downloaded)
         {
@@ -637,6 +640,7 @@ public sealed partial class VoiceSettingsPage : Page
             PiperStatusText.Text = L("VoiceSettingsPage_PiperVoiceNotDownloaded");
         }
         PiperDownloadProgress.Visibility = Visibility.Collapsed;
+        UpdateCapabilityState();
     }
 
     private void OnPiperDownloadClick(object sender, RoutedEventArgs e) =>
@@ -711,6 +715,7 @@ public sealed partial class VoiceSettingsPage : Page
             PiperDownloadButton.IsEnabled = true;
             PiperDownloadButtonText.Text = L("VoiceSettingsPage_PiperButtonRetry");
             PiperDownloadProgress.Visibility = Visibility.Collapsed;
+            UpdateCapabilityState();
         }
     }
 
@@ -745,6 +750,7 @@ public sealed partial class VoiceSettingsPage : Page
         if (PiperVoiceCombo.SelectedItem is not ComboBoxItem item || item.Tag is not string voiceId) return;
 
         PiperPreviewButton.IsEnabled = false;
+        _piperPreviewInProgress = true;
         var oldLabel = PiperPreviewLabel.Text;
         PiperPreviewLabel.Text = L("VoiceSettingsPage_PreviewButtonPlaying");
 
@@ -768,9 +774,10 @@ public sealed partial class VoiceSettingsPage : Page
         }
         finally
         {
-            PiperPreviewButton.IsEnabled = true;
+            _piperPreviewInProgress = false;
             PiperPreviewIcon.Glyph = "\uE768";
             PiperPreviewLabel.Text = oldLabel;
+            UpdatePiperVoiceState();
         }
     }
 
@@ -830,6 +837,12 @@ public sealed partial class VoiceSettingsPage : Page
             CurrentApp.Settings.Save();
         }
         UpdateTtsProviderVisibility();
+        UpdateCapabilityState();
+    }
+
+    private void OnOpenPermissionsClick(object sender, RoutedEventArgs e)
+    {
+        ((IAppCommands)CurrentApp).Navigate("permissions");
     }
 
     private void OnWindowsVoiceChanged(object sender, SelectionChangedEventArgs e)
@@ -885,9 +898,9 @@ public sealed partial class VoiceSettingsPage : Page
         }
         finally
         {
-            PreviewVoiceButton.IsEnabled = true;
             PreviewVoiceIcon.Glyph = "\uE768";
             PreviewVoiceLabel.Text = L("VoiceSettingsPage_PreviewVoiceButtonContent");
+            PreviewVoiceButton.IsEnabled = true;
         }
     }
 

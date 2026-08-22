@@ -103,6 +103,35 @@ public class SetupCodeFlowTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplySetupCode_WithSshTunnel_PersistsTunnelConfig()
+    {
+        var json = """{"url":"ws://gateway.example.com:18789","bootstrapToken":"boot-tok-ssh"}""";
+        var code = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+        var sshTunnel = new SshTunnelConfig(
+            "operator",
+            "ssh.example.com",
+            RemotePort: 18789,
+            LocalPort: 18791,
+            IncludeBrowserProxyForward: true,
+            SshPort: 2222);
+
+        var resolver = new CredentialResolver(new FakeIdentityReader());
+        var factory = new RecordingClientFactory();
+        var tunnelManager = new RecordingTunnelManager();
+        var manager = new GatewayConnectionManager(
+            resolver, factory, _registry, NullLogger.Instance, tunnelManager: tunnelManager);
+
+        var result = await manager.ApplySetupCodeAsync(code, sshTunnel);
+
+        Assert.Equal(SetupCodeOutcome.Success, result.Outcome);
+        var active = _registry.GetActive();
+        Assert.NotNull(active);
+        Assert.Equal(sshTunnel, active.SshTunnel);
+
+        manager.Dispose();
+    }
+
+    [Fact]
     public async Task ApplySetupCode_WithExistingCredential_ForcesBootstrapForImmediatePairing()
     {
         // First, apply a setup code to create the gateway record
@@ -423,6 +452,79 @@ public class SetupCodeFlowTests : IDisposable
         public string? NodeToken { get; set; }
         public string? TryReadStoredDeviceToken(string dataPath) => OperatorToken;
         public string? TryReadStoredNodeDeviceToken(string dataPath) => NodeToken;
+    }
+
+    private sealed class RecordingTunnelManager : ISshTunnelManager
+    {
+        public bool IsActive { get; private set; }
+        public long OwnershipGeneration { get; private set; }
+        public SshTunnelConfig? ActiveConfig { get; private set; }
+        public string? LocalTunnelUrl { get; private set; }
+
+        public bool IsRestartPending(SshTunnelExit tunnelExit) => false;
+
+        public Task<bool> IsOwnedListenerReadyAsync(
+            SshTunnelConfig config,
+            int destinationPort,
+            CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                IsActive &&
+                ActiveConfig == config &&
+                destinationPort == config.LocalPort);
+        }
+
+        public Task<string> StartAsync(SshTunnelConfig config, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            OwnershipGeneration++;
+            IsActive = true;
+            ActiveConfig = config;
+            LocalTunnelUrl = $"ws://localhost:{config.LocalPort}";
+            return Task.FromResult(LocalTunnelUrl);
+        }
+
+        public async Task<SshTunnelStartResult> StartOwnedAsync(
+            SshTunnelConfig config,
+            CancellationToken ct)
+        {
+            var url = await StartAsync(config, ct);
+            return new SshTunnelStartResult(url, config, OwnershipGeneration);
+        }
+
+        public Task StopAsync()
+        {
+            OwnershipGeneration++;
+            IsActive = false;
+            ActiveConfig = null;
+            LocalTunnelUrl = null;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> StopIfOwnedAsync(
+            SshTunnelConfig config,
+            long ownershipGeneration,
+            CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!IsActive ||
+                ActiveConfig != config ||
+                OwnershipGeneration != ownershipGeneration)
+            {
+                return Task.FromResult(false);
+            }
+
+            OwnershipGeneration++;
+            IsActive = false;
+            ActiveConfig = null;
+            LocalTunnelUrl = null;
+            return Task.FromResult(true);
+        }
+
+        public void Dispose()
+        {
+        }
     }
 
     private sealed class RecordingClientFactory : IGatewayClientFactory

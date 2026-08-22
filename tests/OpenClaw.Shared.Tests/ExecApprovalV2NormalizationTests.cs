@@ -19,7 +19,7 @@ public class ExecApprovalV2NormalizationTests
         IReadOnlyDictionary<string, string>? env = null,
         string? agentId = null,
         string? sessionKey = null) =>
-        new(argv, shell: null, cwd, timeoutMs: 30_000, env, agentId, sessionKey);
+        new(argv, cwd, timeoutMs: 30_000, env, agentId, sessionKey);
 
     // ── ExecShellWrapperNormalizer ────────────────────────────────────────────
 
@@ -275,7 +275,7 @@ public class ExecApprovalV2NormalizationTests
     }
 
     [Fact]
-    public void Normalize_ShellWrapper_ProducesIdentityWithBothResolutions()
+    public void Normalize_UnbindableShellWrapper_HasNoDurableResolution()
     {
         var req = Req(["bash", "-c", "echo foo && echo bar"]);
         var outcome = ExecApprovalV2Normalizer.Normalize(req);
@@ -284,8 +284,9 @@ public class ExecApprovalV2NormalizationTests
         var id = outcome.Identity!;
         // Singular resolution resolves the wrapper itself (bash) not the inner command.
         Assert.NotNull(id.Resolution);
-        // Allowlist resolutions resolve the inner commands.
-        Assert.Equal(2, id.AllowlistResolutions.Count);
+        Assert.Null(id.ReusableCommand);
+        Assert.Empty(id.AllowlistResolutions);
+        Assert.Empty(id.AllowAlwaysPatterns);
     }
 
     [Fact]
@@ -369,17 +370,6 @@ public class ExecApprovalV2NormalizationTests
         Assert.False(outcome.IsResolved);
         Assert.Equal(ExecApprovalV2Code.ResolutionFailed, outcome.Error!.Code);
         Assert.False(string.IsNullOrWhiteSpace(outcome.Error.Reason));
-    }
-
-    [Fact]
-    public void Normalize_LegacyPath_Unaffected()
-    {
-        // Rail 19: legacy path must be unaffected by new-path changes.
-        // The normalizer is only called from the V2 path; it does not exist in the legacy path.
-        // Verify the legacy ExecShellWrapperParser type still compiles and is independent.
-        // (Structural test — if this compiles, the legacy type is not modified.)
-        _ = typeof(OpenClaw.Shared.ExecShellWrapperParser);
-        _ = typeof(OpenClaw.Shared.ExecShellParseResult);
     }
 
     // ── SplitShellCommandChain (via ResolveForAllowlist) ──────────────────────
@@ -564,14 +554,46 @@ public class ExecApprovalV2NormalizationTests
     }
 
     [Fact]
-    public void AllowAlwaysPatterns_EncodedCommand_NotFailClosed()
+    public void AllowAlwaysPatterns_EncodedCommand_IsOneShot_ReturnsEmpty()
     {
-        // Unlike ResolveForAllowlist, AllowAlwaysPatterns is UX-only and does not
-        // fail-closed on -enc: it resolves the first token (powershell) as the pattern.
+        // P2.11 one-shot classification: an encoded PowerShell payload is opaque and cannot be
+        // pinned to a stable reusable rule, so allow-always is suppressed (empty patterns). This
+        // is a UX change only (allow-once still runs the command); it does not fail-closed.
         var patterns = ExecCommandResolver.ResolveAllowAlwaysPatterns(
             ["bash", "-c", "powershell -enc dABlAHMAdAA="], cwd: null, env: null);
-        Assert.NotEmpty(patterns);
-        Assert.Contains("powershell", patterns[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(patterns);
+    }
+
+    [Fact]
+    public void AllowAlwaysPatterns_VariableExpansion_IsOneShot_ReturnsEmpty()
+    {
+        // A payload that reads a runtime variable is dynamic → one-shot → no reusable rule.
+        // Contrast with the static "echo foo && echo bar" case above, which yields a pattern.
+        var patterns = ExecCommandResolver.ResolveAllowAlwaysPatterns(
+            ["bash", "-c", "echo $HOME"], cwd: null, env: null);
+        Assert.Empty(patterns);
+    }
+
+    [Theory]
+    [InlineData("-e")]
+    [InlineData("-ec")]
+    [InlineData("-enc")]
+    [InlineData("-EncodedCommand")]
+    public void AllowAlwaysPatterns_DirectEncodedPowerShell_IsOneShot_ReturnsEmpty(string flag)
+    {
+        // Direct pwsh with an encoded command (any alias) is opaque → one-shot, no pattern.
+        var patterns = ExecCommandResolver.ResolveAllowAlwaysPatterns(
+            ["pwsh", flag, "dABlAHMAdAA="], cwd: null, env: null);
+        Assert.Empty(patterns);
+    }
+
+    [Fact]
+    public void AllowAlwaysPatterns_WrappedEncodedAlias_IsOneShot_ReturnsEmpty()
+    {
+        // -e alias inside a shell wrapper is also caught (previously only -enc was).
+        var patterns = ExecCommandResolver.ResolveAllowAlwaysPatterns(
+            ["bash", "-c", "powershell -e dABlAHMAdAA="], cwd: null, env: null);
+        Assert.Empty(patterns);
     }
 
     // ── ExecCommandResolver — path resolution edge cases ─────────────────────

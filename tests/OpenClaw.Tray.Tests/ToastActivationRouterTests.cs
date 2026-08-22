@@ -5,78 +5,57 @@ namespace OpenClaw.Tray.Tests;
 public sealed class ToastActivationRouterTests
 {
     [Theory]
-    [InlineData("open_dashboard", "dashboard")]
-    [InlineData("open_settings", "settings")]
-    [InlineData("open_chat", "chat")]
-    [InlineData("open_activity", "activity")]
-    public void Route_DispatchesSimpleActions(string action, string expected)
+    [InlineData("open_dashboard", typeof(ActivationRoute.OpenDashboard))]
+    [InlineData("open_settings", typeof(ActivationRoute.OpenHub))]
+    [InlineData("open_chat", typeof(ActivationRoute.OpenChat))]
+    [InlineData("open_activity", typeof(ActivationRoute.OpenHub))]
+    [InlineData("review_pairing", typeof(ActivationRoute.ReviewPairing))]
+    public void PlanRoute_ReturnsExpectedRouteType(string action, Type expectedType)
     {
-        var calls = new List<string>();
-
-        ToastActivationRouter.Route(
-            action,
-            _ => null,
-            BuildActions(calls));
-
-        Assert.Equal([expected], calls);
+        var route = ToastActivationRouter.PlanRoute(action, _ => null);
+        Assert.IsType(expectedType, route);
     }
 
     [Fact]
-    public void Route_OpenUrl_RequiresUrlArgument()
+    public void PlanRoute_OpenUrl_RequiresUrlArgument()
     {
-        var calls = new List<string>();
+        var route = Assert.IsType<ActivationRoute.OpenUrl>(
+            ToastActivationRouter.PlanRoute(
+                "open_url",
+                key => key == "url" ? "https://example.test/" : null));
 
-        ToastActivationRouter.Route(
-            "open_url",
-            key => key == "url" ? "https://example.test/" : null,
-            BuildActions(calls));
-
-        ToastActivationRouter.Route(
-            "open_url",
-            _ => null,
-            BuildActions(calls));
-
-        Assert.Equal(["url:https://example.test/"], calls);
+        Assert.Equal("https://example.test/", route.Uri);
+        Assert.Null(ToastActivationRouter.PlanRoute("open_url", _ => null));
     }
 
     [Fact]
-    public void Route_CopyPairingCommand_RequiresCommandArgument()
+    public void PlanRoute_CopyPairingCommand_RequiresCommandArgument()
     {
-        var calls = new List<string>();
+        var route = Assert.IsType<ActivationRoute.CopyPairingCommand>(
+            ToastActivationRouter.PlanRoute(
+                "copy_pairing_command",
+                key => key == "command" ? "openclaw pair approve abc" : null));
 
-        ToastActivationRouter.Route(
-            "copy_pairing_command",
-            key => key == "command" ? "openclaw pair approve abc" : null,
-            BuildActions(calls));
-
-        ToastActivationRouter.Route(
-            "copy_pairing_command",
-            _ => null,
-            BuildActions(calls));
-
-        Assert.Equal(["copy:openclaw pair approve abc"], calls);
+        Assert.Equal("openclaw pair approve abc", route.Command);
+        Assert.Null(ToastActivationRouter.PlanRoute("copy_pairing_command", _ => null));
     }
 
     [Fact]
-    public void Route_UnknownAction_NoOps()
+    public void PlanRoute_OpenChat_PreservesSessionKey()
     {
-        var calls = new List<string>();
+        var route = Assert.IsType<ActivationRoute.OpenChat>(
+            ToastActivationRouter.PlanRoute(
+                "open_chat",
+                key => key == "sessionKey" ? "agent:main:scratch" : null));
 
-        ToastActivationRouter.Route(
+        Assert.Equal("agent:main:scratch", route.SessionKey);
+    }
+
+    [Fact]
+    public void PlanRoute_UnknownAction_ReturnsNullWithoutReadingArguments()
+    {
+        Assert.Null(ToastActivationRouter.PlanRoute(
             "unknown",
-            _ => throw new InvalidOperationException("arguments should not be read"),
-            BuildActions(calls));
-
-        Assert.Empty(calls);
+            _ => throw new InvalidOperationException("arguments should not be read")));
     }
-
-    private static ToastActivationActions BuildActions(List<string> calls) => new()
-    {
-        OpenUrl = url => calls.Add($"url:{url}"),
-        OpenDashboard = () => calls.Add("dashboard"),
-        OpenSettings = () => calls.Add("settings"),
-        OpenChat = () => calls.Add("chat"),
-        OpenActivity = () => calls.Add("activity"),
-        CopyPairingCommand = command => calls.Add($"copy:{command}")
-    };
 }

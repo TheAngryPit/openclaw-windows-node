@@ -13,7 +13,7 @@ public enum SetupExistingGatewayKind
 
 public static class SetupExistingGatewayClassifier
 {
-    private const string AppOwnedDistroName = "OpenClawGateway";
+    private static string AppOwnedDistroName => AppIdentity.SetupDistroName;
 
     public static SetupExistingGatewayKind ClassifyWithoutWslProbe(
         GatewayRegistry? registry,
@@ -53,11 +53,31 @@ public static class SetupExistingGatewayClassifier
     {
         if (registry is not null)
         {
+            var activeGatewayId = registry.ActiveGatewayId;
+            var activeRecord = registry.GetAll().FirstOrDefault(record =>
+                string.Equals(record.Id, activeGatewayId, StringComparison.Ordinal));
+            if (activeRecord is not null && HasUsableGatewayRecord(registry, activeRecord))
+            {
+                return true;
+            }
+
             foreach (var record in registry.GetAll())
             {
-                if (HasUsableGatewayRecord(registry, record))
+                if (string.Equals(record.Id, activeGatewayId, StringComparison.Ordinal))
                 {
-                    return true;
+                    continue;
+                }
+
+                try
+                {
+                    if (HasUsableGatewayRecord(registry, record))
+                    {
+                        return true;
+                    }
+                }
+                catch (DeviceIdentityLoadException)
+                {
+                    Logger.Debug($"Skipping unusable inactive gateway identity during setup inventory: {record.Id}");
                 }
             }
         }
@@ -67,15 +87,21 @@ public static class SetupExistingGatewayClassifier
 
     public static bool HasUsableGatewayRecord(GatewayRegistry registry, GatewayRecord record)
     {
+        var identityDir = registry.GetIdentityDirectory(record.Id);
+        var hasOperatorDeviceToken = DeviceIdentity.HasStoredDeviceTokenForRole(
+            identityDir,
+            "operator",
+            NullLogger.Instance);
+        var hasNodeDeviceToken = !hasOperatorDeviceToken
+            && DeviceIdentity.HasStoredDeviceTokenForRole(identityDir, "node", NullLogger.Instance);
+
         if (!string.IsNullOrWhiteSpace(record.SharedGatewayToken)
             || !string.IsNullOrWhiteSpace(record.BootstrapToken))
         {
             return true;
         }
 
-        var identityDir = registry.GetIdentityDirectory(record.Id);
-        return DeviceIdentity.HasStoredDeviceTokenForRole(identityDir, "operator", NullLogger.Instance)
-            || DeviceIdentity.HasStoredDeviceTokenForRole(identityDir, "node", NullLogger.Instance);
+        return hasOperatorDeviceToken || hasNodeDeviceToken;
     }
 
     private static async Task<bool> HasAppOwnedLocalWslGatewayAsync(
@@ -109,7 +135,8 @@ public static class SetupExistingGatewayClassifier
             && registry.GetAll().Any(record =>
                 record.IsLocal
                 && record.SshTunnel is null
-                && LocalGatewayUrlClassifier.IsLocalGatewayUrl(record.Url)))
+                && (LocalGatewayUrlClassifier.IsLocalGatewayUrl(record.Url)
+                    || !string.IsNullOrWhiteSpace(record.SetupManagedDistroName))))
         {
             return true;
         }
@@ -154,12 +181,12 @@ public static class SetupExistingGatewayClassifier
     public static string ResolveLocalDataPath()
     {
         if (Environment.GetEnvironmentVariable("OPENCLAW_TRAY_LOCALAPPDATA_DIR") is { Length: > 0 } localAppDataRoot)
-            return Path.Combine(localAppDataRoot, "OpenClawTray");
+            return Path.Combine(localAppDataRoot, AppIdentity.DataDirectoryName);
 
         if (Environment.GetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR") is { Length: > 0 } localDataDir)
             return localDataDir;
 
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenClawTray");
+        return AppIdentity.ResolveSetupLocalDataDirectory();
     }
 
     private static bool PhaseLooksActiveOrComplete(JsonElement phaseEl)

@@ -451,7 +451,7 @@ public sealed partial class ChannelsPage : Page
                 // configured/running. Don't lie about it.
                 SaveBanner.Severity = InfoBarSeverity.Warning;
                 SaveBanner.Title = $"{pending.ChannelId}: config saved, but not running yet";
-                SaveBanner.Message = "The gateway accepted the settings but didn't start the channel. Expand the channel below — the Status section and the diagnostic disclosure will show why.";
+                SaveBanner.Message = "The gateway accepted the settings but didn't start the channel. Expand the channel below: the Status section and the diagnostic disclosure will show why.";
             }
             else if (!_pendingBannerIsAction && pending.Severity == InfoBarSeverity.Success && record != null && record.IsConfigured)
             {
@@ -479,7 +479,7 @@ public sealed partial class ChannelsPage : Page
                 ? "this gateway didn't report any channels"
                 : "connect to a gateway to see what channels are available")
             : (connected && !gatewayReportedSomething
-                ? $"showing {records.Count} common channels (your gateway didn't list any — some may not work)"
+                ? $"showing {records.Count} common channels (your gateway didn't list any: some may not work)"
                 : $"{configured.Count} configured · {available.Count} available to add");
     }
 
@@ -814,7 +814,7 @@ public sealed partial class ChannelsPage : Page
             stack.Children.Add(BuildLinkingPlaceholder(record));
 
         // Configuration section — inline credential form for channels we have
-        // explicit field definitions for (Telegram bot token, Discord webhook,
+        // explicit field definitions for (Telegram/Discord bot tokens,
         // Slack tokens, Google Chat webhook, Nostr key/relays).
         //
         // For configured channels the section header reads "Replace
@@ -1067,7 +1067,7 @@ public sealed partial class ChannelsPage : Page
             "whatsapp"   => (LocalizationHelper.GetString("ChannelsPage_HelpWhatsApp"),     "https://faq.whatsapp.com/378279004439436/"),
             "signal"     => (LocalizationHelper.GetString("ChannelsPage_HelpSignal"),       "https://support.signal.org/hc/en-us/articles/360007320551"),
             "telegram"   => (LocalizationHelper.GetString("ChannelsPage_HelpTelegram"),     "https://core.telegram.org/bots/features#botfather"),
-            "discord"    => (LocalizationHelper.GetString("ChannelsPage_HelpDiscord"),  "https://support.discord.com/hc/en-us/articles/228383668"),
+            "discord"    => (LocalizationHelper.GetString("ChannelsPage_HelpDiscord"),  "https://discord.com/developers/applications"),
             "googlechat" => (LocalizationHelper.GetString("ChannelsPage_HelpGoogleChat"), "https://developers.google.com/chat/how-tos/webhooks"),
             "slack"      => (LocalizationHelper.GetString("ChannelsPage_HelpSlack"),              "https://api.slack.com/apps"),
             "nostr"      => (LocalizationHelper.GetString("ChannelsPage_HelpNostr"),                      "https://nostr.com/"),
@@ -1160,7 +1160,7 @@ public sealed partial class ChannelsPage : Page
     /// Per-channel inline-form schema. Fields were validated against the
     /// gateway test fixtures (src/cli/config-cli.test.ts and related tests
     /// confirm channels.telegram.botToken, channels.slack.botToken/signingSecret,
-    /// channels.discord.webhookUrl, etc.). Returns null for channels without an
+    /// channels.discord.token, etc.). Returns null for channels without an
     /// inline form — those still get the "Open Config page" stub.
     /// </summary>
     private static IReadOnlyList<ConfigField>? ResolveConfigFields(string channelId) =>
@@ -1179,12 +1179,12 @@ public sealed partial class ChannelsPage : Page
             "discord" => new[]
             {
                 new ConfigField(
-                    "channels.discord.webhookUrl",
-                    LocalizationHelper.GetString("ChannelsPage_FieldWebhookUrl"),
-                    "https://discord.com/api/webhooks/...",
+                    "channels.discord.token",
+                    LocalizationHelper.GetString("ChannelsPage_FieldDiscordBotToken"),
+                    LocalizationHelper.GetString("ChannelsPage_PlaceholderDiscordBotToken"),
                     Sensitive: true,
                     Required: true,
-                    HelpText: LocalizationHelper.GetString("ChannelsPage_HelpWebhookDiscord")),
+                    HelpText: LocalizationHelper.GetString("ChannelsPage_HelpDiscordBotToken")),
             },
             "googlechat" => new[]
             {
@@ -1707,6 +1707,12 @@ public sealed partial class ChannelsPage : Page
         buttonsRow.Children.Add(showQrBtn);
         buttonsRow.Children.Add(relinkBtn);
 
+        // Collapsed recovery affordance — populated by StartLinkingAsync only when
+        // the gateway reports it has no web-login provider loaded for this channel
+        // (issue #957). Distinct from the raw diagnostic: this is the actionable,
+        // plain-language "here's how to fix it on your gateway host" panel.
+        var recoveryPanel = new StackPanel { Spacing = 10, Visibility = Visibility.Collapsed };
+
         // Re-entrancy lock: disable both buttons while a linking flow is in flight
         // so rapid Show QR / Relink clicks can't spawn parallel web.login.start calls.
         async Task RunLinking(bool force)
@@ -1715,7 +1721,7 @@ public sealed partial class ChannelsPage : Page
             relinkBtn.IsEnabled = false;
             try
             {
-                await StartLinkingAsync(qrImage, messageBlock, diagnostic, diagnosticBody, record.Id, force);
+                await StartLinkingAsync(qrImage, messageBlock, diagnostic, diagnosticBody, recoveryPanel, record.Id, force);
             }
             finally
             {
@@ -1728,6 +1734,7 @@ public sealed partial class ChannelsPage : Page
 
         stack.Children.Add(qrImage);
         stack.Children.Add(messageBlock);
+        stack.Children.Add(recoveryPanel);
         stack.Children.Add(diagnostic);
         stack.Children.Add(buttonsRow);
         return stack;
@@ -1738,6 +1745,7 @@ public sealed partial class ChannelsPage : Page
         TextBlock messageBlock,
         Expander diagnostic,
         TextBlock diagnosticBody,
+        Panel recoveryPanel,
         string channelId,
         bool force)
     {
@@ -1769,12 +1777,103 @@ public sealed partial class ChannelsPage : Page
             diagnosticBody.Text = "";
         }
 
+        // Local helper: render the actionable "your gateway has no web-login
+        // provider loaded" recovery panel (issue #957). This is a gateway-host
+        // provider/plugin state we can't fix from the tray, so we show the exact
+        // CLI command to run on the gateway host plus a Copy button — mirroring
+        // BuildInstallPluginPanel's affordance.
+        void ShowProviderRecovery()
+        {
+            recoveryPanel.Children.Clear();
+
+            recoveryPanel.Children.Add(new TextBlock
+            {
+                Text = $"Your gateway can't start {channelId} QR linking yet. It doesn't have the {channelId} web-login provider loaded. Web/QR linking runs on the machine that hosts your gateway, so this is fixed there, not in the tray.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = (Style)Application.Current.Resources["BodyTextBlockStyle"],
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
+
+            var cmd = $"openclaw plugins install @openclaw/{channelId}";
+            var cmdRow = new Grid();
+            cmdRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            cmdRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+            var cmdBox = new TextBox
+            {
+                Text = cmd,
+                IsReadOnly = true,
+                FontFamily = new FontFamily("Consolas, Cascadia Mono, monospace"),
+                Margin = new Thickness(0, 0, 8, 0),
+            };
+            Grid.SetColumn(cmdBox, 0);
+            cmdRow.Children.Add(cmdBox);
+
+            var copyBtn = new Button { Content = "Copy" };
+            Grid.SetColumn(copyBtn, 1);
+            copyBtn.Click += (_, _) =>
+            {
+                try
+                {
+                    var pkgData = new DataPackage();
+                    pkgData.SetText(cmd);
+                    Clipboard.SetContent(pkgData);
+                    copyBtn.Content = "Copied";
+                    _ = Task.Delay(1200).ContinueWith(_ =>
+                    {
+                        if (DispatcherQueue == null) return;
+                        DispatcherQueue.TryEnqueue(() => copyBtn.Content = "Copy");
+                    }, TaskScheduler.Default);
+                }
+                catch
+                {
+                    copyBtn.Content = "Copy failed";
+                }
+            };
+            cmdRow.Children.Add(copyBtn);
+            recoveryPanel.Children.Add(cmdRow);
+
+            recoveryPanel.Children.Add(new TextBlock
+            {
+                Text = "After installing the provider on your gateway host, come back and click Show QR again.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
+
+            recoveryPanel.Visibility = Visibility.Visible;
+        }
+        // Local helper: the gateway doesn't implement web.login at all (older
+        // gateway). Installing a channel plugin won't add the missing RPC, so we
+        // guide the user to update the gateway instead of showing an install
+        // command they'd run to no effect.
+        void ShowUnsupportedRecovery()
+        {
+            recoveryPanel.Children.Clear();
+
+            recoveryPanel.Children.Add(new TextBlock
+            {
+                Text = $"This gateway version doesn't support QR linking for {channelId} yet. QR/web linking runs on the machine that hosts your gateway: update your gateway to a version that supports web login, then come back and click Show QR again.",
+                TextWrapping = TextWrapping.Wrap,
+                Style = (Style)Application.Current.Resources["BodyTextBlockStyle"],
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
+
+            recoveryPanel.Visibility = Visibility.Visible;
+        }
+        void HideRecovery()
+        {
+            recoveryPanel.Visibility = Visibility.Collapsed;
+            recoveryPanel.Children.Clear();
+        }
+
         var client = CurrentApp.GatewayClient;
         if (client == null)
         {
             qrImage.Visibility = Visibility.Collapsed;
             messageBlock.Text = "Not connected to a gateway. Open Connection settings to connect first.";
             HideDiagnostic();
+            HideRecovery();
             return;
         }
 
@@ -1790,6 +1889,7 @@ public sealed partial class ChannelsPage : Page
 
         messageBlock.Text = "Requesting QR code from the gateway…";
         HideDiagnostic();
+        HideRecovery();
 
         var startParams = new { force, timeoutMs = 30000 };
         var start = await client.WebLoginStartAsync(force);
@@ -1807,7 +1907,35 @@ public sealed partial class ChannelsPage : Page
         if (!string.IsNullOrEmpty(start.Error))
         {
             qrImage.Visibility = Visibility.Collapsed;
-            messageBlock.Text = $"Couldn't link {channelId}. The gateway returned an error — see details below.";
+
+            var displayName = string.IsNullOrEmpty(channelId)
+                ? "This channel"
+                : $"{char.ToUpper(channelId[0])}{channelId[1..]}";
+
+            if (start.LooksLikeMissingWebLoginProvider)
+            {
+                // Known, recoverable state: the gateway has no web-login provider
+                // loaded for this channel. Show actionable recovery instead of the
+                // relayed internal error as the headline (issue #957). Keep the raw
+                // gateway detail available in the collapsed diagnostic.
+                messageBlock.Text = $"{displayName} linking isn't available on this gateway yet: see how to enable it below.";
+                ShowProviderRecovery();
+                ShowDiagnostic("web.login.start", startParams, start.Error, start.RawResponse);
+                return;
+            }
+
+            if (start.LooksLikeWebLoginUnsupported)
+            {
+                // Gateway is too old to implement web.login at all. Installing a
+                // plugin wouldn't add the method — guide the user to update the
+                // gateway instead.
+                messageBlock.Text = $"{displayName} linking isn't available on this gateway yet: see how to enable it below.";
+                ShowUnsupportedRecovery();
+                ShowDiagnostic("web.login.start", startParams, start.Error, start.RawResponse);
+                return;
+            }
+
+            messageBlock.Text = $"Couldn't link {channelId}. The gateway returned an error: see details below.";
             ShowDiagnostic("web.login.start", startParams, start.Error, start.RawResponse);
             return;
         }
@@ -1846,7 +1974,7 @@ public sealed partial class ChannelsPage : Page
         if (ct.IsCancellationRequested) return;
         if (waitResult == null)
         {
-            messageBlock.Text = "Still waiting — click Show QR again if the code has expired.";
+            messageBlock.Text = "Still waiting: click Show QR again if the code has expired.";
             return;
         }
         if (!string.IsNullOrEmpty(waitResult.Error))
@@ -1873,7 +2001,7 @@ public sealed partial class ChannelsPage : Page
         }
         else
         {
-            messageBlock.Text = "Still waiting — click Show QR again if the code has expired.";
+            messageBlock.Text = "Still waiting: click Show QR again if the code has expired.";
         }
     }
 
@@ -1976,7 +2104,7 @@ public sealed partial class ChannelsPage : Page
 
         body.Children.Add(new TextBlock
         {
-            Text = $"Channel plugins are loaded by the gateway, not the tray — so installs happen on the machine that hosts your gateway. If {record.Id} isn't coming up after Save, the plugin may not be installed yet.",
+            Text = $"Channel plugins are loaded by the gateway, not the tray: so installs happen on the machine that hosts your gateway. If {record.Id} isn't coming up after Save, the plugin may not be installed yet.",
             TextWrapping = TextWrapping.Wrap,
             Style = (Style)Application.Current.Resources["BodyTextBlockStyle"],
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
@@ -2064,7 +2192,7 @@ public sealed partial class ChannelsPage : Page
                 ? $"Unlink {channelId} from this device?"
                 : $"Disconnect {channelId} and forget credentials?",
             Content = isQr
-                ? "This unlinks the channel from this device. Your account stays paired on your phone — scan a fresh QR to reconnect."
+                ? "This unlinks the channel from this device. Your account stays paired on your phone: scan a fresh QR to reconnect."
                 : "This signs out the channel and clears the stored credentials. You'll need to re-enter them to reconnect.",
             PrimaryButtonText = isQr ? "Unlink" : "Disconnect",
             CloseButtonText = "Cancel",
@@ -2152,7 +2280,7 @@ public sealed partial class ChannelsPage : Page
         }
 
         _pendingSaveBanner = (channelId, $"{channelId} stopped",
-            "Channel paused. Press Start to resume — credentials are kept.",
+            "Channel paused. Press Start to resume: credentials are kept.",
             InfoBarSeverity.Success);
         ApplyPendingSaveBanner();
         await RefreshAsync(probe: false);
@@ -2355,15 +2483,15 @@ public sealed partial class ChannelsPage : Page
     /// </summary>
     private static string ResolveTagline(string channelId) => channelId.ToLowerInvariant() switch
     {
-        "whatsapp"   => "Link your phone — scan a QR to connect",
-        "telegram"   => "Bot integration — paste your bot token to set up",
-        "discord"    => "Webhook integration — paste a Discord webhook URL",
-        "googlechat" => "Webhook integration — paste a Google Chat webhook",
-        "slack"      => "OAuth app — install a Slack app to connect",
-        "signal"     => "Link your phone — scan a QR to connect",
-        "imessage"   => "macOS-only — requires running the gateway on a Mac",
-        "nostr"      => "Decentralized — paste your nsec and relays",
-        _            => "Plugin channel — expand to configure",
+        "whatsapp"   => "Link your phone: scan a QR to connect",
+        "telegram"   => "Bot integration: paste your bot token to set up",
+        "discord"    => "Bot integration: paste your Discord bot token",
+        "googlechat" => "Webhook integration: paste a Google Chat webhook",
+        "slack"      => "OAuth app: install a Slack app to connect",
+        "signal"     => "Link your phone: scan a QR to connect",
+        "imessage"   => "macOS-only: requires running the gateway on a Mac",
+        "nostr"      => "Decentralized: paste your nsec and relays",
+        _            => "Plugin channel: expand to configure",
     };
 
     // ─── Tiny utility helpers ─────────────────────────────────────────────

@@ -5,10 +5,8 @@ namespace OpenClawTray.Services;
 
 internal static class StartupSetupState
 {
-    private const string DefaultGatewayUrl = "ws://localhost:18789";
-
-    public static bool HasStoredNodeDeviceToken(string dataPath) =>
-        HasAnyDeviceTokenForRole(dataPath, "node");
+    public static bool HasStoredNodeDeviceToken(string dataPath, GatewayRegistry? registry = null) =>
+        HasAnyDeviceTokenForRole(dataPath, "node", registry);
 
     /// <summary>
     /// True if the user has an operator device token (root or any per-gateway dir)
@@ -23,8 +21,24 @@ internal static class StartupSetupState
     /// Scans both the legacy root identity file and per-gateway identity directories
     /// for a device token for the specified role.
     /// </summary>
-    internal static bool HasAnyDeviceTokenForRole(string dataPath, string role)
+    internal static bool HasAnyDeviceTokenForRole(
+        string dataPath,
+        string role,
+        GatewayRegistry? registry = null)
     {
+        string? activeIdentityDir = null;
+        if (!string.IsNullOrWhiteSpace(registry?.ActiveGatewayId))
+        {
+            activeIdentityDir = registry.GetIdentityDirectory(registry.ActiveGatewayId);
+            if (DeviceIdentity.HasStoredDeviceTokenForRole(
+                    activeIdentityDir,
+                    role,
+                    NullLogger.Instance))
+            {
+                return true;
+            }
+        }
+
         if (DeviceIdentity.HasStoredDeviceTokenForRole(dataPath, role, NullLogger.Instance))
             return true;
 
@@ -36,8 +50,23 @@ internal static class StartupSetupState
         {
             foreach (var dir in Directory.EnumerateDirectories(gatewaysDir))
             {
-                if (DeviceIdentity.HasStoredDeviceTokenForRole(dir, role, NullLogger.Instance))
-                    return true;
+                if (string.Equals(
+                        Path.GetFullPath(dir),
+                        activeIdentityDir is null ? null : Path.GetFullPath(activeIdentityDir),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (DeviceIdentity.HasStoredDeviceTokenForRole(dir, role, NullLogger.Instance))
+                        return true;
+                }
+                catch (DeviceIdentityLoadException)
+                {
+                    Logger.Debug($"Stored device token scan skipped an unusable gateway identity: {dir}");
+                }
             }
         }
         catch (Exception ex)
@@ -62,12 +91,20 @@ internal static class StartupSetupState
         return HasNonDefaultGatewayUrl(settings);
     }
 
-    private static bool HasNonDefaultGatewayUrl(SettingsManager settings) =>
-        !string.IsNullOrWhiteSpace(settings.GatewayUrl)
-        && !string.Equals(
-            settings.GatewayUrl,
-            DefaultGatewayUrl,
-            StringComparison.OrdinalIgnoreCase);
+    private static bool HasNonDefaultGatewayUrl(SettingsManager settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.GatewayUrl))
+            return false;
+
+        return !string.Equals(
+                settings.GatewayUrl,
+                AppIdentity.SetupGatewayUrl,
+                StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(
+                settings.GatewayUrl,
+                $"ws://localhost:{AppIdentity.SetupGatewayPort}",
+                StringComparison.OrdinalIgnoreCase);
+    }
 
     public static bool CanStartNodeGateway(SettingsManager settings, string dataPath)
     {
@@ -97,7 +134,7 @@ internal static class StartupSetupState
 
         if (settings.EnableNodeMode)
         {
-            return !HasStoredNodeDeviceToken(dataPath)
+            return !HasStoredNodeDeviceToken(dataPath, registry)
                 && !HasBootstrapGatewayRecord(registry);
         }
 

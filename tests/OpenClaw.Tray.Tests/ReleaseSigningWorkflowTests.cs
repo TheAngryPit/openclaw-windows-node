@@ -3,7 +3,7 @@ namespace OpenClaw.Tray.Tests;
 public sealed class ReleaseSigningWorkflowTests
 {
     [Fact]
-    public void ReleaseWorkflow_SignsOnlyOpenClawOwnedPayloadExecutables()
+    public void ReleaseWorkflow_SignsOnlyOpenClawOwnedPayloadBinaries()
     {
         var workflow = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
 
@@ -15,19 +15,27 @@ public sealed class ReleaseSigningWorkflowTests
         Assert.Contains("endpoint: https://eus.codesigning.azure.net/", workflow);
         Assert.Contains("signing-account-name: openclaw", workflow);
         Assert.Contains("certificate-profile-name: openclaw", workflow);
-        Assert.Contains("Stage x64 OpenClaw Executables for Signing", workflow);
-        Assert.Contains(@"New-Item -ItemType HardLink -Path signing-input-x64\OpenClaw.Tray.WinUI.exe -Target artifacts\tray-win-x64\OpenClaw.Tray.WinUI.exe", workflow);
+        Assert.Contains("Stage x64 OpenClaw Binaries for Signing", workflow);
+        Assert.Contains("OpenClaw.Tray.WinUI.exe", workflow);
+        Assert.Contains("OpenClaw.Tray.WinUI.dll", workflow);
+        Assert.Contains("OpenClaw.Chat.dll", workflow);
+        Assert.Contains("OpenClaw.Connection.dll", workflow);
+        Assert.Contains("OpenClaw.SetupEngine.UI.dll", workflow);
+        Assert.Contains("OpenClaw.SetupEngine.dll", workflow);
+        Assert.Contains("OpenClaw.Shared.dll", workflow);
+        Assert.Contains("OpenClawTray.FunctionalUI.dll", workflow);
+        Assert.Contains(@"New-Item -ItemType HardLink -Path ""signing-input-x64\$binary"" -Target ""artifacts\tray-win-x64\$binary""", workflow);
         Assert.DoesNotContain("signing-input-x64\\OpenClaw.SetupEngine.exe", workflow);
         Assert.DoesNotContain("signing-input-x64\\OpenClaw.SetupEngine.UI.exe", workflow);
-        Assert.Contains("Sign x64 OpenClaw Executables", workflow);
+        Assert.Contains("Sign x64 OpenClaw Binaries", workflow);
         Assert.Contains("files-folder: signing-input-x64", workflow);
-        Assert.Contains("Stage ARM64 OpenClaw Executables for Signing", workflow);
-        Assert.Contains(@"New-Item -ItemType HardLink -Path signing-input-arm64\OpenClaw.Tray.WinUI.exe -Target artifacts\tray-win-arm64\OpenClaw.Tray.WinUI.exe", workflow);
+        Assert.Contains("Stage ARM64 OpenClaw Binaries for Signing", workflow);
+        Assert.Contains(@"New-Item -ItemType HardLink -Path ""signing-input-arm64\$binary"" -Target ""artifacts\tray-win-arm64\$binary""", workflow);
         Assert.DoesNotContain("signing-input-arm64\\OpenClaw.SetupEngine.exe", workflow);
         Assert.DoesNotContain("signing-input-arm64\\OpenClaw.SetupEngine.UI.exe", workflow);
-        Assert.Contains("Sign ARM64 OpenClaw Executables", workflow);
+        Assert.Contains("Sign ARM64 OpenClaw Binaries", workflow);
         Assert.Contains("files-folder: signing-input-arm64", workflow);
-        Assert.Contains("files-folder-filter: exe", workflow);
+        Assert.Contains("files-folder-filter: exe,dll", workflow);
         Assert.DoesNotContain("files-folder-recurse: true", workflow);
     }
 
@@ -40,6 +48,13 @@ public sealed class ReleaseSigningWorkflowTests
         Assert.Contains("Test-ReleaseExecutableSignatures.ps1 -PayloadPath artifacts/tray-win-x64 -RequireSignedOpenClaw", workflow);
         Assert.Contains("Test-ReleaseExecutableSignatures.ps1 -PayloadPath artifacts/tray-win-arm64 -RequireSignedOpenClaw", workflow);
         Assert.Contains(@"^OpenClaw\.Tray\.WinUI\.exe$", verifier);
+        Assert.Contains(@"^OpenClaw\.Tray\.WinUI\.dll$", verifier);
+        Assert.Contains(@"^OpenClaw\.Chat\.dll$", verifier);
+        Assert.Contains(@"^OpenClaw\.Connection\.dll$", verifier);
+        Assert.Contains(@"^OpenClaw\.SetupEngine\.UI\.dll$", verifier);
+        Assert.Contains(@"^OpenClaw\.SetupEngine\.dll$", verifier);
+        Assert.Contains(@"^OpenClaw\.Shared\.dll$", verifier);
+        Assert.Contains(@"^OpenClawTray\.FunctionalUI\.dll$", verifier);
         Assert.DoesNotContain(@"^SetupEngine\\OpenClaw\.SetupEngine\.exe$", verifier);
         Assert.DoesNotContain(@"^SetupEngine\\OpenClaw\.SetupEngine\.UI\.exe$", verifier);
         Assert.Contains("SetupEngine\\OpenClaw.SetupEngine.exe should not be present", verifier);
@@ -48,6 +63,10 @@ public sealed class ReleaseSigningWorkflowTests
         Assert.Contains(@"(^|\\)RestartAgent\.exe$", verifier);
         Assert.Contains(@"^tools\\mxc\\[^\\]+\\wxc-exec\.exe$", verifier);
         Assert.Contains("Unknown executable in release payload", verifier);
+        Assert.Contains("Unknown OpenClaw binary in release payload", verifier);
+        Assert.Contains("$OpenClawSignerSubject", verifier);
+        Assert.Contains("[StringComparison]::OrdinalIgnoreCase", verifier);
+        Assert.Contains("OpenClaw binary is not signed by the expected OpenClaw signer", verifier);
     }
 
     [Fact]
@@ -82,7 +101,7 @@ public sealed class ReleaseSigningWorkflowTests
         Assert.Contains("Get-AuthenticodeSignature -LiteralPath $File.FullName", verifier);
         Assert.Contains("Get-VCRuntimeFiles", verifier);
         Assert.Contains("vcruntime140.dll", verifier);
-        Assert.Contains("libsodium.dll", verifier);
+        Assert.DoesNotContain("libsodium.dll", verifier);
         Assert.Contains("OpenClawNativeDependencyProbe", verifier);
         Assert.Contains("Microsoft.ML.OnnxRuntime.dll", verifier);
         Assert.Contains("onnxruntime.dll", verifier);
@@ -96,11 +115,11 @@ public sealed class ReleaseSigningWorkflowTests
     }
 
     [Fact]
-    public void ReleaseWorkflow_PausesMsixForAlpha()
+    public void ReleaseWorkflow_PausesMsixDistribution()
     {
         var workflow = File.ReadAllText(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(), ".github", "workflows", "ci.yml"));
 
-        Assert.Contains("if: false # Paused for alpha.4; ship Inno setup and portable ZIP artifacts only.", workflow);
+        Assert.Contains("if: false # MSIX distribution is paused; ship Inno setup and portable ZIP artifacts only.", workflow);
         Assert.Contains("needs: [repo-hygiene, test, e2etests, build]", workflow);
         Assert.DoesNotContain("Download win-x64 MSIX artifact", workflow);
         Assert.DoesNotContain("Download win-arm64 MSIX artifact", workflow);

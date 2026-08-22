@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Windows.UI;
 using Windows.UI.Text;
 using WinGrid = Microsoft.UI.Xaml.Controls.Grid;
@@ -76,6 +77,110 @@ internal static class ThemeResources
 
         throw new InvalidOperationException($"Brush resource '{resourceKey}' was not found.");
     }
+
+    /// <summary>
+    /// Resolves a built-in WinUI theme brush (e.g. <c>TextFillColorSecondaryBrush</c>)
+    /// for a specific <paramref name="theme"/> rather than the application's fixed
+    /// theme. <c>Application.Current.Resources[key]</c> snapshots the app/system
+    /// theme, so a brush pulled that way stays light while an element renders dark.
+    /// This walks the merged <c>ThemeDictionaries</c> and returns the token defined
+    /// for the requested theme, so callers can re-resolve on <c>ActualThemeChanged</c>
+    /// and stay correct after a runtime light/dark switch. Falls back to the
+    /// application-level lookup when the token is not theme-scoped.
+    /// </summary>
+    public static Brush ResolveBrush(string resourceKey, ElementTheme theme)
+    {
+        if (FindThemedResource(resourceKey, theme) is Brush themed)
+            return themed;
+        return ResolveBrush(resourceKey);
+    }
+
+    /// <summary>
+    /// Resolves a built-in WinUI theme color token (e.g. <c>SolidBackgroundFillColorBase</c>)
+    /// for a specific <paramref name="theme"/>. See <see cref="ResolveBrush(string, ElementTheme)"/>
+    /// for why the per-theme lookup is needed. Useful when a gradient stop needs a
+    /// <see cref="Color"/> rather than a brush.
+    /// </summary>
+    public static Color ResolveColor(string resourceKey, ElementTheme theme)
+    {
+        if (FindThemedResource(resourceKey, theme) is Color themed)
+            return themed;
+        if (Application.Current is { Resources: { } resources }
+            && resources.TryGetValue(resourceKey, out var resource) && resource is Color color)
+            return color;
+        // WinUI color tokens are paired with a "<key>Brush" SolidColorBrush. Some
+        // hosts (including minimal test surfaces) register only the brush form, so
+        // fall back to the paired brush's color before giving up. In production
+        // both forms resolve to the same value, so this stays correct while
+        // keeping rendering resilient instead of throwing mid-render.
+        var brushKey = resourceKey + "Brush";
+        if (FindThemedResource(brushKey, theme) is SolidColorBrush themedBrush)
+            return themedBrush.Color;
+        if (Application.Current is { Resources: { } brushResources }
+            && brushResources.TryGetValue(brushKey, out var brushResource)
+            && brushResource is SolidColorBrush appBrush)
+            return appBrush.Color;
+        throw new InvalidOperationException($"Color resource '{resourceKey}' was not found.");
+    }
+
+    private static object? FindThemedResource(string resourceKey, ElementTheme theme)
+    {
+        if (Application.Current is not { Resources: { } root })
+            return null;
+
+        // WinUI stores the dark palette under the "Default" theme-dictionary key
+        // (with "Dark" also accepted); light lives under "Light".
+        string[] themeNames = theme switch
+        {
+            ElementTheme.Dark => new[] { "Dark", "Default" },
+            ElementTheme.Light => new[] { "Light" },
+            _ => Array.Empty<string>()
+        };
+
+        foreach (var name in themeNames)
+        {
+            if (SearchThemeDictionaries(root, resourceKey, name, 0) is { } found)
+                return found;
+        }
+        return null;
+    }
+
+    private static object? SearchThemeDictionaries(ResourceDictionary dict, string key, string themeName, int depth)
+    {
+        if (depth > 6) return null;
+        try
+        {
+            if (dict.ThemeDictionaries is { } themeDictionaries
+                && themeDictionaries.TryGetValue(themeName, out var entry)
+                && entry is ResourceDictionary themed
+                && LookupKey(themed, key) is { } value)
+                return value;
+
+            foreach (var merged in dict.MergedDictionaries)
+            {
+                if (SearchThemeDictionaries(merged, key, themeName, depth + 1) is { } found)
+                    return found;
+            }
+        }
+        catch
+        {
+            // Defensive: a malformed dictionary must never break rendering. Fall
+            // back to the application-level lookup handled by the caller.
+        }
+        return null;
+    }
+
+    private static object? LookupKey(ResourceDictionary dict, string key)
+    {
+        if (dict.TryGetValue(key, out var value))
+            return value;
+        foreach (var merged in dict.MergedDictionaries)
+        {
+            if (LookupKey(merged, key) is { } found)
+                return found;
+        }
+        return null;
+    }
 }
 
 public readonly record struct ThemeRef(string ResourceKey);
@@ -90,6 +195,59 @@ public static class Theme
     public static ThemeRef CardBackground => new("CardBackgroundFillColorDefaultBrush");
     public static ThemeRef DividerStroke => new("DividerStrokeColorDefaultBrush");
     public static ThemeRef Ref(string resourceKey) => new(resourceKey);
+
+    /// <summary>
+    /// Resolves a built-in WinUI theme brush for a specific element theme, so
+    /// callers can react to <c>ActualThemeChanged</c> instead of snapshotting the
+    /// application's fixed theme via <c>Application.Current.Resources[key]</c>.
+    /// </summary>
+    public static Brush ResolveBrush(string resourceKey, ElementTheme theme) =>
+        ThemeResources.ResolveBrush(resourceKey, theme);
+
+    /// <summary>
+    /// Resolves a built-in WinUI theme color token for a specific element theme
+    /// (e.g. for a gradient stop that needs a <see cref="Color"/>).
+    /// </summary>
+    public static Color ResolveColor(string resourceKey, ElementTheme theme) =>
+        ThemeResources.ResolveColor(resourceKey, theme);
+
+    /// <summary>
+    /// Registers a one-time <c>ActualThemeChanged</c> + <c>Loaded</c> subscription
+    /// on <paramref name="control"/> and stores <paramref name="applyNow"/> as the
+    /// latest callback. On each subsequent call for the same control, the stored
+    /// callback is replaced (so it captures the latest per-render state) without
+    /// adding additional event subscriptions. The callback is invoked immediately
+    /// and again whenever the element's theme changes.
+    /// </summary>
+    /// <remarks>
+    /// Use this for imperative theme-aware assignments that cannot be expressed as
+    /// a <see cref="ThemeRef"/>-backed modifier (e.g. custom gradients or shared
+    /// brush mutations). For simple resource-key backgrounds/borders, prefer the
+    /// built-in modifier path (<c>.Background(Ref(...))</c>) instead.
+    /// </remarks>
+    public static void EnsureThemeCallback(FrameworkElement control, Action applyNow)
+    {
+        applyNow();
+        if (ThemeCallbackTable.TryGetValue(control, out var box))
+        {
+            box.Value = applyNow;
+            return;
+        }
+        box = new StrongBox<Action>(applyNow);
+        ThemeCallbackTable.AddOrUpdate(control, box);
+        control.ActualThemeChanged += static (s, _) =>
+        {
+            if (s is FrameworkElement fe && ThemeCallbackTable.TryGetValue(fe, out var b))
+                b.Value?.Invoke();
+        };
+        control.Loaded += static (s, _) =>
+        {
+            if (s is FrameworkElement fe && ThemeCallbackTable.TryGetValue(fe, out var b))
+                b.Value?.Invoke();
+        };
+    }
+
+    internal static readonly ConditionalWeakTable<FrameworkElement, StrongBox<Action>> ThemeCallbackTable = new();
 }
 
 public sealed record ResourceOverrides(IReadOnlyDictionary<string, object> Values);
@@ -185,6 +343,12 @@ public readonly record struct GridSize(double Value, GridUnitType Type)
 }
 
 public sealed record TextBlockElement(string Text) : Element;
+// A RichTextBlock host. Unlike TextBlockElement it carries no text of its own —
+// its Blocks (Paragraphs / InlineUIContainers) are populated imperatively by a
+// caller-supplied setter (see the Set(Action<RichTextBlock>) overload), exactly
+// as TextBlockElement's Inlines are. Used by the chat renderer to give a whole
+// message one continuous text-selection scope across multiple paragraphs.
+public sealed record RichTextBlockElement : Element;
 public sealed record TextFieldElement(string Value, Action<string>? OnChanged, string? Placeholder, string? Header) : Element;
 public sealed record PasswordBoxElement(string Password, Action<string>? OnChanged, string? Placeholder) : Element;
 public sealed record ButtonElement(string Label, Action? OnClick, Element? ContentElement = null) : Element
@@ -199,6 +363,30 @@ public sealed record ProgressRingElement(double? Value) : Element;
 public sealed record SliderElement(double Value, double Minimum, double Maximum, Action<double>? OnChanged) : Element;
 public sealed record ColorPickerElement(Color Value, Action<Color>? OnChanged) : Element;
 public sealed record ComboBoxElement(string[] Items, int SelectedIndex, Action<int>? OnSelectionChanged) : Element;
+/// <summary>
+/// A single row for the rich <see cref="ItemComboBoxElement"/> primitive. Pure data (no WinUI
+/// types) so it can be constructed and diffed off the UI thread and unit-tested directly.
+/// Headers render as non-selectable group labels; normal rows carry a stable <paramref name="Id"/>.
+/// </summary>
+public sealed record ComboItem(string Id, string Label, bool Enabled = true, bool IsHeader = false, double Indent = 0);
+/// <summary>
+/// A reconciled ComboBox that supports grouped/headered, indented, individually-enabled rows and
+/// selection by stable id. Unlike hand-rolling a native <c>ComboBox</c> inside a setter, this
+/// element is preserved by render path and only rebuilds its rows when the item set actually
+/// changes, so an open dropdown survives unrelated re-renders (the #970 regression).
+/// </summary>
+public sealed record ItemComboBoxElement(IReadOnlyList<ComboItem> Items, string? SelectedId, Action<string>? OnSelectionChanged) : Element
+{
+    /// <summary>Pure, order-sensitive value comparison of two item lists. Testable off the UI thread.</summary>
+    public static bool ItemsEqual(IReadOnlyList<ComboItem> left, IReadOnlyList<ComboItem> right)
+    {
+        if (ReferenceEquals(left, right)) return true;
+        if (left is null || right is null || left.Count != right.Count) return false;
+        for (var i = 0; i < left.Count; i++)
+            if (left[i] != right[i]) return false;
+        return true;
+    }
+}
 public sealed record ImageElement(string Source) : Element;
 public sealed record BorderElement(Element? Child) : Element;
 public sealed record StackElement(Orientation Orientation, double Spacing, IReadOnlyList<Element?> Children) : Element;
@@ -220,6 +408,7 @@ public sealed record MenuFlyoutItemData(string Text, Action? OnClick = null, str
     public FontWeight? FontWeight { get; init; }
 }
 public sealed record RadioMenuFlyoutItemData(string Text, string GroupName, bool IsChecked = false, Action? OnClick = null, string? Icon = null) : MenuFlyoutItemBase;
+public sealed record ToggleMenuFlyoutItemData(string Text, bool IsChecked = false, Action? OnClick = null, string? Icon = null) : MenuFlyoutItemBase;
 public sealed record MenuFlyoutSeparatorData : MenuFlyoutItemBase;
 public sealed record MenuFlyoutContentElement(MenuFlyoutItemBase[] Items, FlyoutPlacementMode Placement) : FlyoutElement(Placement);
 internal interface INavigationHostElement
@@ -567,6 +756,7 @@ public static class Factories
 {
     public static BorderElement Empty() => new(null);
     public static TextBlockElement TextBlock(string text) => new(text);
+    public static RichTextBlockElement RichTextBlock() => new();
     public static TextBlockElement Caption(string text) => TextBlock(text).FontSize(12);
     public static TextFieldElement TextField(string value, Action<string>? onChanged = null, string? placeholder = null, string? header = null) =>
         new(value, onChanged, placeholder, header);
@@ -590,6 +780,8 @@ public static class Factories
         new(value, onChanged);
     public static ComboBoxElement ComboBox(string[] items, int selectedIndex = -1, Action<int>? onSelectionChanged = null) =>
         new(items, selectedIndex, onSelectionChanged);
+    public static ItemComboBoxElement ComboBox(IReadOnlyList<ComboItem> items, string? selectedId = null, Action<string>? onSelectionChanged = null) =>
+        new(items, selectedId, onSelectionChanged);
     public static ImageElement Image(string source) => new(source);
     public static BorderElement Border(Element? child = null) => new(child);
     public static FlexRowElement FlexRow(params Element?[] children) => new(children);
@@ -612,6 +804,8 @@ public static class Factories
         new(text, onClick, icon);
     public static RadioMenuFlyoutItemData RadioMenuItem(string text, string groupName, bool isChecked = false, Action? onClick = null, string? icon = null) =>
         new(text, groupName, isChecked, onClick, icon);
+    public static ToggleMenuFlyoutItemData ToggleMenuItem(string text, bool isChecked = false, Action? onClick = null, string? icon = null) =>
+        new(text, isChecked, onClick, icon);
     public static MenuFlyoutSeparatorData MenuSeparator() => new();
     public static ComponentElement Component<TComponent>() where TComponent : Component, new() =>
         new(typeof(TComponent), null);
@@ -741,6 +935,7 @@ public static class ElementExtensions
         element.FontWeight(Microsoft.UI.Text.FontWeights.SemiBold);
 
     public static TextBlockElement Set(this TextBlockElement element, Action<TextBlock> setter) => element.AddSetter(setter);
+    public static RichTextBlockElement Set(this RichTextBlockElement element, Action<RichTextBlock> setter) => element.AddSetter(setter);
     public static TextFieldElement Set(this TextFieldElement element, Action<TextBox> setter) => element.AddSetter(setter);
     public static PasswordBoxElement Set(this PasswordBoxElement element, Action<PasswordBox> setter) => element.AddSetter(setter);
     public static ButtonElement Set(this ButtonElement element, Action<Button> setter) => element.AddSetter(setter);
@@ -751,6 +946,7 @@ public static class ElementExtensions
     public static SliderElement Set(this SliderElement element, Action<Slider> setter) => element.AddSetter(setter);
     public static ColorPickerElement Set(this ColorPickerElement element, Action<ColorPicker> setter) => element.AddSetter(setter);
     public static ComboBoxElement Set(this ComboBoxElement element, Action<ComboBox> setter) => element.AddSetter(setter);
+    public static ItemComboBoxElement Set(this ItemComboBoxElement element, Action<ComboBox> setter) => element.AddSetter(setter);
     public static ImageElement Set(this ImageElement element, Action<Image> setter) => element.AddSetter(setter);
     public static BorderElement Set(this BorderElement element, Action<Border> setter) => element.AddSetter(setter);
     public static ProgressRingElement Set(this ProgressRingElement element, Action<ProgressRing> setter) => element.AddSetter(setter);
@@ -911,11 +1107,24 @@ internal sealed class UiRenderer(Action requestRender)
 {
     private readonly Dictionary<string, UIElement> _controls = new();
     private readonly Dictionary<string, Component> _components = new();
+    private readonly Dictionary<string, Flyout> _contentFlyouts = new();
+    private readonly Dictionary<string, MenuFlyout> _menuFlyouts = new();
     private readonly HashSet<string> _mountedPaths = new();
+    private readonly HashSet<string> _visitedControlPaths = new();
+    private readonly HashSet<string> _visitedComponentKeys = new();
+    private readonly HashSet<string> _visitedContentFlyoutPaths = new();
+    private readonly HashSet<string> _visitedMenuFlyoutPaths = new();
 
     public UIElement Render(Element element, string path, List<Action> effects)
     {
-        return RenderElement(element, path, effects);
+        _visitedControlPaths.Clear();
+        _visitedComponentKeys.Clear();
+        _visitedContentFlyoutPaths.Clear();
+        _visitedMenuFlyoutPaths.Clear();
+
+        var rendered = RenderElement(element, path, effects);
+        PruneUnvisitedPaths();
+        return rendered;
     }
 
     public void Dispose()
@@ -928,17 +1137,22 @@ internal sealed class UiRenderer(Action requestRender)
 
         _components.Clear();
         _controls.Clear();
+        _contentFlyouts.Clear();
+        _menuFlyouts.Clear();
         _mountedPaths.Clear();
     }
 
     private UIElement RenderElement(Element element, string path, List<Action> effects)
     {
-        if (!string.IsNullOrEmpty(element.Key))
-            path += "#" + element.Key;
+        return RenderElementCore(element, ResolveElementPath(path, element), effects);
+    }
 
+    private UIElement RenderElementCore(Element element, string path, List<Action> effects)
+    {
         var control = element switch
         {
             TextBlockElement e => ConfigureTextBlock(GetOrCreate<TextBlock>(path), e),
+            RichTextBlockElement e => ConfigureRichTextBlock(GetOrCreate<RichTextBlock>(path), e),
             TextFieldElement e => ConfigureTextBox(GetOrCreate<TextBox>(path), e),
             PasswordBoxElement e => ConfigurePasswordBox(GetOrCreate<PasswordBox>(path), e),
             ButtonElement e => ConfigureButton(GetOrCreate<Button>(path), e, path, effects),
@@ -950,6 +1164,7 @@ internal sealed class UiRenderer(Action requestRender)
             SliderElement e => ConfigureSlider(GetOrCreate<Slider>(path), e),
             ColorPickerElement e => ConfigureColorPicker(GetOrCreate<ColorPicker>(path), e),
             ComboBoxElement e => ConfigureComboBox(GetOrCreate<ComboBox>(path), e),
+            ItemComboBoxElement e => ConfigureItemComboBox(GetOrCreate<ComboBox>(path), e),
             ImageElement e => ConfigureImage(GetOrCreate<Image>(path), e),
             BorderElement e => ConfigureBorder(GetOrCreate<Border>(path), e, path, effects),
             StackElement e => ConfigureStack(GetOrCreate<Border>(path), e, path, effects),
@@ -965,6 +1180,9 @@ internal sealed class UiRenderer(Action requestRender)
         QueueMount(control, element, path, effects);
         return control;
     }
+
+    private static string ResolveElementPath(string path, Element element) =>
+        string.IsNullOrEmpty(element.Key) ? path : path + "#" + element.Key;
 
     /// <summary>
     /// Renders a navigation host into a STABLE Border wrapper at <paramref name="path"/>
@@ -991,6 +1209,8 @@ internal sealed class UiRenderer(Action requestRender)
 
     private T GetOrCreate<T>(string path) where T : UIElement, new()
     {
+        _visitedControlPaths.Add(path);
+
         if (_controls.TryGetValue(path, out var existing) && existing is T typed)
             return typed;
 
@@ -1018,6 +1238,8 @@ internal sealed class UiRenderer(Action requestRender)
     {
         var componentKey = GetComponentKey(element.ComponentType);
         var key = path + ":" + componentKey;
+        _visitedComponentKeys.Add(key);
+
         if (!_components.TryGetValue(key, out var component))
         {
             component = (Component)Activator.CreateInstance(element.ComponentType)!;
@@ -1048,6 +1270,17 @@ internal sealed class UiRenderer(Action requestRender)
             if (control.Text != element.Text)
                 control.Text = element.Text;
         }
+        ApplyModifiers(control, element);
+        ApplySetters(control, element);
+        return control;
+    }
+
+    // RichTextBlock has no Text of its own; its Blocks are built entirely by the
+    // caller's setter (mirroring how ConfigureTextBlock leaves Inlines to the
+    // setter). We never touch Blocks here so an active text selection survives a
+    // modifier-only re-render.
+    private RichTextBlock ConfigureRichTextBlock(RichTextBlock control, RichTextBlockElement element)
+    {
         ApplyModifiers(control, element);
         ApplySetters(control, element);
         return control;
@@ -1229,6 +1462,68 @@ internal sealed class UiRenderer(Action requestRender)
         return control;
     }
 
+    private ComboBox ConfigureItemComboBox(ComboBox control, ItemComboBoxElement element)
+    {
+        control.SelectionChanged -= ItemComboBoxSelectionChanged;
+        var previous = control.Tag as ItemComboBoxElement;
+        control.Tag = element;
+
+        // Rebuild the row containers only when the item set actually changes. Rebuilding on every
+        // render would dismiss an open dropdown, which is the #970 session-picker regression.
+        if (previous is null || !ItemComboBoxElement.ItemsEqual(previous.Items, element.Items))
+        {
+            control.Items.Clear();
+            foreach (var item in element.Items)
+                control.Items.Add(CreateComboBoxItem(item));
+        }
+
+        // Reconcile selection by stable id every render (a status re-render must not change it).
+        ComboBoxItem? target = null;
+        if (element.SelectedId is { } selectedId)
+        {
+            foreach (var candidate in control.Items)
+            {
+                if (candidate is ComboBoxItem { Tag: string id } container && id == selectedId)
+                {
+                    target = container;
+                    break;
+                }
+            }
+        }
+        if (!ReferenceEquals(control.SelectedItem, target))
+            control.SelectedItem = target;
+
+        // Reattach only after programmatic mutations so those don't fire the user callback.
+        control.SelectionChanged += ItemComboBoxSelectionChanged;
+        ApplyModifiers(control, element);
+        ApplySetters(control, element);
+        return control;
+    }
+
+    private static ComboBoxItem CreateComboBoxItem(ComboItem item)
+    {
+        if (item.IsHeader)
+        {
+            return new ComboBoxItem
+            {
+                Content = item.Label,
+                IsEnabled = false,
+                IsHitTestVisible = false,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                FontSize = 10,
+                Padding = new Thickness(4, 2, 4, 2),
+            };
+        }
+
+        return new ComboBoxItem
+        {
+            Content = item.Label,
+            Tag = item.Id,
+            IsEnabled = item.Enabled,
+            Padding = new Thickness(8 + item.Indent, 4, 4, 4),
+        };
+    }
+
     private Image ConfigureImage(Image control, ImageElement element)
     {
         var sourceUri = new Uri(element.Source);
@@ -1369,23 +1664,116 @@ internal sealed class UiRenderer(Action requestRender)
         return element switch
         {
             ContentFlyoutElement content => CreateContentFlyout(content, path, effects),
-            MenuFlyoutContentElement menu => CreateMenuFlyout(menu),
+            MenuFlyoutContentElement menu => CreateMenuFlyout(menu, path),
             _ => throw new NotSupportedException($"Unsupported functional UI flyout: {element.GetType().Name}")
         };
     }
 
     private Flyout CreateContentFlyout(ContentFlyoutElement element, string path, List<Action> effects)
     {
-        var flyout = new Flyout { Placement = element.Placement };
+        _visitedContentFlyoutPaths.Add(path);
+
+        // Cache the Flyout instance per path so its identity is STABLE across
+        // re-renders. ConfigureButton reassigns control.Flyout on every render,
+        // and a full-root re-render fires on every state change (including the
+        // flyout content's own search box). If we minted a `new Flyout()` each
+        // time, an already-open flyout would (a) become unreachable from
+        // control.Flyout (so callers' `Flyout.Hide()` would target an orphan and
+        // no-op) and (b) have its reused content control reparented out from
+        // under the visible popup. Reusing the same Flyout keeps it dismissable
+        // and stops the open popup from being torn apart mid-interaction.
+        if (!_contentFlyouts.TryGetValue(path, out var flyout))
+        {
+            flyout = new Flyout { FlyoutPresenterStyle = TightFlyoutPresenterStyle() };
+            _contentFlyouts[path] = flyout;
+        }
+
+        flyout.Placement = element.Placement;
         var content = RenderElement(element.Content, path + ".content", effects);
-        RemoveFromParent(content);
-        flyout.Content = content;
+        if (!ReferenceEquals(flyout.Content, content))
+        {
+            RemoveFromParent(content);
+            flyout.Content = content;
+        }
         return flyout;
     }
 
-    private static MenuFlyout CreateMenuFlyout(MenuFlyoutContentElement element)
+    // A FlyoutPresenter style that strips the default padding / min-width so a
+    // content flyout reads as tight as a MenuFlyout (whose MenuFlyoutPresenter
+    // uses ~0,4,0,4 padding and no wide min-width). The flyout content supplies
+    // its own inner sizing. Cached so the identical Style is shared across all
+    // content flyouts.
+    private static Style? _tightFlyoutPresenterStyle;
+
+    private static Style TightFlyoutPresenterStyle()
     {
-        var flyout = new MenuFlyout { Placement = element.Placement };
+        if (_tightFlyoutPresenterStyle is not null)
+            return _tightFlyoutPresenterStyle;
+
+        var style = new Style(typeof(FlyoutPresenter));
+        // Equal inset on all four sides so the floating rows have the same
+        // breathing room top/bottom as they do left/right (matches the modern
+        // WinUI menu-flyout look). The rows supply their own inner padding.
+        style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(4, 4, 4, 4)));
+        style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 0.0));
+        _tightFlyoutPresenterStyle = style;
+        return style;
+    }
+
+    private void PruneUnvisitedPaths()
+    {
+        foreach (var (key, component) in _components.ToArray())
+        {
+            if (_visitedComponentKeys.Contains(key))
+                continue;
+
+            component.Context.RunEffectCleanups();
+            _components.Remove(key);
+        }
+
+        foreach (var (path, flyout) in _contentFlyouts.ToArray())
+        {
+            if (_visitedContentFlyoutPaths.Contains(path))
+                continue;
+
+            flyout.Hide();
+            flyout.Content = null;
+            _contentFlyouts.Remove(path);
+        }
+
+        foreach (var (path, flyout) in _menuFlyouts.ToArray())
+        {
+            if (_visitedMenuFlyoutPaths.Contains(path))
+                continue;
+
+            flyout.Hide();
+            flyout.Items.Clear();
+            _menuFlyouts.Remove(path);
+        }
+
+        foreach (var (path, control) in _controls.ToArray())
+        {
+            if (_visitedControlPaths.Contains(path))
+                continue;
+
+            _mountedPaths.Remove(path);
+            DetachChildren(control);
+            RemoveFromParent(control);
+            _controls.Remove(path);
+        }
+    }
+
+    private MenuFlyout CreateMenuFlyout(MenuFlyoutContentElement element, string path)
+    {
+        _visitedMenuFlyoutPaths.Add(path);
+        if (!_menuFlyouts.TryGetValue(path, out var flyout))
+        {
+            flyout = new MenuFlyout();
+            _menuFlyouts[path] = flyout;
+        }
+
+        flyout.Placement = element.Placement;
+        flyout.Items.Clear();
         foreach (var item in element.Items)
             flyout.Items.Add(CreateMenuFlyoutItem(item));
         return flyout;
@@ -1418,6 +1806,15 @@ internal sealed class UiRenderer(Action requestRender)
                 };
                 radioItem.Click += RadioMenuFlyoutItemClick;
                 return radioItem;
+            case ToggleMenuFlyoutItemData data:
+                var toggleItem = new ToggleMenuFlyoutItem
+                {
+                    Text = data.Text,
+                    IsChecked = data.IsChecked,
+                    Tag = data
+                };
+                toggleItem.Click += ToggleMenuFlyoutItemClick;
+                return toggleItem;
             case MenuFlyoutSeparatorData:
                 return new MenuFlyoutSeparator();
             default:
@@ -1600,20 +1997,37 @@ internal sealed class UiRenderer(Action requestRender)
         var m = element.Modifiers;
         control.Tag = element;
         if (m.Margin is { } margin) control.Margin = margin;
+        else control.ClearValue(FrameworkElement.MarginProperty);
         if (m.Width is { } width) control.Width = width;
+        else control.ClearValue(FrameworkElement.WidthProperty);
         if (m.Height is { } height) control.Height = height;
+        else control.ClearValue(FrameworkElement.HeightProperty);
         if (m.MinWidth is { } minWidth) control.MinWidth = minWidth;
+        else control.ClearValue(FrameworkElement.MinWidthProperty);
         if (m.MaxWidth is { } maxWidth) control.MaxWidth = maxWidth;
+        else control.ClearValue(FrameworkElement.MaxWidthProperty);
         if (m.MinHeight is { } minHeight) control.MinHeight = minHeight;
+        else control.ClearValue(FrameworkElement.MinHeightProperty);
         if (m.MaxHeight is { } maxHeight) control.MaxHeight = maxHeight;
+        else control.ClearValue(FrameworkElement.MaxHeightProperty);
         if (m.HorizontalAlignment is { } hAlign) control.HorizontalAlignment = hAlign;
+        else control.ClearValue(FrameworkElement.HorizontalAlignmentProperty);
         if (m.VerticalAlignment is { } vAlign) control.VerticalAlignment = vAlign;
+        else control.ClearValue(FrameworkElement.VerticalAlignmentProperty);
         if (m.Opacity is { } opacity) control.Opacity = opacity;
+        else control.ClearValue(UIElement.OpacityProperty);
         if (m.AutomationName is { } automationName) AutomationProperties.SetName(control, automationName);
+        else control.ClearValue(AutomationProperties.NameProperty);
         if (m.LiveRegion is { } liveRegion) AutomationProperties.SetLiveSetting(control, liveRegion);
+        else control.ClearValue(AutomationProperties.LiveSettingProperty);
         ApplyResourceOverrides(control, m.ResourceOverrides);
-        if (m.Disabled is { } disabled && control is Control disabledControl)
-            disabledControl.IsEnabled = !disabled;
+        if (control is Control disabledControl)
+        {
+            if (m.Disabled is { } disabled)
+                disabledControl.IsEnabled = !disabled;
+            else
+                disabledControl.ClearValue(Control.IsEnabledProperty);
+        }
 
         control.KeyDown -= ElementKeyDown;
         if (m.KeyDown is not null) control.KeyDown += ElementKeyDown;
@@ -1626,42 +2040,100 @@ internal sealed class UiRenderer(Action requestRender)
         {
             case TextBlock tb:
                 if (m.FontSize is { } textSize) tb.FontSize = textSize;
+                else tb.ClearValue(TextBlock.FontSizeProperty);
                 if (m.FontWeight is { } textWeight) tb.FontWeight = textWeight;
+                else tb.ClearValue(TextBlock.FontWeightProperty);
                 if (m.FontFamily is { } textFamily) tb.FontFamily = textFamily;
+                else tb.ClearValue(TextBlock.FontFamilyProperty);
                 if (m.TextWrapping is { } wrapping) tb.TextWrapping = wrapping;
+                else tb.ClearValue(TextBlock.TextWrappingProperty);
                 if (m.Padding is { } textPadding) tb.Padding = textPadding;
-                if (m.ForegroundResourceKey is { } textFgResource) tb.Foreground = ThemeResources.ResolveBrush(textFgResource);
+                else tb.ClearValue(TextBlock.PaddingProperty);
+                if (m.ForegroundResourceKey is { } textFgResource) tb.Foreground = ThemeResources.ResolveBrush(textFgResource, control.ActualTheme);
                 else if (m.Foreground is { } textFg) tb.Foreground = textFg;
+                else tb.ClearValue(TextBlock.ForegroundProperty);
+                tb.ClearValue(TextBlock.TextTrimmingProperty);
+                tb.ClearValue(TextBlock.MaxLinesProperty);
+                tb.ClearValue(TextBlock.LineHeightProperty);
+                tb.ClearValue(TextBlock.CharacterSpacingProperty);
+                break;
+            case RichTextBlock rtb:
+                if (m.FontSize is { } richSize) rtb.FontSize = richSize;
+                else rtb.ClearValue(RichTextBlock.FontSizeProperty);
+                if (m.FontWeight is { } richWeight) rtb.FontWeight = richWeight;
+                else rtb.ClearValue(RichTextBlock.FontWeightProperty);
+                if (m.FontFamily is { } richFamily) rtb.FontFamily = richFamily;
+                else rtb.ClearValue(RichTextBlock.FontFamilyProperty);
+                if (m.TextWrapping is { } richWrapping) rtb.TextWrapping = richWrapping;
+                else rtb.ClearValue(RichTextBlock.TextWrappingProperty);
+                if (m.Padding is { } richPadding) rtb.Padding = richPadding;
+                else rtb.ClearValue(RichTextBlock.PaddingProperty);
+                if (m.ForegroundResourceKey is { } richFgResource) rtb.Foreground = ThemeResources.ResolveBrush(richFgResource, control.ActualTheme);
+                else if (m.Foreground is { } richFg) rtb.Foreground = richFg;
+                else rtb.ClearValue(RichTextBlock.ForegroundProperty);
+                rtb.ClearValue(RichTextBlock.TextTrimmingProperty);
+                rtb.ClearValue(RichTextBlock.MaxLinesProperty);
+                rtb.ClearValue(RichTextBlock.LineHeightProperty);
+                rtb.ClearValue(RichTextBlock.CharacterSpacingProperty);
                 break;
             case Control c:
                 if (m.Padding is { } controlPadding) c.Padding = controlPadding;
+                else c.ClearValue(Control.PaddingProperty);
                 if (m.FontSize is { } controlSize) c.FontSize = controlSize;
+                else c.ClearValue(Control.FontSizeProperty);
                 if (m.FontWeight is { } controlWeight) c.FontWeight = controlWeight;
+                else c.ClearValue(Control.FontWeightProperty);
                 if (m.FontFamily is { } controlFamily) c.FontFamily = controlFamily;
-                if (m.ForegroundResourceKey is { } controlFgResource) c.Foreground = ThemeResources.ResolveBrush(controlFgResource);
+                else c.ClearValue(Control.FontFamilyProperty);
+                if (m.ForegroundResourceKey is { } controlFgResource) c.Foreground = ThemeResources.ResolveBrush(controlFgResource, control.ActualTheme);
                 else if (m.Foreground is { } controlFg) c.Foreground = controlFg;
-                if (m.BorderBrushResourceKey is { } controlBorderResource) c.BorderBrush = ThemeResources.ResolveBrush(controlBorderResource);
+                else c.ClearValue(Control.ForegroundProperty);
+                if (m.BackgroundResourceKey is { } controlBgResource) c.Background = ThemeResources.ResolveBrush(controlBgResource, control.ActualTheme);
+                else if (m.Background is { } controlBg) c.Background = controlBg;
+                // else: leave Control.Background as-is (default chrome or .Set() override)
+                if (m.BorderBrushResourceKey is { } controlBorderResource) c.BorderBrush = ThemeResources.ResolveBrush(controlBorderResource, control.ActualTheme);
                 else if (m.BorderBrush is { } controlBorder) c.BorderBrush = controlBorder;
+                else c.ClearValue(Control.BorderBrushProperty);
                 if (m.BorderThickness is { } controlThickness) c.BorderThickness = controlThickness;
+                else c.ClearValue(Control.BorderThicknessProperty);
                 break;
             case Border b:
                 if (m.Padding is { } borderPadding) b.Padding = borderPadding;
+                else b.ClearValue(Border.PaddingProperty);
                 if (m.BackgroundResourceKey is { } backgroundResourceKey)
-                    b.Background = ThemeResources.ResolveBrush(backgroundResourceKey);
+                    b.Background = ThemeResources.ResolveBrush(backgroundResourceKey, control.ActualTheme);
                 else if (m.Background is { } bg)
                     b.Background = bg;
+                else b.ClearValue(Border.BackgroundProperty);
                 if (m.BorderBrushResourceKey is { } borderResourceKey)
-                    b.BorderBrush = ThemeResources.ResolveBrush(borderResourceKey);
+                    b.BorderBrush = ThemeResources.ResolveBrush(borderResourceKey, control.ActualTheme);
                 else if (m.BorderBrush is { } borderBrush)
                     b.BorderBrush = borderBrush;
+                else b.ClearValue(Border.BorderBrushProperty);
                 if (m.BorderThickness is { } borderThickness)
                     b.BorderThickness = borderThickness;
+                else b.ClearValue(Border.BorderThicknessProperty);
                 if (m.CornerRadius is { } radius) b.CornerRadius = radius;
+                else b.ClearValue(Border.CornerRadiusProperty);
                 break;
         }
+
+        // Keep every theme-resource-backed brush correct after a runtime
+        // light/dark switch. Application.Resources snapshots the startup theme, so
+        // the resolves above use control.ActualTheme and this subscribes once so
+        // they re-resolve when the element's ActualTheme changes.
+        TrackThemedBrushes(control, element);
     }
 
-    private static void ApplyResourceOverrides(FrameworkElement control, ResourceOverrides? overrides)
+    // Elements whose brushes are driven by theme resources (foreground/background/
+    // border resource keys or ThemeRef resource overrides). Weakly held so a
+    // control that is discarded drops its tracking without a leak.
+    private static readonly ConditionalWeakTable<FrameworkElement, Element> _themedElements = new();
+
+    private static void ApplyResourceOverrides(FrameworkElement control, ResourceOverrides? overrides) =>
+        ApplyThemedOverrides(control, overrides, control.ActualTheme);
+
+    private static void ApplyThemedOverrides(FrameworkElement control, ResourceOverrides? overrides, ElementTheme theme)
     {
         if (overrides is null)
             return;
@@ -1669,9 +2141,86 @@ internal sealed class UiRenderer(Action requestRender)
         foreach (var (key, value) in overrides.Values)
         {
             control.Resources[key] = value is ThemeRef themeRef
-                ? ThemeResources.ResolveBrush(themeRef.ResourceKey)
+                ? ThemeResources.ResolveBrush(themeRef.ResourceKey, theme)
                 : value;
         }
+    }
+
+    private static bool HasThemeRefOverride(ResourceOverrides? overrides)
+    {
+        if (overrides is null)
+            return false;
+        foreach (var value in overrides.Values.Values)
+        {
+            if (value is ThemeRef)
+                return true;
+        }
+        return false;
+    }
+
+    private static void TrackThemedBrushes(FrameworkElement control, Element element)
+    {
+        var m = element.Modifiers;
+        var needsTracking =
+            m.ForegroundResourceKey is not null ||
+            m.BackgroundResourceKey is not null ||
+            m.BorderBrushResourceKey is not null ||
+            HasThemeRefOverride(m.ResourceOverrides);
+
+        if (!needsTracking)
+        {
+            if (_themedElements.TryGetValue(control, out _))
+            {
+                _themedElements.Remove(control);
+                control.ActualThemeChanged -= ReapplyThemedBrushes;
+                control.Loaded -= ReapplyThemedBrushesOnLoad;
+            }
+            return;
+        }
+
+        // Store the latest element so re-application uses current modifiers, and
+        // subscribe exactly once per control instance (reused across renders).
+        var firstTime = !_themedElements.TryGetValue(control, out _);
+        _themedElements.AddOrUpdate(control, element);
+        if (firstTime)
+        {
+            control.ActualThemeChanged += ReapplyThemedBrushes;
+            control.Loaded += ReapplyThemedBrushesOnLoad;
+        }
+    }
+
+    private static void ReapplyThemedBrushesOnLoad(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe)
+            ReapplyThemedBrushes(fe, null!);
+    }
+
+    private static void ReapplyThemedBrushes(FrameworkElement sender, object args)
+    {
+        if (!_themedElements.TryGetValue(sender, out var element))
+            return;
+
+        var m = element.Modifiers;
+        var theme = sender.ActualTheme;
+        switch (sender)
+        {
+            case TextBlock tb when m.ForegroundResourceKey is { } key:
+                tb.Foreground = ThemeResources.ResolveBrush(key, theme);
+                break;
+            case RichTextBlock rtb when m.ForegroundResourceKey is { } key:
+                rtb.Foreground = ThemeResources.ResolveBrush(key, theme);
+                break;
+            case Control c:
+                if (m.ForegroundResourceKey is { } cf) c.Foreground = ThemeResources.ResolveBrush(cf, theme);
+                if (m.BackgroundResourceKey is { } cbg) c.Background = ThemeResources.ResolveBrush(cbg, theme);
+                if (m.BorderBrushResourceKey is { } cb) c.BorderBrush = ThemeResources.ResolveBrush(cb, theme);
+                break;
+            case Border b:
+                if (m.BackgroundResourceKey is { } bg) b.Background = ThemeResources.ResolveBrush(bg, theme);
+                if (m.BorderBrushResourceKey is { } bb) b.BorderBrush = ThemeResources.ResolveBrush(bb, theme);
+                break;
+        }
+        ApplyThemedOverrides(sender, m.ResourceOverrides, theme);
     }
 
     private static void ApplySetters(FrameworkElement control, Element element)
@@ -1767,6 +2316,12 @@ internal sealed class UiRenderer(Action requestRender)
             element.OnSelectionChanged?.Invoke(combo.SelectedIndex);
     }
 
+    private static void ItemComboBoxSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox { Tag: ItemComboBoxElement element, SelectedItem: ComboBoxItem { Tag: string id } })
+            element.OnSelectionChanged?.Invoke(id);
+    }
+
     private static void MenuFlyoutItemClick(object sender, RoutedEventArgs e)
     {
         if (sender is MenuFlyoutItem { Tag: MenuFlyoutItemData data })
@@ -1777,6 +2332,19 @@ internal sealed class UiRenderer(Action requestRender)
     {
         if (sender is RadioMenuFlyoutItem { Tag: RadioMenuFlyoutItemData data })
             data.OnClick?.Invoke();
+    }
+
+    private static void ToggleMenuFlyoutItemClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleMenuFlyoutItem { Tag: ToggleMenuFlyoutItemData data } item)
+        {
+            // The menu is rebuilt from props on every re-render, so the rendered
+            // IsChecked is the single source of truth. Undo WinUI's automatic
+            // click-toggle here so a stale check can't linger if the click does
+            // not produce a re-render (e.g. re-selecting the current item).
+            item.IsChecked = data.IsChecked;
+            data.OnClick?.Invoke();
+        }
     }
 }
 }

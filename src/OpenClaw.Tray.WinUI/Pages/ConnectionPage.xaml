@@ -19,6 +19,42 @@
             <Setter Property="Padding" Value="0"/>
             <Setter Property="MinHeight" Value="0"/>
         </Style>
+        <Style x:Key="ConnectionCapabilityPillActiveBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource ConnectionCapabilityPillSuccessBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillPendingBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource ConnectionCapabilityPillCautionBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillCriticalBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource ConnectionCapabilityPillCriticalBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillOffBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource SubtleFillColorTertiaryBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillActiveIconStyle" TargetType="FontIcon">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorSuccessBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillPendingIconStyle" TargetType="FontIcon">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillCriticalIconStyle" TargetType="FontIcon">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillOffIconStyle" TargetType="FontIcon">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorTertiaryBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillActiveTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorSuccessBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillPendingTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCautionBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillCriticalTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}"/>
+        </Style>
+        <Style x:Key="ConnectionCapabilityPillOffTextStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+        </Style>
     </Page.Resources>
 
     <!--
@@ -58,12 +94,6 @@
             <!-- ═════════════════════════════════════════════════════════
                  PINNED MODIFIERS — render across every mode
                  ═════════════════════════════════════════════════════════ -->
-
-            <!-- Auth error (legacy, kept) -->
-            <InfoBar x:Name="AuthErrorBar"
-                     x:Uid="AuthErrorBar"
-                     Title="Connection Error"
-                     Severity="Error" IsOpen="False" IsClosable="True"/>
 
             <!-- Pending approvals (others waiting on the user's decision) -->
             <Border x:Name="PendingApprovalsBanner"
@@ -139,6 +169,7 @@
                         <!-- Headline + sub + glance chips -->
                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                             <TextBlock x:Uid="ConnectionPage_NotConnected" x:Name="StripHeadline" Text="Not connected"
+                                       AutomationProperties.AutomationId="ConnectionPageMarker"
                                        Style="{StaticResource SubtitleTextBlockStyle}"
                                        AutomationProperties.HeadingLevel="Level1"
                                        AutomationProperties.LiveSetting="Polite"
@@ -416,30 +447,52 @@
                                       Glyph="{x:Bind helpers:FluentIconCatalog.StatusOk, Mode=OneTime}"
                                       FontSize="14"
                                       Foreground="{ThemeResource SystemFillColorNeutralBrush}"
-                                      VerticalAlignment="Center" HorizontalAlignment="Center"
+                                      VerticalAlignment="Top" HorizontalAlignment="Center"
+                                      Margin="0,2,0,0"
                                       AutomationProperties.AccessibilityView="Raw"/>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <StackPanel Grid.Column="1" Spacing="2">
                                 <TextBlock x:Uid="ConnectionPage_NodeModeDisabled" x:Name="NodeStatusText"
                                            Text="Node mode disabled"
                                            Style="{StaticResource BodyTextBlockStyle}"/>
-                                <!-- Canonical capability list per design naming.md:
-                                     "Providing N capabilities: browser, camera, …"
-                                     Replaces the prior chip strip. -->
+                                <!-- MCP-only reachability line. Active node uses pills below. -->
                                 <TextBlock x:Name="NodeCapabilityText"
                                            Style="{StaticResource CaptionTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextWrapping="Wrap"
                                            Visibility="Collapsed"/>
-                                <TextBlock x:Name="NodeCommandText"
-                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextWrapping="Wrap"
-                                           Visibility="Collapsed"/>
-                                <TextBlock x:Name="NodePermissionText"
-                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextWrapping="Wrap"
-                                           Visibility="Collapsed"/>
+                                <Border x:Name="NodeCapabilityPillsHost"
+                                        Margin="0,2,0,0"
+                                        Visibility="Collapsed"/>
+                                <Expander x:Name="NodeTechnicalDetailsExpander"
+                                          Margin="0,6,0,0"
+                                          HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch"
+                                          IsExpanded="False"
+                                          Visibility="Collapsed">
+                                    <Expander.Header>
+                                        <TextBlock x:Uid="ConnectionPage_NodeTechnicalDetails" Text="Show technical details"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   VerticalAlignment="Center"/>
+                                    </Expander.Header>
+                                    <StackPanel Spacing="6" Padding="0,4,0,0">
+                                        <TextBlock x:Name="NodeTechCapabilityText"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   IsTextSelectionEnabled="True"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="NodeTechCommandText"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   IsTextSelectionEnabled="True"
+                                                   TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="NodeTechPermissionText"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   IsTextSelectionEnabled="True"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Expander>
                                 <StackPanel x:Name="NodePendingDeclarationsPanel"
                                             Spacing="2"
                                             Visibility="Collapsed">
@@ -525,15 +578,6 @@
                                 Margin="0,4,0,0"
                                 AutomationProperties.AutomationId="NodeReconnect"/>
 
-                        <!-- Capability chips removed in favor of NodeCapabilityText
-                             above. Element kept for back-compat with code-behind
-                             that may still reference it (currently inert). -->
-                        <ItemsRepeater x:Name="NodeCapabilityChipsHost" Visibility="Collapsed">
-                            <ItemsRepeater.Layout>
-                                <StackLayout Orientation="Horizontal" Spacing="6"/>
-                            </ItemsRepeater.Layout>
-                        </ItemsRepeater>
-
                         <!-- Deep link to per-capability config -->
                         <StackPanel x:Name="NodeDeepLinks" Orientation="Horizontal" Spacing="12">
                             <HyperlinkButton x:Uid="ConnectionPage_ManagePermissions" x:Name="NodePermissionsLink"
@@ -602,6 +646,11 @@
                                             Click="OnApplyRepairCode"
                                             AutomationProperties.AutomationId="RecoveryApplyRepair"/>
                                 </Grid>
+                                <TextBlock x:Name="RecoveryRepairResultText"
+                                           Visibility="Collapsed"
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           TextWrapping="Wrap"
+                                           AutomationProperties.AutomationId="RecoveryRepairResult"/>
                             </StackPanel>
                         </Border>
 
@@ -634,7 +683,8 @@
 
                         <!-- Escape hatch: just disconnect; the always-visible
                              gateways list below offers switching by one click. -->
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                        <StackPanel x:Name="RecoveryConnectionActions"
+                                    Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
                             <Button x:Uid="ConnectionPage_Connect3" Content="Connect" Click="OnReconnectFromRecovery"
                                     Style="{StaticResource AccentButtonStyle}"
                                     AutomationProperties.AutomationId="RecoveryConnect"/>
@@ -783,7 +833,7 @@
                              IsOpen="True"
                              IsClosable="False"
                              Visibility="Collapsed"
-                             Title="Get started — install a local gateway"
+                             Title="Get started: install a local gateway"
                              Message="The fastest way to start: sets up a WSL-hosted gateway on this PC and makes it the active connection.">
                         <InfoBar.ActionButton>
                             <Button x:Uid="ConnectionPage_Install" Content="Install"
@@ -946,11 +996,82 @@
                                  Header="Shared token"
                                  PlaceholderText="Paste shared gateway token"
                                  AutomationProperties.AutomationId="AddDirectToken"/>
+                        <TextBlock x:Uid="ConnectionPage_TokenOrPasswordHint" x:Name="DirectAuthHintText"
+                                   Text="Paste a shared gateway token, or leave it blank to pair with a setup code."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
                         <TextBox x:Uid="ConnectionPage_NameOptional" x:Name="DirectNameBox"
                                  Header="Name (optional)"
                                  PlaceholderText="My gateway"
                                  AutomationProperties.AutomationId="AddDirectName"/>
                     </StackPanel>
+
+                    <!-- Remote gateway setup help — a lightweight info link that
+                         opens a TeachingTip. Deliberately NOT an Expander so it
+                         reads as guidance and is visually distinct from the
+                         functional "Use SSH tunnel" input section below. -->
+                    <HyperlinkButton x:Name="AddRemoteHelpLink"
+                                     Padding="0" FontSize="13"
+                                     Click="OnRemoteHelpClick"
+                                     AutomationProperties.AutomationId="AddRemoteHelpLink">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="{x:Bind helpers:FluentIconCatalog.About, Mode=OneTime}"
+                                      FontSize="14" VerticalAlignment="Center"
+                                      AutomationProperties.AccessibilityView="Raw"/>
+                            <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpLink"
+                                       Text="How do I connect to a remote gateway?"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </HyperlinkButton>
+
+                    <TeachingTip x:Name="AddRemoteHelpTip"
+                                 Target="{x:Bind AddRemoteHelpLink}"
+                                 x:Uid="ConnectionPage_RemoteSetupHelpTip"
+                                 Title="Connecting to a remote gateway"
+                                 PreferredPlacement="Bottom"
+                                 IsLightDismissEnabled="True">
+                        <TeachingTip.Content>
+                            <StackPanel Spacing="12" Margin="0,8,0,0">
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpDirectTitle"
+                                               Text="Direct (TLS)" FontWeight="SemiBold"/>
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpDirect"
+                                               Text="Connect to wss:// or https:// when the gateway has a trusted certificate. Your token is encrypted in transit after certificate validation."
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpTunnelTitle"
+                                               Text="SSH tunnel" FontWeight="SemiBold"/>
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpTunnel"
+                                               Text="When the gateway only listens on localhost, expand &quot;Use SSH tunnel&quot; below. The tray forwards a local port over SSH so traffic stays encrypted."
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpProxyTitle"
+                                               Text="Trusted proxy / Tailscale" FontWeight="SemiBold"/>
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpProxy"
+                                               Text="If a Tailscale or reverse proxy already encrypts the path, a plain ws:// URL over that private network is fine."
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpAuthTitle"
+                                               Text="Auth" FontWeight="SemiBold"/>
+                                    <TextBlock x:Uid="ConnectionPage_RemoteSetupHelpAuth"
+                                               Text="Paste a shared token, or leave it blank and pair with a setup code. Re-pairing also upgrades this device's scopes."
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </TeachingTip.Content>
+                    </TeachingTip>
 
                     <!-- Setup code pane -->
                     <StackPanel x:Name="AddSetupCodePane" Spacing="8" Visibility="Collapsed">
@@ -1006,17 +1127,27 @@
                                 Click="OnInstallLocalWslGateway"
                                 AutomationProperties.AutomationId="AddInstallLocalGateway"/>
                         <TextBlock x:Uid="ConnectionPage_LocalWSLSetupIsn" x:Name="AddLocalWslUnavailableText"
-                                   Text="Local-WSL setup isn't available on this machine — the install wizard couldn't be initialized."
+                                   Text="Local-WSL setup isn't available on this machine: the install wizard couldn't be initialized."
                                    Style="{StaticResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                    TextWrapping="Wrap"
                                    Visibility="Collapsed"/>
                     </StackPanel>
 
+                    <!-- Transport-security advice — populated in code-behind
+                         from RemoteGatewayClassifier for the active method's
+                         URL (Direct field or decoded setup code). -->
+                    <InfoBar x:Name="AddSecurityAdviceBar"
+                             IsOpen="False" IsClosable="False"
+                             Severity="Informational"
+                             AutomationProperties.AutomationId="AddSecurityAdvice"/>
+
                     <!-- Per-gateway SSH tunnel — saved with the gateway record -->
                     <Expander x:Name="AddSshExpander"
                               HorizontalAlignment="Stretch"
                               HorizontalContentAlignment="Stretch"
+                              Expanding="OnAddSshExpanding"
+                              Collapsed="OnAddSshCollapsed"
                               IsExpanded="False">
                         <Expander.Header>
                             <TextBlock x:Uid="ConnectionPage_UseSSHTunnelOptional" Text="Use SSH tunnel (optional)"
@@ -1032,10 +1163,12 @@
                                 <TextBox x:Uid="ConnectionPage_SSHUser" Grid.Column="0"
                                          x:Name="AddSshUserBox"
                                          Header="SSH user"
+                                         TextChanged="OnAddSshFieldChanged"
                                          PlaceholderText="user"/>
                                 <TextBox x:Uid="ConnectionPage_SSHHost" Grid.Column="1"
                                          x:Name="AddSshHostBox"
                                          Header="SSH host"
+                                         TextChanged="OnAddSshFieldChanged"
                                          PlaceholderText="machine-name"/>
                             </Grid>
                             <Grid ColumnSpacing="8">

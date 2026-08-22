@@ -39,6 +39,72 @@ public class ChannelStartResultTests
     }
 }
 
+/// <summary>
+/// Tests for <see cref="WebLoginStartResult.LooksLikeMissingWebLoginProvider"/>,
+/// which turns the gateway's "no web-login provider loaded" signal (issue #957)
+/// into the actionable-recovery branch in the Channels linking flow.
+/// </summary>
+public class WebLoginStartResultTests
+{
+    [Theory]
+    [InlineData("web login provider is not available")]        // exact string from issue #957
+    [InlineData("Web Login Provider is not available")]         // case-insensitive
+    [InlineData("WEB LOGIN PROVIDER IS NOT AVAILABLE")]
+    [InlineData("web-login provider not loaded")]               // hyphenated variant
+    public void LooksLikeMissingWebLoginProvider_IsTrueForProviderSignals(string error)
+    {
+        var result = new WebLoginStartResult { Error = error };
+        Assert.True(result.LooksLikeMissingWebLoginProvider);
+        // Provider-missing must NOT be misclassified as an unsupported method.
+        Assert.False(result.LooksLikeWebLoginUnsupported);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("channel is not configured")]
+    [InlineData("timeout waiting for web.login.start response")]
+    [InlineData("gateway connection is not open")]
+    [InlineData("rate limited")]
+    [InlineData("unknown method: web.login.start")]             // unsupported method, not a missing provider
+    public void LooksLikeMissingWebLoginProvider_IsFalseForOtherErrors(string? error)
+    {
+        var result = new WebLoginStartResult { Error = error };
+        Assert.False(result.LooksLikeMissingWebLoginProvider);
+    }
+
+    [Theory]
+    [InlineData("unknown method: web.login.start")]            // older gateway with no web.login RPC
+    [InlineData("Unknown Method: web.login.start")]            // case-insensitive
+    public void LooksLikeWebLoginUnsupported_IsTrueForUnknownMethod(string error)
+    {
+        var result = new WebLoginStartResult { Error = error };
+        Assert.True(result.LooksLikeWebLoginUnsupported);
+        // Unsupported-method must NOT be misclassified as a missing provider
+        // (installing a plugin wouldn't add the RPC).
+        Assert.False(result.LooksLikeMissingWebLoginProvider);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("web login provider is not available")]
+    [InlineData("unknown method: usage.status")]              // different unknown method
+    public void LooksLikeWebLoginUnsupported_IsFalseForOtherErrors(string? error)
+    {
+        var result = new WebLoginStartResult { Error = error };
+        Assert.False(result.LooksLikeWebLoginUnsupported);
+    }
+
+    [Fact]
+    public void DetectionFlags_AreFalseOnSuccess()
+    {
+        var result = new WebLoginStartResult { QrDataUrl = "data:image/png;base64,AAAA" };
+        Assert.False(result.LooksLikeMissingWebLoginProvider);
+        Assert.False(result.LooksLikeWebLoginUnsupported);
+    }
+}
+
 public class ConfigPatchResultTests
 {
     [Theory]

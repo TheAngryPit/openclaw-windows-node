@@ -1,4 +1,6 @@
 using OpenClaw.Shared;
+using OpenClaw.Connection;
+using OpenClawTray;
 using OpenClawTray.Helpers;
 using OpenClawTray.Services;
 using System;
@@ -48,7 +50,7 @@ public sealed class TrayTooltipBuilderTests : IDisposable
 
         var result = new TrayTooltipBuilder(snapshot).Build();
 
-        Assert.Contains("OpenClaw Tray - Connected", result);
+        Assert.Contains($"{AppIdentity.TrayName} - Connected", result);
         Assert.Contains("Channels 1/2", result);
         Assert.Contains("Nodes 1/1", result);
         Assert.Contains("Warnings 0", result);
@@ -95,6 +97,107 @@ public sealed class TrayTooltipBuilderTests : IDisposable
         var result = new TrayTooltipBuilder(snapshot).Build();
 
         Assert.Contains("Warnings 1", result);
+    }
+
+    [Fact]
+    public void Build_DegradedOverall_DoesNotReadConnected()
+    {
+        var snapshot = BaseConnected() with
+        {
+            OverallState = OverallConnectionState.Degraded
+        };
+
+        var result = new TrayTooltipBuilder(snapshot).Build();
+
+        Assert.Contains($"{AppIdentity.TrayName} - Degraded", result);
+        Assert.Contains("Warnings 1", result);
+    }
+
+    [Fact]
+    public void Build_LocalMcpOnly_IsExplicit()
+    {
+        var settings = new SettingsManager(_tempDir)
+        {
+            EnableMcpServer = true,
+            EnableNodeMode = false
+        };
+        var snapshot = new TrayStateSnapshot
+        {
+            Status = ConnectionStatus.Disconnected,
+            Settings = settings,
+            IsMcpRunning = true,
+            LastCheckTime = FixedTime
+        };
+
+        var result = new TrayTooltipBuilder(snapshot).Build();
+
+        Assert.Contains($"{AppIdentity.TrayName} - Local MCP only", result);
+        Assert.Contains("Warnings 1", result);
+    }
+
+    [Fact]
+    public void Build_LocalMcpOnly_DoesNotMaskDegradedGatewayLifecycle()
+    {
+        var settings = new SettingsManager(_tempDir)
+        {
+            EnableMcpServer = true,
+            EnableNodeMode = false
+        };
+        var snapshot = new TrayStateSnapshot
+        {
+            Status = ConnectionStatus.Error,
+            OverallState = OverallConnectionState.Degraded,
+            Settings = settings,
+            IsMcpRunning = true,
+            LastCheckTime = FixedTime
+        };
+
+        var result = new TrayTooltipBuilder(snapshot).Build();
+
+        Assert.Contains($"{AppIdentity.TrayName} - Degraded", result);
+        Assert.DoesNotContain("Local MCP only", result);
+    }
+
+    [Fact]
+    public void Build_McpStartupError_IsExplicit()
+    {
+        var settings = new SettingsManager(_tempDir)
+        {
+            EnableMcpServer = true
+        };
+        var snapshot = new TrayStateSnapshot
+        {
+            Status = ConnectionStatus.Disconnected,
+            Settings = settings,
+            McpStartupError = "Port 8765 is already in use.",
+            LastCheckTime = FixedTime
+        };
+
+        var result = new TrayTooltipBuilder(snapshot).Build();
+
+        Assert.Contains($"{AppIdentity.TrayName} - Local MCP failed", result);
+        Assert.Contains("Warnings 2", result);
+    }
+
+    [Fact]
+    public void Build_StaleMcpStartupError_IsIgnoredWhenMcpDisabled()
+    {
+        var settings = new SettingsManager(_tempDir)
+        {
+            EnableMcpServer = false
+        };
+        var snapshot = BaseConnected(authFailure: null) with
+        {
+            OverallState = OverallConnectionState.Ready,
+            Settings = settings,
+            McpStartupError = "stale failure"
+        };
+
+        var result = new TrayTooltipBuilder(snapshot).Build();
+
+        Assert.Contains($"{AppIdentity.TrayName} - Connected", result);
+        Assert.Contains("Warnings 1", result);
+        Assert.DoesNotContain("Local MCP failed", result);
     }
 
     [Fact]

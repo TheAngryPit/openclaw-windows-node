@@ -18,10 +18,15 @@ public class SettingsManager
     private readonly string _settingsDirectory;
     private readonly string _settingsFilePath;
     private const string ProtectedSecretPrefix = "dpapi:";
+    private const int CurrentSettingsSchemaVersion = 1;
     private static readonly byte[] ProtectedSecretEntropy = Encoding.UTF8.GetBytes("OpenClawTray.Settings.v1");
+    public const string AppThemeSystem = "System";
+    public const string AppThemeLight = "Light";
+    public const string AppThemeDark = "Dark";
 
     public static string SettingsDirectoryPath => GetDefaultSettingsDirectory();
     public static string SettingsPath => Path.Combine(SettingsDirectoryPath, "settings.json");
+    public string SettingsDirectory => _settingsDirectory;
 
     /// <summary>Raised after settings are persisted to disk.</summary>
     public event EventHandler? Saved;
@@ -30,13 +35,15 @@ public class SettingsManager
     private SettingsData _data = CreateDefaultData();
 
     // Connection
-    public string GatewayUrl { get => _data.GatewayUrl ?? "ws://localhost:18789"; set => _data = _data with { GatewayUrl = value }; }
+    public string GatewayUrl { get => _data.GatewayUrl ?? AppIdentity.SetupGatewayUrl; set => _data = _data with { GatewayUrl = value }; }
     public bool UseSshTunnel { get => _data.UseSshTunnel; set => _data = _data with { UseSshTunnel = value }; }
     public string SshTunnelUser { get => _data.SshTunnelUser ?? ""; set => _data = _data with { SshTunnelUser = value }; }
     public string SshTunnelHost { get => _data.SshTunnelHost ?? ""; set => _data = _data with { SshTunnelHost = value }; }
     public int SshTunnelSshPort { get => IsValidPort(_data.SshTunnelSshPort) ? _data.SshTunnelSshPort : 22; set => _data = _data with { SshTunnelSshPort = value }; }
     public int SshTunnelRemotePort { get => _data.SshTunnelRemotePort <= 0 ? 18789 : _data.SshTunnelRemotePort; set => _data = _data with { SshTunnelRemotePort = value }; }
     public int SshTunnelLocalPort { get => _data.SshTunnelLocalPort <= 0 ? 18789 : _data.SshTunnelLocalPort; set => _data = _data with { SshTunnelLocalPort = value }; }
+    /// <inheritdoc cref="SettingsData.BrowserControlPort"/>
+    public int? BrowserControlPort { get => _data.BrowserControlPort; set => _data = _data with { BrowserControlPort = value }; }
     public string? LegacyToken { get; private set; }
     public string? LegacyBootstrapToken { get; private set; }
     public bool HasLegacyGatewayCredentials =>
@@ -82,9 +89,17 @@ public class SettingsManager
     /// Default false (native).
     /// </summary>
     public bool UseLegacyWebChat { get => _data.UseLegacyWebChat; set => _data = _data with { UseLegacyWebChat = value }; }
+    public bool ShowCompletedSessions { get => _data.ShowCompletedSessions; set => _data = _data with { ShowCompletedSessions = value }; }
+    public string AppTheme { get => NormalizeAppTheme(_data.AppTheme); set => _data = _data with { AppTheme = NormalizeAppTheme(value) }; }
+    public bool? ShowDiagnosticsOverride { get => _data.ShowDiagnostics; set => _data = _data with { ShowDiagnostics = value }; }
+    public bool ShowDiagnosticsEffective => _data.ShowDiagnostics ?? OpenClawTray.Helpers.DiagnosticsGate.BuildDefault;
+    public string OpenTelemetryEndpoint { get => _data.OpenTelemetryEndpoint ?? ""; set => _data = _data with { OpenTelemetryEndpoint = NormalizeOptionalString(value) }; }
+    public string OpenTelemetryProtocol { get => OpenTelemetryEndpointProtocol.Normalize(_data.OpenTelemetryProtocol); set => _data = _data with { OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.Normalize(value) }; }
 
     // Node mode(gateway WebSocket connection — separate from MCP)
     public bool EnableNodeMode { get => _data.EnableNodeMode; set => _data = _data with { EnableNodeMode = value }; }
+    /// <summary>Master switch for the focused inbound-pairing approval dialog + awareness toast.</summary>
+    public bool ShowPairingApprovalDialog { get => _data.ShowPairingApprovalDialog; set => _data = _data with { ShowPairingApprovalDialog = value }; }
     public bool NodeCanvasEnabled { get => _data.NodeCanvasEnabled; set => _data = _data with { NodeCanvasEnabled = value }; }
     public bool NodeScreenEnabled { get => _data.NodeScreenEnabled; set => _data = _data with { NodeScreenEnabled = value }; }
     public bool NodeCameraEnabled { get => _data.NodeCameraEnabled; set => _data = _data with { NodeCameraEnabled = value }; }
@@ -108,6 +123,8 @@ public class SettingsManager
     public float SttSilenceTimeout { get => _data.SttSilenceTimeout > 0 ? _data.SttSilenceTimeout : 1.5f; set => _data = _data with { SttSilenceTimeout = value }; }
     /// <summary>Enable TTS playback of responses during voice sessions.</summary>
     public bool VoiceTtsEnabled { get => _data.VoiceTtsEnabled; set => _data = _data with { VoiceTtsEnabled = value }; }
+    /// <summary>Show tool-call and usage chips inline in the chat timeline.</summary>
+    public bool ShowChatToolCalls { get => _data.ShowChatToolCalls; set => _data = _data with { ShowChatToolCalls = value }; }
     /// <summary>Play audio feedback chimes on listen start/stop.</summary>
     public bool VoiceAudioFeedback { get => _data.VoiceAudioFeedback; set => _data = _data with { VoiceAudioFeedback = value }; }
     public bool NodeTtsEnabled { get => _data.NodeTtsEnabled; set => _data = _data with { NodeTtsEnabled = value }; }
@@ -122,6 +139,8 @@ public class SettingsManager
     public string TtsPiperVoiceId { get => string.IsNullOrWhiteSpace(_data.TtsPiperVoiceId) ? "en_US-amy-low" : _data.TtsPiperVoiceId; set => _data = _data with { TtsPiperVoiceId = value }; }
     // Local MCP HTTP server (independent of EnableNodeMode)
     public bool EnableMcpServer { get => _data.EnableMcpServer; set => _data = _data with { EnableMcpServer = value }; }
+    // Automatic self-repair of app-owned setup-managed local WSL gateways (kill switch).
+    public bool EnableManagedLocalGatewayAutoRepair { get => _data.EnableManagedLocalGatewayAutoRepair; set => _data = _data with { EnableManagedLocalGatewayAutoRepair = value }; }
     /// <summary>
     /// Hostnames the A2UI image renderer is allowed to fetch over HTTPS.
     /// Empty by default — agents can still ship inline data: images. The
@@ -138,11 +157,14 @@ public class SettingsManager
     public string? PreferredGatewayId { get => _data.PreferredGatewayId; set => _data = _data with { PreferredGatewayId = value }; }
 
     // ── MXC sandbox ─────────────────────────────────────────────────────
-    /// <summary>Master switch for system.run containment. When true (default), system.run runs sandboxed and is denied if MXC is unavailable. When false, system.run runs on host like before.</summary>
+    /// <summary>Master switch for system.run containment. When true (default), system.run uses MXC when available and falls back to host execution when unavailable unless strict fallback blocking is enabled. When false, system.run runs on host like before.</summary>
     public bool SystemRunSandboxEnabled { get => _data.SystemRunSandboxEnabled; set => _data = _data with { SystemRunSandboxEnabled = value }; }
+    /// <summary>When true, sandbox-enabled system.run blocks instead of using the compatibility host fallback if MXC is unavailable. Default false.</summary>
+    public bool SystemRunBlockHostFallbackWhenMxcUnavailable { get => _data.SystemRunBlockHostFallbackWhenMxcUnavailable; set => _data = _data with { SystemRunBlockHostFallbackWhenMxcUnavailable = value }; }
     /// <summary>When sandboxed, allow system.run commands to reach the public internet. Default false.</summary>
     public bool SystemRunAllowOutbound { get => _data.SystemRunAllowOutbound; set => _data = _data with { SystemRunAllowOutbound = value }; }
-
+    /// <summary>When sandboxed, allow Windows UI system calls required by PowerShell and some console utilities. Default false.</summary>
+    public bool SystemRunAllowWindowsUi { get => _data.SystemRunAllowWindowsUi; set => _data = _data with { SystemRunAllowWindowsUi = value }; }
     // ── MXC sandbox: additional knobs (Sandbox page) ─────────────────
     public SandboxClipboardMode SandboxClipboard { get => _data.SandboxClipboard; set => _data = _data with { SandboxClipboard = value }; }
     public SandboxFolderAccess? SandboxDocumentsAccess { get => _data.SandboxDocumentsAccess; set => _data = _data with { SandboxDocumentsAccess = value }; }
@@ -172,11 +194,7 @@ public class SettingsManager
 
     private static string GetDefaultSettingsDirectory()
     {
-        return Environment.GetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR") is { Length: > 0 } overrideDir
-            ? overrideDir
-            : Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "OpenClawTray");
+        return AppIdentity.ResolveRoamingDataDirectory();
     }
 
     public void Load()
@@ -194,7 +212,7 @@ public class SettingsManager
                 var loaded = SettingsData.FromJson(json);
                 if (loaded != null)
                 {
-                    _data = NormalizeLoadedData(loaded);
+                    _data = NormalizeLoadedData(loaded, json);
                 }
             }
         }
@@ -208,7 +226,8 @@ public class SettingsManager
 
     private static SettingsData CreateDefaultData() => new()
     {
-        GatewayUrl = "ws://localhost:18789",
+        SettingsSchemaVersion = CurrentSettingsSchemaVersion,
+        GatewayUrl = AppIdentity.SetupGatewayUrl,
         UseSshTunnel = false,
         SshTunnelUser = "",
         SshTunnelHost = "",
@@ -232,6 +251,10 @@ public class SettingsManager
         PreferStructuredCategories = true,
         UserRules = new(),
         UseLegacyWebChat = false,
+        ShowCompletedSessions = false,
+        AppTheme = AppThemeSystem,
+        OpenTelemetryEndpoint = null,
+        OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.Grpc,
         EnableNodeMode = false,
         NodeCanvasEnabled = true,
         NodeScreenEnabled = true,
@@ -261,7 +284,9 @@ public class SettingsManager
         SkippedUpdateTag = "",
         PreferredGatewayId = null,
         SystemRunSandboxEnabled = true,
+        SystemRunBlockHostFallbackWhenMxcUnavailable = false,
         SystemRunAllowOutbound = false,
+        SystemRunAllowWindowsUi = false,
         SandboxClipboard = SandboxClipboardMode.None,
         SandboxDocumentsAccess = null,
         SandboxDownloadsAccess = null,
@@ -271,11 +296,12 @@ public class SettingsManager
         SandboxMaxOutputBytes = 4 * 1024 * 1024
     };
 
-    private static SettingsData NormalizeLoadedData(SettingsData loaded)
+    private static SettingsData NormalizeLoadedData(SettingsData loaded, string? rawJson = null)
     {
         var defaults = CreateDefaultData();
         var data = loaded with
         {
+            SettingsSchemaVersion = CurrentSettingsSchemaVersion,
             GatewayUrl = loaded.GatewayUrl ?? defaults.GatewayUrl,
             SshTunnelUser = loaded.SshTunnelUser ?? defaults.SshTunnelUser,
             SshTunnelHost = loaded.SshTunnelHost ?? defaults.SshTunnelHost,
@@ -295,8 +321,13 @@ public class SettingsManager
             A2UIImageHosts = loaded.A2UIImageHosts is { Count: > 0 } hosts ? new List<string>(hosts) : new(),
             SkippedUpdateTag = loaded.SkippedUpdateTag ?? defaults.SkippedUpdateTag,
             PreferredGatewayId = loaded.PreferredGatewayId ?? defaults.PreferredGatewayId,
+            AppTheme = NormalizeAppTheme(loaded.AppTheme),
+            ShowDiagnostics = loaded.ShowDiagnostics,
+            OpenTelemetryEndpoint = NormalizeOptionalString(loaded.OpenTelemetryEndpoint),
+            OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.Normalize(loaded.OpenTelemetryProtocol),
             UserRules = loaded.UserRules != null ? new List<UserNotificationRule>(loaded.UserRules) : new(),
             SandboxCustomFolders = CloneSandboxCustomFolders(loaded.SandboxCustomFolders),
+            SystemRunBlockHostFallbackWhenMxcUnavailable = loaded.SystemRunBlockHostFallbackWhenMxcUnavailable,
             SandboxTimeoutMs = loaded.SandboxTimeoutMs > 0 ? loaded.SandboxTimeoutMs : defaults.SandboxTimeoutMs,
             SandboxMaxOutputBytes = loaded.SandboxMaxOutputBytes > 0 ? loaded.SandboxMaxOutputBytes : defaults.SandboxMaxOutputBytes,
             McpOnlyMode = null
@@ -377,6 +408,10 @@ public class SettingsManager
         TtsElevenLabsVoiceId = string.IsNullOrWhiteSpace(TtsElevenLabsVoiceId) ? null : TtsElevenLabsVoiceId,
         TtsWindowsVoiceId = string.IsNullOrWhiteSpace(TtsWindowsVoiceId) ? null : TtsWindowsVoiceId,
         TtsPiperVoiceId = TtsPiperVoiceId,
+        AppTheme = AppTheme,
+        ShowDiagnostics = ShowDiagnosticsOverride,
+        OpenTelemetryEndpoint = NormalizeOptionalString(OpenTelemetryEndpoint),
+        OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.Normalize(OpenTelemetryProtocol),
         A2UIImageHosts = A2UIImageHosts.Count == 0 ? null : new List<string>(A2UIImageHosts),
         SkippedUpdateTag = string.IsNullOrWhiteSpace(SkippedUpdateTag) ? null : SkippedUpdateTag,
         PreferredGatewayId = string.IsNullOrWhiteSpace(PreferredGatewayId) ? null : PreferredGatewayId,
@@ -387,32 +422,56 @@ public class SettingsManager
         McpOnlyMode = null
     };
 
+    public static string NormalizeAppTheme(string? value)
+    {
+        if (string.Equals(value, AppThemeLight, StringComparison.OrdinalIgnoreCase))
+            return AppThemeLight;
+        if (string.Equals(value, AppThemeDark, StringComparison.OrdinalIgnoreCase))
+            return AppThemeDark;
+        return AppThemeSystem;
+    }
+
+    private static string? NormalizeOptionalString(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     public void Save()
+    {
+        try
+        {
+            SaveOrThrow();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"Failed to save settings: {ex.Message}");
+        }
+    }
+
+    internal void SaveOrThrow()
     {
         lock (_saveLock)
         {
+            Directory.CreateDirectory(_settingsDirectory);
+            // Lock the tray data dir to current user + SYSTEM + Administrators —
+            // it co-locates the MCP bearer token, settings.json (which embeds
+            // gateway/bootstrap credentials), and diagnostics jsonl. Other apps
+            // running as the same user could otherwise read these freely.
+            OpenClaw.Shared.Mcp.McpAuthToken.TryRestrictDataDirectoryAcl(_settingsDirectory);
+
+            var data = ToSettingsData();
+            // Apply DPAPI protection to the API key for on-disk storage only
+            data.TtsElevenLabsApiKey = ProtectSettingSecret(data.TtsElevenLabsApiKey);
+
+            var json = data.ToJson();
+            File.WriteAllText(_settingsFilePath, json);
+
+            Logger.Info("Settings saved");
             try
             {
-                Directory.CreateDirectory(_settingsDirectory);
-                // Lock the tray data dir to current user + SYSTEM + Administrators —
-                // it co-locates the MCP bearer token, settings.json (which embeds
-                // gateway/bootstrap credentials), and diagnostics jsonl. Other apps
-                // running as the same user could otherwise read these freely.
-                OpenClaw.Shared.Mcp.McpAuthToken.TryRestrictDataDirectoryAcl(_settingsDirectory);
-
-                var data = ToSettingsData();
-                // Apply DPAPI protection to the API key for on-disk storage only
-                data.TtsElevenLabsApiKey = ProtectSettingSecret(data.TtsElevenLabsApiKey);
-
-                var json = data.ToJson();
-                File.WriteAllText(_settingsFilePath, json);
-                
-                Logger.Info("Settings saved");
                 Saved?.Invoke(this, EventArgs.Empty);
             }
             catch (Exception ex)
             {
-                Logger.Error($"Failed to save settings: {ex.Message}");
+                Logger.Warn($"Settings saved, but a notification subscriber failed: {ex.Message}");
             }
         }
     }

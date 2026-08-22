@@ -61,6 +61,19 @@ public class StartupSetupStateTests
     }
 
     [Fact]
+    public void RequiresSetup_WhenSavedIdentityIsCorrupt_ThrowsTypedFailureInsteadOfStartingOnboarding()
+    {
+        using var temp = TempSettings.Create();
+        File.WriteAllText(Path.Combine(temp.Path, "device-key-ed25519.json"), "{");
+        var settings = new SettingsManager(temp.Path) { EnableNodeMode = true };
+
+        Assert.Throws<DeviceIdentityLoadException>(
+            () => StartupSetupState.RequiresSetup(settings, temp.Path));
+        Assert.Throws<DeviceIdentityLoadException>(
+            () => StartupSetupState.CanStartNodeGateway(settings, temp.Path));
+    }
+
+    [Fact]
     public void RequiresSetup_ReturnsFalse_WhenOperatorPairedWithRemoteGateway()
     {
         // Scott Hanselman repro: operator mode with a non-default (remote) gateway URL
@@ -150,6 +163,24 @@ public class StartupSetupStateTests
     }
 
     [Fact]
+    public void RequiresSetup_SkipsCorruptPerGatewayIdentityAndFindsHealthyToken()
+    {
+        using var temp = TempSettings.Create();
+        var staleDir = Path.Combine(temp.Path, "gateways", "a-stale");
+        Directory.CreateDirectory(staleDir);
+        File.WriteAllText(Path.Combine(staleDir, "device-key-ed25519.json"), "{");
+        var healthyDir = Path.Combine(temp.Path, "gateways", "b-healthy");
+        Directory.CreateDirectory(healthyDir);
+        StoreDeviceToken(healthyDir);
+        var settings = new SettingsManager(temp.Path)
+        {
+            GatewayUrl = "wss://remote.example.com:443"
+        };
+
+        Assert.False(StartupSetupState.RequiresSetup(settings, temp.Path));
+    }
+
+    [Fact]
     public void RequiresSetup_ReturnsFalse_WhenRegistryHasExternalGatewayToken()
     {
         using var temp = TempSettings.Create();
@@ -211,6 +242,116 @@ public class StartupSetupStateTests
         StoreDeviceToken(registry.GetIdentityDirectory("paired-gateway"));
 
         Assert.False(StartupSetupState.RequiresSetup(settings, temp.Path, registry));
+    }
+
+    [Fact]
+    public void ExistingGatewayInventory_SkipsInactiveCorruptIdentityAndFindsHealthyActiveGateway()
+    {
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path);
+        var registry = new GatewayRegistry(temp.Path);
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "stale-corrupt",
+            Url = "wss://stale.example.com"
+        });
+        var staleIdentityDir = registry.GetIdentityDirectory("stale-corrupt");
+        Directory.CreateDirectory(staleIdentityDir);
+        File.WriteAllText(Path.Combine(staleIdentityDir, "device-key-ed25519.json"), "{");
+
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "healthy-active",
+            Url = "wss://healthy.example.com"
+        });
+        var healthyIdentityDir = registry.GetIdentityDirectory("healthy-active");
+        Directory.CreateDirectory(healthyIdentityDir);
+        StoreDeviceToken(healthyIdentityDir);
+        registry.SetActive("healthy-active");
+
+        Assert.False(StartupSetupState.RequiresSetup(settings, temp.Path, registry));
+        Assert.Equal(
+            SetupExistingGatewayKind.ExternalOnly,
+            SetupExistingGatewayClassifier.ClassifyWithoutWslProbe(registry, settings, temp.Path));
+    }
+
+    [Fact]
+    public void ExistingGatewayInventory_WhenActiveIdentityIsCorrupt_PropagatesTypedFailure()
+    {
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path);
+        var registry = new GatewayRegistry(temp.Path);
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "corrupt-active",
+            Url = "wss://corrupt.example.com"
+        });
+        var identityDir = registry.GetIdentityDirectory("corrupt-active");
+        Directory.CreateDirectory(identityDir);
+        File.WriteAllText(Path.Combine(identityDir, "device-key-ed25519.json"), "{");
+        registry.SetActive("corrupt-active");
+
+        Assert.Throws<DeviceIdentityLoadException>(
+            () => SetupExistingGatewayClassifier.ClassifyWithoutWslProbe(
+                registry,
+                settings,
+                temp.Path));
+    }
+
+    [Fact]
+    public void ExistingGatewayInventory_ValidatesCorruptActiveIdentityBeforeHealthyInactiveRecord()
+    {
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path);
+        var registry = new GatewayRegistry(temp.Path);
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "healthy-inactive",
+            Url = "wss://healthy.example.com",
+            SharedGatewayToken = "healthy-shared-token"
+        });
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "corrupt-active",
+            Url = "wss://corrupt.example.com",
+            BootstrapToken = "bootstrap-token"
+        });
+        var identityDir = registry.GetIdentityDirectory("corrupt-active");
+        Directory.CreateDirectory(identityDir);
+        File.WriteAllText(Path.Combine(identityDir, "device-key-ed25519.json"), "{");
+        registry.SetActive("corrupt-active");
+
+        Assert.Throws<DeviceIdentityLoadException>(
+            () => SetupExistingGatewayClassifier.ClassifyWithoutWslProbe(
+                registry,
+                settings,
+                temp.Path));
+    }
+
+    [Fact]
+    public void RequiresSetup_InNodeMode_WhenActiveIdentityIsCorrupt_PropagatesTypedFailure()
+    {
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path) { EnableNodeMode = true };
+        var registry = new GatewayRegistry(temp.Path);
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "healthy-inactive",
+            Url = "wss://healthy.example.com"
+        });
+        StoreNodeDeviceToken(registry.GetIdentityDirectory("healthy-inactive"));
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "corrupt-active",
+            Url = "wss://corrupt.example.com"
+        });
+        var activeIdentityDir = registry.GetIdentityDirectory("corrupt-active");
+        Directory.CreateDirectory(activeIdentityDir);
+        File.WriteAllText(Path.Combine(activeIdentityDir, "device-key-ed25519.json"), "{");
+        registry.SetActive("corrupt-active");
+
+        Assert.Throws<DeviceIdentityLoadException>(
+            () => StartupSetupState.RequiresSetup(settings, temp.Path, registry));
     }
 
     [Fact]
@@ -284,6 +425,27 @@ public class StartupSetupStateTests
             temp.Path,
             wsl,
             localDataPath: temp.Path);
+
+        Assert.Equal(SetupExistingGatewayKind.AppOwnedLocalWsl, kind);
+    }
+
+    [Fact]
+    public async Task ClassifyAsync_ReturnsAppOwnedLocalWsl_WhenManagedGatewayUsesTailscaleUrl()
+    {
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path);
+        var registry = new GatewayRegistry(temp.Path);
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "tailscale-gateway",
+            Url = "wss://openclaw.tailnet.ts.net",
+            IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway",
+        });
+        var wsl = new FakeWslCommandRunner([new WslDistroInfo("OpenClawGateway", "Stopped", 2)]);
+
+        var kind = await SetupExistingGatewayClassifier.ClassifyAsync(
+            registry, settings, temp.Path, wsl, localDataPath: temp.Path);
 
         Assert.Equal(SetupExistingGatewayKind.AppOwnedLocalWsl, kind);
     }
@@ -416,14 +578,18 @@ public class StartupSetupStateTests
         Assert.False(StartupSetupState.RequiresSetup(settings, temp.Path));
     }
 
-    [Fact]
-    public void DefaultGatewayUrl_IsLocalhost18789()
+    [Theory]
+    [InlineData("ws://127.0.0.1:18789")]
+    [InlineData("ws://localhost:18789")]
+    public void DefaultAndLegacyGatewayUrls_DoNotBypassSetup(string gatewayUrl)
     {
-        // StartupSetupState uses "ws://localhost:18789" as the default gateway URL.
-        // A non-default URL indicates the user has configured an external gateway.
-        // This test guards against accidentally changing the constant.
-        var settings = new SettingsManager(Path.GetTempPath()) { GatewayUrl = "ws://localhost:18789" };
-        Assert.True(StartupSetupState.RequiresSetup(settings, Path.GetTempPath()));
+        // Setup uses explicit IPv4 to avoid localhost resolving to IPv6 across
+        // mirrored WSL networking. Preserve the older localhost value only as
+        // a settings-migration alias, not as the runtime connection target.
+        using var temp = TempSettings.Create();
+        var settings = new SettingsManager(temp.Path) { GatewayUrl = gatewayUrl };
+
+        Assert.True(StartupSetupState.RequiresSetup(settings, temp.Path));
     }
 
     private static void StoreDeviceToken(string dataPath)

@@ -9,29 +9,35 @@ namespace OpenClaw.Shared.ExecApprovals;
 public sealed class ValidatedRunRequest
 {
     public string[] Argv { get; }
-    public string? Shell { get; }
     public string? Cwd { get; }
     public int TimeoutMs { get; }
     public IReadOnlyDictionary<string, string>? Env { get; }
     public string? AgentId { get; }
     public string? SessionKey { get; }
 
+    /// <summary>
+    /// The request's human-readable command text, when supplied. Validated against
+    /// Argv so the text an operator is shown cannot describe a different command
+    /// than the one that runs. Never an input to resolution or execution.
+    /// </summary>
+    public string? RawCommand { get; }
+
     internal ValidatedRunRequest(
         string[] argv,
-        string? shell,
         string? cwd,
         int timeoutMs,
         IReadOnlyDictionary<string, string>? env,
         string? agentId,
-        string? sessionKey)
+        string? sessionKey,
+        string? rawCommand = null)
     {
         Argv = argv;
-        Shell = shell;
         Cwd = cwd;
         TimeoutMs = timeoutMs;
         Env = env;
         AgentId = agentId;
         SessionKey = sessionKey;
+        RawCommand = rawCommand;
     }
 }
 

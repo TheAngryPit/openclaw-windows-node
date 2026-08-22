@@ -19,18 +19,36 @@ public class BrowserProxyCapability : NodeCapabilityBase
     private readonly string _gatewayUrl;
     private readonly string _bearerToken;
     private readonly int? _sshRemoteGatewayPort;
+    private readonly int? _controlPortOverride;
+    private readonly bool _useSshTunnel;
+    private readonly int? _sshTunnelLocalPort;
+    private readonly bool _allowGatewayPortFallback;
     private readonly HttpClient _httpClient;
+    private readonly Func<Uri, System.Threading.CancellationToken, Task<bool>>?
+        _authorizeEndpointAsync;
 
     public BrowserProxyCapability(
         IOpenClawLogger logger,
         string gatewayUrl,
         string? bearerToken,
         HttpMessageHandler? handler = null,
-        int? sshRemoteGatewayPort = null) : base(logger)
+        int? sshRemoteGatewayPort = null,
+        int? controlPortOverride = null,
+        bool useSshTunnel = false,
+        int? sshTunnelLocalPort = null,
+        bool? allowGatewayPortFallback = null,
+        Func<Uri, System.Threading.CancellationToken, Task<bool>>?
+            authorizeEndpointAsync = null) : base(logger)
     {
         _gatewayUrl = gatewayUrl;
         _bearerToken = bearerToken ?? "";
         _sshRemoteGatewayPort = sshRemoteGatewayPort;
+        _controlPortOverride = controlPortOverride;
+        _useSshTunnel = useSshTunnel;
+        _sshTunnelLocalPort = sshTunnelLocalPort;
+        _allowGatewayPortFallback = allowGatewayPortFallback ??
+            BrowserControlEndpoint.AllowsGatewayPortFallback(gatewayUrl);
+        _authorizeEndpointAsync = authorizeEndpointAsync;
         _httpClient = handler == null ? new HttpClient() : new HttpClient(handler);
     }
 
@@ -42,7 +60,7 @@ public class BrowserProxyCapability : NodeCapabilityBase
         if (!string.Equals(request.Command, "browser.proxy", StringComparison.OrdinalIgnoreCase))
             return Error($"Unknown command: {request.Command}");
 
-        if (!TryResolveControlEndpoint(_gatewayUrl, out var controlPort, out var endpointError))
+        if (!TryResolveControlEndpoint(out var controlPort, out var endpointError))
             return Error(endpointError);
 
         var method = GetStringArg(request.Args, "method", "GET")?.ToUpperInvariant() ?? "GET";
@@ -59,6 +77,13 @@ public class BrowserProxyCapability : NodeCapabilityBase
         var uri = BuildUri(controlPort, path, request.Args);
         try
         {
+            if (!string.IsNullOrWhiteSpace(_bearerToken) &&
+                _authorizeEndpointAsync is not null &&
+                !await _authorizeEndpointAsync(uri, timeoutCts.Token).ConfigureAwait(false))
+            {
+                return Error("Browser control authentication was blocked because the local listener owner could not be verified.");
+            }
+
             using var httpRequest = CreateHttpRequest(method, uri, request.Args, usePasswordAuth: false);
             using var response = await _httpClient.SendAsync(httpRequest, timeoutCts.Token);
             var responseText = await response.Content.ReadAsStringAsync(timeoutCts.Token);
@@ -153,24 +178,23 @@ public class BrowserProxyCapability : NodeCapabilityBase
             : "Browser control host rejected authentication. Verify the gateway token saved in Settings matches the browser-control host auth token or password.";
     }
 
-    private static bool TryResolveControlEndpoint(string gatewayUrl, out int controlPort, out string error)
+    // Resolves the browser-control port through the shared BrowserControlEndpoint contract
+    // so the proxy, the Command Center diagnostics, and the copied SSH-forward guidance all
+    // agree. Scoped to the active gateway/tunnel: override, else tunnel local + 2, else gateway + 2.
+    private bool TryResolveControlEndpoint(out int controlPort, out string error)
     {
-        controlPort = 0;
-        error = "";
-        if (!Uri.TryCreate(gatewayUrl, UriKind.Absolute, out var gatewayUri) || gatewayUri.Port <= 0)
-        {
-            error = "Browser proxy requires a gateway URL with an explicit local port.";
-            return false;
-        }
+        int? gatewayLocalPort = null;
+        if (Uri.TryCreate(_gatewayUrl, UriKind.Absolute, out var gatewayUri) && gatewayUri.Port > 0)
+            gatewayLocalPort = gatewayUri.Port;
 
-        controlPort = gatewayUri.Port + 2;
-        if (controlPort > 65535)
-        {
-            error = "Browser proxy control port is outside the valid TCP port range.";
-            return false;
-        }
-
-        return true;
+        return BrowserControlEndpoint.TryResolveControlPort(
+            gatewayLocalPort,
+            _useSshTunnel,
+            _sshTunnelLocalPort,
+            _controlPortOverride,
+            out controlPort,
+            out error,
+            _allowGatewayPortFallback);
     }
 
     private static string BuildReachabilityGuidance(int localControlPort, int? sshRemoteGatewayPort)

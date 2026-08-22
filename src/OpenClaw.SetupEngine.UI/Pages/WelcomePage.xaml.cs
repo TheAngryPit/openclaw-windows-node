@@ -1,20 +1,24 @@
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using OpenClaw.SetupEngine;
 using OpenClaw.SetupEngine.UI;
 using OpenClaw.Shared;
+using OpenClaw.Shared.Inference.Catalog;
 using System.Numerics;
-using Windows.UI;
 
 namespace OpenClaw.SetupEngine.UI.Pages;
 
 public sealed partial class WelcomePage : Page
 {
+    private const string InstallButtonText = "Install a local gateway (WSL)";
+    private const string CheckingButtonText = "Checking existing setup...";
     private SetupConfig? _config;
+    private bool _installSelected = true; // default selection
+    private bool _suppressSelectionWrite;
 
     public WelcomePage()
     {
@@ -25,27 +29,56 @@ public sealed partial class WelcomePage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         _config = e.Parameter as SetupConfig ?? new SetupConfig();
+        _installSelected = SetupWindow.Active?.IsWelcomeInstallSelected ?? true;
+        _suppressSelectionWrite = true;
+        try
+        {
+            GatewayChoiceSelector.SelectedIndex = _installSelected ? 0 : 1;
+        }
+        finally
+        {
+            _suppressSelectionWrite = false;
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        var isDark = ActualTheme == ElementTheme.Dark;
-        InfoCard.Background = new SolidColorBrush(isDark
-            ? Color.FromArgb(255, 0x2C, 0x2C, 0x2C)
-            : Color.FromArgb(255, 0xF0, 0xF0, 0xF0));
-
-        InfoText.Text = "This local setup installs a small WSL Linux instance dedicated to OpenClaw. "
-                      + "If you'd rather connect to an existing or remote gateway, choose Advanced setup.";
-
-        StartLobsterBreatheAnimation();
+        StartMascotBreatheAnimation();
+        AsyncEventHandlerGuard.Run(
+            DetectLocalAiAvailabilityAsync,
+            NullLogger.Instance,
+            nameof(DetectLocalAiAvailabilityAsync));
     }
 
-    private void StartLobsterBreatheAnimation()
+    private async Task DetectLocalAiAvailabilityAsync()
     {
-        var visual = ElementCompositionPreview.GetElementVisual(LobsterHero);
+        SetupWindow? setupWindow = SetupWindow.Active;
+        SetupConfig? config = _config;
+        if (setupWindow is null || config is null)
+            return;
+
+        var hardware = await setupWindow.GetLocalAiHardwareAsync();
+        if (!IsLoaded || !ReferenceEquals(SetupWindow.Active, setupWindow))
+            return;
+
+        LocalInferenceEligibilityResult eligibility = LocalInferenceEligibility.Evaluate(
+            hardware,
+            config.LocalAi.SelectedModelId);
+        if (!eligibility.CanInstall || eligibility.SelectedGpu is null)
+            return;
+
+        LocalAiAvailabilityBadge.Visibility = Visibility.Visible;
+        AutomationProperties.SetName(
+            InstallChoice,
+            "Install a local gateway (WSL), recommended, Local AI available");
+    }
+
+    private void StartMascotBreatheAnimation()
+    {
+        var visual = ElementCompositionPreview.GetElementVisual(MascotHero);
         var compositor = visual.Compositor;
-        var centerX = LobsterHero.ActualWidth > 0 ? LobsterHero.ActualWidth / 2 : LobsterHero.Width / 2;
-        var centerY = LobsterHero.ActualHeight > 0 ? LobsterHero.ActualHeight / 2 : LobsterHero.Height / 2;
+        var centerX = MascotHero.ActualWidth > 0 ? MascotHero.ActualWidth / 2 : MascotHero.Width / 2;
+        var centerY = MascotHero.ActualHeight > 0 ? MascotHero.ActualHeight / 2 : MascotHero.Height / 2;
         visual.CenterPoint = new Vector3((float)centerX, (float)centerY, 0f);
 
         var pulse = compositor.CreateVector3KeyFrameAnimation();
@@ -58,39 +91,127 @@ public sealed partial class WelcomePage : Page
         visual.StartAnimation("Scale", pulse);
     }
 
-    private void StartButton_Click(object sender, RoutedEventArgs e) =>
-        AsyncEventHandlerGuard.Run(
-            StartButtonClickAsync,
-            NullLogger.Instance,
-            nameof(StartButton_Click));
-
-    private async Task StartButtonClickAsync()
+    private void GatewayChoice_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        var dataDir = Environment.GetEnvironmentVariable("OPENCLAW_TRAY_DATA_DIR")
-            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenClawTray");
-
-        var existing = ExistingConfigDetector.Detect(dataDir, _config!.DistroName);
-        var summary = ExistingConfigDetector.BuildReplacementSummary(existing);
-
-        var dialog = new ContentDialog
+        // A single-select ListView can be cleared to no selection (Ctrl+click / automation).
+        // The Welcome choice must always have exactly one option selected, so restore the last
+        // known selection instead of leaving the persisted value stale behind an empty list.
+        if (GatewayChoiceSelector.SelectedIndex is not (0 or 1))
         {
-            Title = existing.HasLocalGateway || existing.HasDistro
-                ? "Replace existing WSL gateway?"
-                : "Install a new WSL gateway?",
-            Content = summary,
-            PrimaryButtonText = "Continue",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close,
-            XamlRoot = XamlRoot,
-        };
+            _suppressSelectionWrite = true;
+            try
+            {
+                GatewayChoiceSelector.SelectedIndex = _installSelected ? 0 : 1;
+            }
+            finally
+            {
+                _suppressSelectionWrite = false;
+            }
 
-        var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary)
-            SetupWindow.Active?.NavigateToCapabilities();
+            return;
+        }
+
+        if (!_suppressSelectionWrite)
+            SetInstallSelected(GatewayChoiceSelector.SelectedIndex == 0);
     }
 
-    private void AdvancedSetup_Click(object sender, RoutedEventArgs e)
+    private void SetInstallSelected(bool installSelected)
     {
-        SetupWindow.Active?.RequestAdvancedSetup();
+        _installSelected = installSelected;
+        SetupWindow.Active?.SetWelcomeInstallSelected(installSelected);
+    }
+
+    private void Back_Click(object sender, RoutedEventArgs e)
+    {
+        SetupWindow.Active?.NavigateToSecurityNotice(back: true);
+    }
+
+    private void Next_Click(object sender, RoutedEventArgs e)
+    {
+        if (_installSelected)
+        {
+            AsyncEventHandlerGuard.Run(
+                StartInstallAsync,
+                NullLogger.Instance,
+                nameof(Next_Click));
+        }
+        else
+        {
+            SetupWindow.Active?.NavigateToAdvancedSetup();
+        }
+    }
+
+    private async Task StartInstallAsync()
+    {
+        var config = _config ?? throw new InvalidOperationException("Setup configuration has not been loaded.");
+        var setupWindow = SetupWindow.Active;
+        var dataDir = setupWindow?.DataDir ?? SetupContext.ResolveDataDir();
+
+        NextButton.IsEnabled = false;
+        InstallTitle.Text = CheckingButtonText;
+        InstallCheckProgress.IsActive = true;
+        InstallCheckProgress.Visibility = Visibility.Visible;
+        var navigating = false;
+        try
+        {
+            ExistingConfigDetector.ExistingConfig existing;
+            try
+            {
+                existing = await Task.Run(() => ExistingConfigDetector.Detect(dataDir, config.DistroName));
+            }
+            catch (InvalidOperationException ex)
+            {
+                var errorRoot = XamlRoot;
+                if (setupWindow is not null and { IsClosed: false } && errorRoot is not null)
+                {
+                    await new ContentDialog
+                    {
+                        Title = "Could not inspect WSL",
+                        Content = ex.Message,
+                        CloseButtonText = "Close",
+                        XamlRoot = errorRoot,
+                    }.ShowAsync();
+                }
+                return;
+            }
+
+            var xamlRoot = XamlRoot;
+            if (setupWindow is null or { IsClosed: true } || xamlRoot is null)
+                return;
+
+            InstallTitle.Text = InstallButtonText;
+            InstallCheckProgress.IsActive = false;
+            InstallCheckProgress.Visibility = Visibility.Collapsed;
+            var summary = ExistingConfigDetector.BuildReplacementSummary(existing);
+
+            var dialog = new ContentDialog
+            {
+                Title = existing.HasLocalGateway || existing.HasDistro
+                    ? "Replace existing WSL gateway?"
+                    : "Install a new WSL gateway?",
+                Content = summary,
+                PrimaryButtonText = "Continue",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = xamlRoot,
+            };
+
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+                return;
+
+            navigating = true;
+            setupWindow.NavigateToCapabilities();
+        }
+        finally
+        {
+            if (!navigating && setupWindow is { IsClosed: false })
+            {
+                InstallTitle.Text = InstallButtonText;
+                InstallCheckProgress.IsActive = false;
+                InstallCheckProgress.Visibility = Visibility.Collapsed;
+                NextButton.IsEnabled = true;
+            }
+        }
     }
 }

@@ -20,6 +20,18 @@ namespace OpenClaw.Tray.IntegrationTests;
 /// </summary>
 public sealed class TrayAppFixture : IAsyncLifetime
 {
+    public const string SeededExecApprovalPattern = "**/where.exe";
+    public const string SeededExecApprovalId = "11111111-1111-1111-1111-111111111111";
+
+    // A generated, argument-bound entry. Remote updates may retain it verbatim but must
+    // not be able to keep the path while dropping the binding that keeps it narrow.
+    public const string SeededBoundExecApprovalPattern = @"C:\Windows\System32\hostname.exe";
+    public const string SeededBoundExecApprovalId = "22222222-2222-2222-2222-222222222222";
+    public const string SeededBoundExecApprovalArgPattern = "^--version\u0000$";
+    // Escaped for embedding in the JSON template above.
+    public const string SeededBoundExecApprovalArgPatternJson = @"^--version\u0000$";
+    public const string SeededBoundExecApprovalPatternJson = @"C:\\Windows\\System32\\hostname.exe";
+
     public string DataDir { get; }
     public int McpPort { get; }
     public string McpEndpoint => $"http://127.0.0.1:{McpPort}/mcp";
@@ -36,6 +48,7 @@ public sealed class TrayAppFixture : IAsyncLifetime
 
         McpPort = FindFreePort();
         WriteSettings();
+        WriteExecApprovals();
 
         _exePath = LocateTrayExe();
         _process = SpawnTray();
@@ -164,6 +177,43 @@ public sealed class TrayAppFixture : IAsyncLifetime
             HasSeenActivityStreamTip = true,
         };
         File.WriteAllText(Path.Combine(DataDir, "settings.json"), settings.ToJson());
+    }
+
+    private void WriteExecApprovals()
+    {
+        File.WriteAllText(
+            Path.Combine(DataDir, "exec-approvals.json"),
+            $$"""
+            {
+              "version": 1,
+              "defaults": {
+                "security": "allowlist",
+                "ask": "off",
+                "askFallback": "deny",
+                "autoAllowSkills": false
+              },
+              "agents": {
+                "main": {
+                  "security": "allowlist",
+                  "ask": "off",
+                  "askFallback": "deny",
+                  "autoAllowSkills": false,
+                  "allowlist": [
+                    {
+                      "id": "{{SeededExecApprovalId}}",
+                      "pattern": "{{SeededExecApprovalPattern}}"
+                    },
+                    {
+                      "id": "{{SeededBoundExecApprovalId}}",
+                      "pattern": "{{SeededBoundExecApprovalPatternJson}}",
+                      "source": "allow-always",
+                      "argPattern": "{{SeededBoundExecApprovalArgPatternJson}}"
+                    }
+                  ]
+                }
+              }
+            }
+            """);
     }
 
     private static string LocateTrayExe()

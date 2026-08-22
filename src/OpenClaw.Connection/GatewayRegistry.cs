@@ -74,6 +74,7 @@ public sealed class GatewayRegistry
     public GatewayRecord AddOrUpdate(GatewayRecord record)
     {
         List<GatewayRecord> snapshot;
+        string? activeId;
         lock (_lock)
         {
             var idx = _records.FindIndex(r => r.Id == record.Id);
@@ -82,26 +83,35 @@ public sealed class GatewayRegistry
             else
                 _records.Add(record);
             snapshot = _records.ToList();
+            activeId = _activeId;
         }
-        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot));
+        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot, activeId));
         return record;
     }
 
     public void Remove(string id)
     {
         List<GatewayRecord> snapshot;
+        string? activeId;
         lock (_lock)
         {
             _records.RemoveAll(r => r.Id == id);
             if (_activeId == id) _activeId = null;
             snapshot = _records.ToList();
+            activeId = _activeId;
         }
-        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot));
+        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot, activeId));
     }
 
-    public void SetActive(string gatewayId)
+    public void SetActive(string? gatewayId)
     {
-        lock (_lock) _activeId = gatewayId;
+        List<GatewayRecord> snapshot;
+        lock (_lock)
+        {
+            _activeId = gatewayId;
+            snapshot = _records.ToList();
+        }
+        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot, gatewayId));
     }
 
     /// <summary>
@@ -114,6 +124,7 @@ public sealed class GatewayRegistry
     {
         GatewayRecord? updated;
         List<GatewayRecord> snapshot;
+        string? activeId;
         lock (_lock)
         {
             var idx = _records.FindIndex(r => r.Id == id);
@@ -122,8 +133,46 @@ public sealed class GatewayRegistry
             ArgumentNullException.ThrowIfNull(updated, nameof(updater));
             _records[idx] = updated;
             snapshot = _records.ToList();
+            activeId = _activeId;
         }
-        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot));
+        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot, activeId));
+        return updated;
+    }
+
+    /// <summary>
+    /// Atomically update and persist a record. If persistence fails, the in-memory
+    /// record is restored so a later lifecycle event can safely retry the update.
+    /// </summary>
+    public GatewayRecord? UpdateAndSave(string id, Func<GatewayRecord, GatewayRecord> updater)
+    {
+        GatewayRecord? updated;
+        List<GatewayRecord> snapshot;
+        string? activeId;
+        lock (_lock)
+        {
+            var idx = _records.FindIndex(r => r.Id == id);
+            if (idx < 0) return null;
+
+            var original = _records[idx];
+            updated = updater(original);
+            ArgumentNullException.ThrowIfNull(updated, nameof(updater));
+            _records[idx] = updated;
+
+            try
+            {
+                SaveLocked();
+            }
+            catch
+            {
+                _records[idx] = original;
+                throw;
+            }
+
+            snapshot = _records.ToList();
+            activeId = _activeId;
+        }
+
+        Changed?.Invoke(this, new GatewayRegistryChangedEventArgs(snapshot, activeId));
         return updated;
     }
 
@@ -131,22 +180,45 @@ public sealed class GatewayRegistry
 
     public void Save()
     {
-        RegistryData data;
         lock (_lock)
-        {
-            data = new RegistryData { Gateways = _records.ToList(), ActiveId = _activeId };
-        }
+            SaveLocked();
+    }
+
+    private void SaveLocked()
+    {
+        var data = new RegistryData { Gateways = _records.ToList(), ActiveId = _activeId };
         var json = JsonSerializer.Serialize(data, s_jsonOptions);
 
         var dir = Path.GetDirectoryName(_filePath);
         if (dir != null && !_fs.DirectoryExists(dir))
             _fs.CreateDirectory(dir);
 
-        // Atomic write: temp file then rename
-        var tempPath = _filePath + ".tmp";
-        _fs.WriteAllText(tempPath, json);
-        // On Windows, File.Move with overwrite works as atomic rename
-        File.Move(tempPath, _filePath, overwrite: true);
+        // Atomic write: unique temp file then rename. Keep the registry lock
+        // through the move so concurrent saves cannot publish stale snapshots.
+        var tempPath = $"{_filePath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            _fs.WriteAllText(tempPath, json);
+            File.Move(tempPath, _filePath, overwrite: true);
+        }
+        catch
+        {
+            TryDeleteTempFile(tempPath);
+            throw;
+        }
+    }
+
+    private void TryDeleteTempFile(string tempPath)
+    {
+        try
+        {
+            if (_fs.FileExists(tempPath))
+                _fs.DeleteFile(tempPath);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to delete temporary gateway registry file '{tempPath}': {ex.Message}");
+        }
     }
 
     public void Load()
@@ -254,6 +326,60 @@ public sealed class GatewayRegistry
         int sshPort,
         int sshRemotePort,
         int sshLocalPort,
+        bool includeBrowserProxyForward,
+        string settingsDir,
+        IOpenClawLogger? logger = null) =>
+        MigrateFromSettingsCore(
+            gatewayUrl,
+            token,
+            bootstrapToken,
+            useSshTunnel,
+            sshUser,
+            sshHost,
+            sshPort,
+            sshRemotePort,
+            sshLocalPort,
+            includeBrowserProxyForward,
+            settingsDir,
+            logger);
+
+    public bool MigrateFromSettings(
+        string? gatewayUrl,
+        string? token,
+        string? bootstrapToken,
+        bool useSshTunnel,
+        string? sshUser,
+        string? sshHost,
+        int sshPort,
+        int sshRemotePort,
+        int sshLocalPort,
+        string settingsDir,
+        IOpenClawLogger? logger = null)
+        => MigrateFromSettingsCore(
+            gatewayUrl,
+            token,
+            bootstrapToken,
+            useSshTunnel,
+            sshUser,
+            sshHost,
+            sshPort,
+            sshRemotePort,
+            sshLocalPort,
+            includeBrowserProxyForward: false,
+            settingsDir,
+            logger);
+
+    private bool MigrateFromSettingsCore(
+        string? gatewayUrl,
+        string? token,
+        string? bootstrapToken,
+        bool useSshTunnel,
+        string? sshUser,
+        string? sshHost,
+        int sshPort,
+        int sshRemotePort,
+        int sshLocalPort,
+        bool includeBrowserProxyForward,
         string settingsDir,
         IOpenClawLogger? logger = null)
     {
@@ -268,15 +394,30 @@ public sealed class GatewayRegistry
         }
 
         var id = Guid.NewGuid().ToString();
+        var isLocal = LocalGatewayUrlClassifier.IsLocalGatewayUrl(gatewayUrl);
+        var setupManagedDistroName =
+            isLocal && !useSshTunnel
+                ? TryReadSetupManagedDistroName(settingsDir, gatewayUrl)
+                : null;
         var record = new GatewayRecord
         {
             Id = id,
             Url = gatewayUrl,
-            IsLocal = LocalGatewayUrlClassifier.IsLocalGatewayUrl(gatewayUrl),
+            IsLocal = isLocal,
+            FriendlyName = setupManagedDistroName is null
+                ? null
+                : $"Local ({setupManagedDistroName})",
+            SetupManagedDistroName = setupManagedDistroName,
             SharedGatewayToken = string.IsNullOrWhiteSpace(bootstrapToken) ? token : null,
             BootstrapToken = !string.IsNullOrWhiteSpace(bootstrapToken) ? bootstrapToken : null,
             SshTunnel = useSshTunnel
-                ? new SshTunnelConfig(sshUser ?? "", sshHost ?? "", sshRemotePort, sshLocalPort, SshPort: sshPort)
+                ? new SshTunnelConfig(
+                    sshUser ?? "",
+                    sshHost ?? "",
+                    sshRemotePort,
+                    sshLocalPort,
+                    includeBrowserProxyForward,
+                    sshPort)
                 : null
         };
 
@@ -308,6 +449,55 @@ public sealed class GatewayRegistry
         return true;
     }
 
+    private static string? TryReadSetupManagedDistroName(
+        string settingsDir,
+        string gatewayUrl)
+    {
+        try
+        {
+            var direct = Environment.GetEnvironmentVariable("OPENCLAW_TRAY_LOCAL_DATA_DIR");
+            var localRoot = Environment.GetEnvironmentVariable("OPENCLAW_TRAY_LOCALAPPDATA_DIR")
+                ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var settingsDirectoryName = Path.GetFileName(
+                settingsDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var preferredDataDirectory = settingsDirectoryName.EndsWith(
+                "-Dev",
+                StringComparison.OrdinalIgnoreCase)
+                    ? "OpenClawTray-Dev"
+                    : "OpenClawTray";
+            var alternateDataDirectory = preferredDataDirectory == "OpenClawTray"
+                ? "OpenClawTray-Dev"
+                : "OpenClawTray";
+            var candidates = string.IsNullOrWhiteSpace(direct)
+                ? new[]
+                {
+                    Path.Combine(localRoot, preferredDataDirectory, "setup-state.json"),
+                    Path.Combine(localRoot, alternateDataDirectory, "setup-state.json"),
+                }
+                : [Path.Combine(direct, "setup-state.json")];
+            foreach (var statePath in candidates)
+            {
+                if (!File.Exists(statePath))
+                    continue;
+                using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(statePath));
+                if (document.RootElement.TryGetProperty("DistroName", out var distroElement) &&
+                    !string.IsNullOrWhiteSpace(distroElement.GetString()) &&
+                    document.RootElement.TryGetProperty("GatewayUrl", out var gatewayUrlElement) &&
+                    GatewayRecordEditing.AreEquivalentLoopbackEndpoints(
+                        gatewayUrl,
+                        gatewayUrlElement.GetString()))
+                {
+                    return distroElement.GetString();
+                }
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private sealed class RegistryData
     {
         public List<GatewayRecord>? Gateways { get; set; }
@@ -318,8 +508,10 @@ public sealed class GatewayRegistry
 public sealed class GatewayRegistryChangedEventArgs : EventArgs
 {
     public IReadOnlyList<GatewayRecord> Records { get; }
-    public GatewayRegistryChangedEventArgs(IReadOnlyList<GatewayRecord> records)
+    public string? ActiveGatewayId { get; }
+    public GatewayRegistryChangedEventArgs(IReadOnlyList<GatewayRecord> records, string? activeGatewayId = null)
     {
         Records = records;
+        ActiveGatewayId = activeGatewayId;
     }
 }

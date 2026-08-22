@@ -76,6 +76,45 @@ public sealed class ConnectionPagePlanApprovalBehaviorTests : IDisposable
     }
 
     [Fact]
+    public void SharedGatewayTokenMismatch_IsAuth_NotDeviceRePair()
+    {
+        var plan = Build(
+            new GatewayConnectionSnapshot
+            {
+                OverallState = OverallConnectionState.Error,
+                OperatorState = RoleConnectionState.Error,
+                OperatorError =
+                    "unauthorized: gateway token mismatch (set gateway.remote.token to match gateway.auth.token)",
+                OperatorErrorKind = GatewayErrorKind.Auth,
+                GatewayUrl = "ws://localhost:18789",
+            },
+            localNode: null);
+
+        Assert.Equal(RecoveryCategory.Auth, plan.Recovery);
+        Assert.Equal("Authentication failed", plan.StripHeadline);
+        Assert.NotEqual("Device needs re-pairing", plan.StripHeadline);
+    }
+
+    [Fact]
+    public void UnknownManagedLocalPortOwner_ShowsPortConflictRecovery()
+    {
+        var plan = Build(
+            new GatewayConnectionSnapshot
+            {
+                OverallState = OverallConnectionState.Error,
+                OperatorState = RoleConnectionState.Error,
+                OperatorError = "gateway token mismatch",
+                OperatorErrorKind = GatewayErrorKind.LocalPortConflict,
+                GatewayUrl = "ws://localhost:18789",
+            },
+            localNode: null);
+
+        Assert.Equal(RecoveryCategory.LocalPortConflict, plan.Recovery);
+        Assert.Equal("Local gateway port conflict", plan.StripHeadline);
+        Assert.Equal(ConnectionPrimaryAction.Retry, plan.StripPrimaryAction);
+    }
+
+    [Fact]
     public void NodeListTrust_OverridesNodeConnectingWaitState()
     {
         var plan = Build(
@@ -228,6 +267,73 @@ public sealed class ConnectionPagePlanApprovalBehaviorTests : IDisposable
             PendingReapprovalNode());
 
         AssertTrustDoesNotOverride(plan, NodeCardState.OnNodeError);
+    }
+
+    [Fact]
+    public void IntendedNodeIdle_ProjectsAsDegradedNodeError_NotHealthy()
+    {
+        var plan = Build(
+            new GatewayConnectionSnapshot
+            {
+                OverallState = OverallConnectionState.Degraded,
+                OperatorState = RoleConnectionState.Connected,
+                NodeConnectionIntended = true,
+                NodeState = RoleConnectionState.Idle
+            },
+            localNode: null);
+
+        Assert.Equal(ConnectionPageMode.Cockpit, plan.Mode);
+        Assert.Equal(ConnectionAccent.Caution, plan.StripAccent);
+        Assert.Equal("Connection degraded", plan.StripHeadline);
+        Assert.Contains("node has not connected", plan.StripSub, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(NodeCardState.OnNodeError, plan.NodeCard);
+    }
+
+    [Fact]
+    public void MissingNodeCredential_ProjectsAsBlockedNode_NotHealthy()
+    {
+        var plan = Build(
+            new GatewayConnectionSnapshot
+            {
+                OverallState = OverallConnectionState.Degraded,
+                OperatorState = RoleConnectionState.Connected,
+                NodeConnectionIntended = true,
+                NodeState = RoleConnectionState.Error,
+                NodeError = "No node credential available. Re-pair this PC."
+            },
+            localNode: null);
+
+        Assert.Equal(ConnectionPageMode.Cockpit, plan.Mode);
+        Assert.Equal(ConnectionAccent.Caution, plan.StripAccent);
+        Assert.Equal(NodeCardState.OnNodeError, plan.NodeCard);
+        Assert.Equal("No node credential available. Re-pair this PC.", plan.NodeErrorDetail);
+    }
+
+    [Fact]
+    public void ActiveGatewayDetailLine_ShowsCredentialFallback()
+    {
+        var settings = new SettingsManager(_settingsDirectory)
+        {
+            EnableNodeMode = true
+        };
+        var plan = ConnectionPagePlan.Build(
+            new GatewayConnectionSnapshot
+            {
+                OverallState = OverallConnectionState.Ready,
+                OperatorState = RoleConnectionState.Connected,
+                NodeState = RoleConnectionState.Disabled,
+                GatewayId = "gw-1",
+                GatewayUrl = "wss://test",
+                OperatorCredentialSource = CredentialResolver.SourceSharedGatewayToken,
+                OperatorCredentialStatus = GatewayCredentialResolutionStatus.FallbackUsed,
+                OperatorCredentialFallbackUsed = true
+            },
+            activeRecord: new GatewayRecord { Id = "gw-1", Url = "wss://test" },
+            self: null,
+            settings: settings,
+            savedGatewayCount: 1);
+
+        Assert.Contains("shared token (fallback)", plan.ActiveGatewayDetailLine);
     }
 
     private ConnectionPagePlan Build(

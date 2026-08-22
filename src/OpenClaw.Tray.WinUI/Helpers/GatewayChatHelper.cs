@@ -6,15 +6,14 @@ namespace OpenClawTray.Helpers;
 /// <summary>
 /// Helper for WebView2-hosted gateway chat. Used today only by the
 /// Onboarding flow's WebView2 overlay (the Hub Chat tab and tray
-/// ChatWindow popup were migrated to native FunctionalUI controls — see
-/// <c>OpenClawTray.Chat.OpenClawChatRoot</c> + <c>OpenClawChatDataProvider</c>).
+/// ChatWindow popup use the native Reactor surface with
+/// <c>OpenClawTray.Chat.OpenClawReactorChatRoot</c> and <c>OpenClawChatDataProvider</c>).
 /// Retire this helper when the onboarding chat surface is migrated too.
 /// </summary>
 public static class GatewayChatHelper
 {
     private static readonly string s_userDataFolder = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "OpenClawTray", "WebView2");
+        AppIdentity.ResolveLocalDataDirectory(), "WebView2");
 
     /// <summary>
     /// Build the HTTP(S) chat URL from a WebSocket gateway URL.

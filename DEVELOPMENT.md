@@ -8,6 +8,7 @@ A comprehensive guide for building, running, and contributing to the OpenClaw Wi
 - [Project Structure](#project-structure)
 - [Building](#building)
 - [Architecture Overview](#architecture-overview)
+- [Documentation and Diagrams](#documentation-and-diagrams)
 - [Testing](#testing)
 - [CI/CD](#cicd)
 - [Contributing](#contributing)
@@ -18,14 +19,19 @@ A comprehensive guide for building, running, and contributing to the OpenClaw Wi
 
 - **.NET 10 SDK** - [Download here](https://dotnet.microsoft.com/download)
 - **Windows 10/11** - WinUI 3 and Windows App SDK require Windows 10 version 1903 or later
+- **Node.js LTS with npm** - Required by the WinUI build to restore JavaScript build assets
+- **Windows 10 SDK** - Required for WinUI builds
 - **WebView2 Runtime** - Usually pre-installed on Windows 10+ ([Manual download](https://developer.microsoft.com/microsoft-edge/webview2/))
 - **Visual Studio 2022** (optional) - For easier development and debugging with WinUI 3 designer support
 
+Run `.\scripts\setup-dev.ps1` from the repository root to install or verify local prerequisites with winget. Agents can use `.\scripts\setup-dev.ps1 -RunValidation` to prepare the worktree and run the required closeout validation.
+
 ### For Testing
 
-- **A running OpenClaw gateway instance** - The gateway provides the backend for chat, sessions, and notifications
+- **A running OpenClaw gateway instance** - The gateway provides the backend for chat, sessions, and notifications when validating gateway-mediated flows
   - Default gateway URL: `ws://localhost:18789`
   - You'll need a valid authentication token from your OpenClaw instance
+- **Local MCP Server** - Windows node capabilities can also be validated without a gateway by enabling Local MCP Server in the tray Settings UI and using `winnode`
 
 ## Project Structure
 
@@ -39,14 +45,24 @@ openclaw-windows-hub/
 │   │   ├── Models.cs                 # Data models (SessionInfo, ChannelHealth, etc.)
 │   │   └── IOpenClawLogger.cs        # Logging interface
 │   │
+│   ├── OpenClaw.Connection/          # Gateway registry, credentials, connection manager
+│   │
 │   ├── OpenClaw.Chat/                # Native chat model and reducer
 │   │   ├── ChatModels.cs             # Threads, entries, events, provider contract
 │   │   └── ChatTimelineReducer.cs    # Timeline state transitions
 │   │
+│   ├── OpenClaw.Cli/                 # WebSocket connect/send/probe validator
+│   │
+│   ├── OpenClaw.WinNode.Cli/         # winnode local MCP/Windows-node CLI
+│   │
+│   ├── OpenClaw.SetupEngine/         # Local WSL gateway setup and setup-code support
+│   │
+│   ├── OpenClaw.SetupEngine.UI/      # WinUI setup wizard pages hosted by the tray app
+│   │
 │   ├── OpenClawTray.FunctionalUI/    # Small in-repo declarative WinUI helper
 │   │   └── FunctionalUI.cs           # Components, hooks, elements, host control
 │   │
-│   ├── OpenClaw.Tray.WinUI/          # WinUI 3 system tray application (primary)
+│   └── OpenClaw.Tray.WinUI/          # WinUI 3 system tray application (primary)
 │   │   ├── App.xaml.cs               # Main application, tray icon, gateway connection
 │   │   ├── Services/                 # Settings, logging, hotkeys, deep links
 │   │   ├── Windows/                  # UI windows (Settings, WebChat, Status, etc.)
@@ -54,11 +70,15 @@ openclaw-windows-hub/
 │   │   └── Helpers/                  # Icon generation, utilities
 │   │
 ├── tests/
-│   ├── OpenClaw.Shared.Tests/        # Unit tests for shared library
-│   └── OpenClaw.Tray.Tests/          # Tests for tray helpers (menu, settings, deep links)
-│
-├── tools/
-│   └── icongen/                      # Icon generation tool
+│   ├── OpenClaw.Shared.Tests/        # Unit tests for shared library/capabilities/MCP
+│   ├── OpenClaw.Connection.Tests/    # Gateway registry and connection manager tests
+│   ├── OpenClaw.Tray.Tests/          # Tests for tray helpers (menu, settings, deep links)
+│   ├── OpenClaw.WinNode.Cli.Tests/   # winnode CLI contract tests
+│   ├── OpenClaw.SetupEngine.Tests/      # Setup engine tests
+│   ├── OpenClaw.Tray.UITests/           # Native WinUI/A2UI UI tests
+│   ├── OpenClawTray.FunctionalUI.Tests/ # FunctionalUI smoke tests
+│   ├── OpenClaw.Tray.IntegrationTests/  # Real-process tray/MCP integration tests
+│   └── OpenClaw.E2ETests/               # Gateway-mediated setup/connect E2E suites
 │
 ├── .github/workflows/
 │   └── ci.yml                        # GitHub Actions CI/CD workflow
@@ -71,9 +91,11 @@ openclaw-windows-hub/
 ### Project Dependencies
 
 ```
-OpenClaw.Tray.WinUI  ──depends on──▶  OpenClaw.Shared
-OpenClaw.Shared.Tests  ──tests──▶  OpenClaw.Shared
-OpenClaw.Tray.Tests  ──tests──▶  OpenClaw.Shared
+OpenClaw.Tray.WinUI  ──depends on──▶  OpenClaw.Shared + OpenClaw.Connection + OpenClaw.Chat + OpenClaw.SetupEngine.UI
+OpenClaw.WinNode.Cli  ──depends on──▶  OpenClaw.Shared
+OpenClaw.SetupEngine.UI  ──wraps──▶  OpenClaw.SetupEngine
+OpenClaw.SetupEngine  ──supports──▶  local WSL gateway setup
+OpenClaw.*.Tests  ──test──▶  corresponding shared, connection, tray, setup, and CLI surfaces
 ```
 
 ### Key Subsystems
@@ -81,6 +103,7 @@ OpenClaw.Tray.Tests  ──tests──▶  OpenClaw.Shared
 | Subsystem | Location | Purpose |
 |-----------|----------|---------|
 | **Gateway Communication** | `OpenClaw.Shared/OpenClawGatewayClient.cs` | WebSocket client with protocol v3, reconnect/backoff logic |
+| **Connection Management** | `OpenClaw.Connection/` | Gateway registry, credential precedence, pairing, tunnels, and reconnect policy |
 | **Notification System** | `OpenClaw.Tray.WinUI/App.xaml.cs` | Event routing, toast notifications, classification |
 | **WebView2 Integration** | `OpenClaw.Tray.WinUI/Windows/ChatWindow.xaml.cs` | Embedded chat panel with lifecycle management |
 | **Tray Icon Management** | `OpenClaw.Tray.WinUI/Helpers/IconHelper.cs` | GDI handle management, dynamic icon generation |
@@ -94,11 +117,10 @@ OpenClaw.Tray.Tests  ──tests──▶  OpenClaw.Shared
 From the repository root:
 
 ```bash
-dotnet restore
-dotnet build
+./build.ps1
 ```
 
-This builds all projects (shared library, tray app, setup engine, and CLI tools).
+This restores prerequisites as needed and builds the shared library, tray app, setup engine, and CLI tools with the required Windows runtime identifiers.
 
 ### Build Individual Projects
 
@@ -109,7 +131,7 @@ dotnet build src/OpenClaw.Shared
 
 **Tray App (WinUI):**
 ```bash
-dotnet build src/OpenClaw.Tray.WinUI
+dotnet build src/OpenClaw.Tray.WinUI -r win-x64
 ```
 
 ### Platform and Architecture Notes
@@ -136,7 +158,7 @@ dotnet build
 The WinUI Tray app is Windows-only but can be built on Linux using:
 
 ```bash
-dotnet build -p:EnableWindowsTargeting=true
+dotnet build src/OpenClaw.Tray.WinUI -r win-x64 -p:EnableWindowsTargeting=true
 ```
 
 ### Running in Debug Mode
@@ -150,13 +172,13 @@ dotnet build -p:EnableWindowsTargeting=true
 #### Command Line
 
 ```bash
-dotnet run --project src/OpenClaw.Tray.WinUI
+dotnet run --project src/OpenClaw.Tray.WinUI -r win-x64
 ```
 
 For verbose output:
 
 ```bash
-dotnet run --project src/OpenClaw.Tray.WinUI -c Debug
+dotnet run --project src/OpenClaw.Tray.WinUI -c Debug -r win-x64
 ```
 
 ### Publishing (Self-Contained)
@@ -186,29 +208,48 @@ Use the local helper to build unsigned installer EXEs without waiting for CI:
 
 `-Fast` uses ZIP/no-solid compression for quick local iteration. CI release builds keep the default LZMA solid compression and Azure signing.
 
+#### Dev identity and side-by-side installs
+
+Release identity is the default for every configuration. Use `-DevBuild` on `build.ps1` or `-Dev` on `run-app-local.ps1` when you explicitly want the side-by-side dev identity:
+
+```powershell
+.\build.ps1 -Project WinUI -DevBuild
+.\run-app-local.ps1 -Dev -Isolated
+```
+
+`-DevBuild` passes `-p:DevBuild=true` to the WinUI project and produces the dev app identity marker that CI verifies in the **Verify DevBuild identity marker** step. `installer.iss` also accepts `/DDevBuild=1` for side-by-side dev installers; `.\scripts\build-inno-local.ps1 -Dev` wires that flag for local installer iteration.
+
+#### Onboarding and setup workflow helpers
+
+The first-run Windows gateway onboarding wizard lives in `OpenClaw.SetupEngine.UI` and is hosted by `OpenClaw.Tray.WinUI`; see [docs/ONBOARDING_WIZARD.md](docs/ONBOARDING_WIZARD.md) for the page flow. The setup pipeline itself is documented in [docs/SETUP_ENGINE_REDESIGN.md](docs/SETUP_ENGINE_REDESIGN.md), including the Windows node context step that injects agent instructions into the WSL workspace.
+
+Useful local scripts:
+
+- `.\scripts\dev-reset-rebuild-launch.ps1` resets tray data, rebuilds, and optionally launches the app; add `-WipeWslDistro` for a full local WSL gateway reset.
+- `.\scripts\validate-mxc-e2e.ps1` runs the formal WSL Gateway -> Windows node -> `system.run` MXC proof path for MXC-sensitive changes.
+
 ## Architecture Overview
 
-### Native chat surface (FunctionalUI + OpenClaw.Chat)
+### Native chat surface (Reactor + OpenClaw.Chat)
 
 The Hub Chat tab (`src/OpenClaw.Tray.WinUI/Pages/ChatPage.xaml`) and the
 tray ChatWindow popup (`src/OpenClaw.Tray.WinUI/Windows/ChatWindow.xaml`)
 render their conversations with native WinUI 3 controls via the in-repo
-`OpenClawTray.FunctionalUI` helper and `OpenClaw.Chat` model/reducer code.
+Reactor components and `OpenClaw.Chat` model/reducer code.
 The standard WebView2-hosted gateway web client remains available as a
 settings-controlled fallback.
 
 **Layering:**
 
 ```
-src/OpenClaw.Tray.WinUI/Chat/    OpenClawChatTimeline · OpenClawComposer · OpenClawSessionHeader
+src/OpenClaw.Tray.WinUI/Chat/    OpenClawReactorChatRoot · ReactorChatTimeline · ReactorChatComposer
                                  OpenClawChatDataProvider (adapts OpenClawGatewayClient → IChatDataProvider)
-                                 OpenClawChatRoot         (FunctionalUI component composing the chat surface)
-                                 FunctionalChatHostExtensions (mounts FunctionalUI into a XAML <Border>)
-                                 IChatGatewayBridge       (testability seam over OpenClawGatewayClient)
+                                 ReactorChatHostExtensions (mounts Reactor into a XAML <Border>)
+                                 IChatGatewayBridge        (testability seam over OpenClawGatewayClient)
         ▲ depends on
 src/OpenClaw.Chat/               ChatThread · ChatTimelineState · IChatDataProvider · ChatTimelineReducer
         ▲ rendered by
-src/OpenClawTray.FunctionalUI/   Component · RenderContext · FunctionalHostControl · WinUI elements
+Reactor.WinUI                    Component · hooks · ReactorHostControl · WinUI elements
 ```
 
 **Lifecycle:**
@@ -216,13 +257,14 @@ src/OpenClawTray.FunctionalUI/   Component · RenderContext · FunctionalHostCon
 - One `OpenClawChatDataProvider` instance lives on `App` (`App.ChatProvider`),
   created in `InitializeGatewayClient` and disposed inside
   `UnsubscribeGatewayEvents`. Both the Hub Chat tab and the tray ChatWindow
-  consume the same provider — opening either surface shows identical state.
-- Each XAML host (`ChatPage`, `ChatWindow`) mounts its own `FunctionalHostControl`
-  with `ContentTarget` pointing at a `<Border x:Name="ChatHost"/>`. The
+  consume the same provider - opening either surface shows identical state.
+- `ReactorChatHostExtensions` mounts a dedicated `ReactorHostControl` for each
+  XAML surface (`ChatPage`, `ChatWindow`) as the child of its
+  `<Border x:Name="ChatHost"/>`. The
   surrounding chrome (NavigationView, popup header) stays XAML.
 - Provider events fire on the WebSocket-receive thread; the provider
   marshals `Changed` / `NotificationRequested` callbacks through a
-  dispatcher post delegate (`DispatcherQueue.AsPost()`), so FunctionalUI
+  dispatcher post delegate (`DispatcherQueue.AsPost()`), so Reactor
   components observe state on the UI thread.
 
 **Adding new chat behavior:** model new events in `OpenClaw.Chat`'s
@@ -422,11 +464,62 @@ In DEBUG builds, logs are also written to Visual Studio Output window via `Syste
 **Security:**
 Sensitive data (authentication tokens) are never logged.
 
+## Documentation and Diagrams
+
+Maintained architecture, data-flow, and sequence diagrams use a paired source
+and rendered artifact:
+
+```text
+docs/diagrams/<name>.excalidraw
+docs/diagrams/<name>.svg
+```
+
+Embed the SVG in Markdown so GitHub renders it, and place an adjacent link to
+the `.excalidraw` source so contributors can edit it. Keep labels synchronized
+between both files. Every text element in the Excalidraw JSON must have explicit
+`width` and `height` and use black text; container boxes remain transparent.
+
+Do not add new Mermaid or maintained ASCII-art architecture diagrams. Small
+state notations, directory trees, wire examples, and command-output snippets
+may remain as fenced text when their value is the literal text rather than a
+visual layout. Historical design documents may retain clearly labeled inline
+sketches, but they must link to the current canonical diagram when one exists.
+
+Run documentation validation directly with:
+
+```powershell
+.\scripts\validate-docs.ps1
+```
+
+`.\build.ps1` runs the same validator before compiling. It checks maintained
+Markdown links and anchors, rejects Mermaid and em dashes, verifies every
+Excalidraw/SVG pair, requires SVG accessibility metadata, and confirms rendered
+labels match the editable source.
+
 ## Testing
+
+Required agent validation lives in [AGENTS.md](AGENTS.md). For changes touching
+tray UX, Settings, onboarding, chat/canvas, Command Center, Windows node
+capabilities, local MCP, gateway pairing/connection, permissions, or
+diagnostics, use the repo-local skill
+`.agents/skills/openclaw-proof-validation/SKILL.md`: run the build/tests,
+validate local MCP with `winnode --list-tools` plus the changed command, run
+rubber-duck review for non-trivial changes, then launch the tray from this
+worktree and drive the changed UI with computer-use / desktop automation as one
+batched closeout pass before PR publication. Mid-development rubber-duck,
+computer-use, or MCP validation is also appropriate when explicitly requested or
+needed to unblock the work; agents should ask whether to run computer-use or
+provide manual UI proof steps, while still enforcing required automated tests.
+
+PRs should include `## Validation` and `## Real behavior proof` sections. Paste concrete
+after-change output, visible UI evidence for visual changes, `winnode` output or
+raw MCP server JSON-RPC output for node commands, and gateway invoke output for
+gateway-mediated behavior when available; the default PR template includes these
+prompts.
 
 ### Running Unit Tests
 
-Two test projects cover the shared library and tray helpers:
+The repository has multiple unit, UI, integration, and E2E test projects. Use [docs/TEST_COVERAGE.md](docs/TEST_COVERAGE.md) as the inventory of record.
 
 ```bash
 # Run local-dev tests. E2E is intentionally excluded from the solution and
@@ -441,9 +534,10 @@ dotnet test --filter "FullyQualifiedName~AgentActivityTests"
 ```
 
 **Test Coverage:**
-- ✅ **1182 tests** in `OpenClaw.Shared.Tests` — models, gateway client, exec approvals, capabilities, URL helpers, notification categorization, shell quoting, MCP, device identity, and WinNode client coverage
-- ✅ **388 tests** in `OpenClaw.Tray.Tests` — settings round-trip, deep link parsing, onboarding state, setup code decoder, gateway health/chat helpers, security validation, wizard step parsing, gateway discovery, localization validation
-- ✅ All tests are pure unit tests (no network, no file system, no external dependencies)
+- `OpenClaw.Shared.Tests` covers models, gateway client behavior, capabilities, URL helpers, notification categorization, shell quoting, MCP, device identity, and WinNode client contracts.
+- `OpenClaw.Tray.Tests` covers settings isolation, deep link parsing, onboarding state, setup code decoding, gateway health/chat helpers, security validation, wizard step parsing, gateway discovery, localization, and tray UI helpers.
+- Additional projects cover connection management, setup engine behavior, `winnode`, FunctionalUI, native UI/A2UI, integration, and gateway-mediated E2E flows.
+- See [docs/TEST_COVERAGE.md](docs/TEST_COVERAGE.md) for current method counts, runtime totals, and which lanes require network, WSL, real-process, or desktop prerequisites.
 
 See [tests/OpenClaw.Shared.Tests/README.md](tests/OpenClaw.Shared.Tests/README.md) for detailed test documentation.
 
@@ -536,13 +630,37 @@ The repository uses GitHub Actions for continuous integration and release automa
 - Pull requests to `main`
 - Git tags matching `v*` (e.g., `v1.2.3`) for releases
 
-### Gateway LKG version automation
+### Gateway release policy
 
-- The pinned gateway setup version lives in `src/OpenClaw.SetupEngine/GatewayLkgVersion.cs` (`GatewayLkgVersion.LkgVersion`).
-- Setup/E2E consume this as the default source of truth when `Gateway.Version` is not explicitly set.
-- When `Gateway.InstallUrl` points to a custom installer script, SetupEngine does not auto-inject the LKG; set `Gateway.Version` explicitly if your script supports `--version`.
-- The `test` job in `.github/workflows/ci.yml` compares pinned LKG vs npm `openclaw@latest` and emits a **warning** on drift (non-blocking).
-- `.github/workflows/gateway-lkg-update.yml` creates or updates one standing draft PR on branch `automation/gateway-lkg-update` to bump `GatewayLkgVersion.LkgVersion` when upstream latest advances.
+- `src/OpenClaw.SetupEngine/GatewayReleasePolicy.cs` embeds the exact Gateway
+  recommendation, protocol generation, security floor, validation evidence, and
+  any distinct validated fallback for the Windows release.
+- Setup and E2E install the exact recommendation. Product setup never resolves
+  a moving npm dist-tag at runtime.
+- `Gateway.Selection` supports `recommended`, `fallback`, and `exact`.
+  `fallback` currently resolves to exact validated release `2026.6.11` and is
+  never automatic. `exact` accepts only an embedded validated official release
+  in product mode.
+- A custom `Gateway.InstallUrl` must also specify an exact `Gateway.Version`.
+  Setup labels it unverified and still requires an exact protocol-v4 handshake
+  and matching server version after installation.
+- `.github/workflows/gateway-release-candidate.yml` discovers official stable
+  candidates and opens an evidence-only draft PR. It does not promote a
+  candidate. Promotion requires exact-version Windows setup, pairing,
+  reconnect, recovery, and Gateway-to-node invocation proof.
+- `scripts/Test-GatewayReleaseCandidate.ps1` verifies stable GitHub release
+  classification, SHA-512 npm integrity, registry signature, SLSA provenance,
+  exact package/tag commit identity, stable release soak evidence, and protocol
+  v4 at that exact commit. Unembedded candidates require provenance whose source
+  commit matches the tag. Existing embedded recommendation/fallback evidence
+  may use the explicit `-AllowEmbeddedPolicyEvidence` compatibility switch only
+  when the integrity-verified package build commit matches the exact tag and
+  the package integrity is already embedded in policy.
+- Candidate evidence is discovery input only and cannot authorize an
+  unembedded release. To exercise a candidate, first add a reviewed
+  `GatewayReleaseStatus.Candidate` entry to `GatewayReleasePolicy`, then set
+  `OPENCLAW_E2E_GATEWAY_VERSION` and run the setup/connect and recovery E2E
+  shards with `--validate-gateway-candidate`.
 
 ### Build Matrix
 
@@ -550,8 +668,13 @@ The CI builds multiple configurations:
 
 **Test Job:**
 - Runs on `windows-latest`
-- Builds Shared library, Tray app (WinUI), Tests (Shared + Tray)
-- Runs unit tests: `dotnet test tests/OpenClaw.Shared.Tests` and `dotnet test tests/OpenClaw.Tray.Tests`
+- Builds the Shared library, Tray app, and eight test projects: Shared, Tray,
+  Connection, WinNode CLI, Tray Integration, FunctionalUI, SetupEngine, and
+  Tray UI
+- Runs unit, integration, native UI, and accessibility tests across those
+  projects; see [docs/TEST_COVERAGE.md](docs/TEST_COVERAGE.md)
+- Verifies the WinUI DevBuild identity marker after native UI and accessibility
+  tests
 - Uses GitVersion for semantic versioning
 
 **Build Job (Tray):**
@@ -789,12 +912,12 @@ Direct `dotnet build` without the script will fail with "WindowsAppSDKSelfContai
 
 ### Architecture
 
-- **FunctionalUI**: `src/OpenClawTray.FunctionalUI/` — Minimal declarative WinUI helper layer used by onboarding
-- **Pages**: `src/OpenClaw.Tray.WinUI/Onboarding/Pages/` — Functional UI components for each wizard screen
-- **Services**: `src/OpenClaw.Tray.WinUI/Onboarding/Services/` — State management, setup code decoder, permission checker, health check, input validation
-- **Widgets**: `src/OpenClaw.Tray.WinUI/Onboarding/Widgets/` — Shared UI components (cards, step indicators, feature rows)
-- **Window**: `src/OpenClaw.Tray.WinUI/Onboarding/OnboardingWindow.cs` — Host window with WebView2 overlay for chat
-- **Helpers**: `src/OpenClaw.Tray.WinUI/Helpers/GatewayChatHelper.cs` — Shared WebView2 chat URL builder
+- **FunctionalUI**: `src/OpenClawTray.FunctionalUI/` - Minimal declarative WinUI helper layer used by onboarding
+- **Pages**: `src/OpenClaw.Tray.WinUI/Onboarding/Pages/` - Functional UI components for each wizard screen
+- **Services**: `src/OpenClaw.Tray.WinUI/Onboarding/Services/` - State management, setup code decoder, permission checker, health check, input validation
+- **Widgets**: `src/OpenClaw.Tray.WinUI/Onboarding/Widgets/` - Shared UI components (cards, step indicators, feature rows)
+- **Window**: `src/OpenClaw.Tray.WinUI/Onboarding/OnboardingWindow.cs` - Host window with WebView2 overlay for chat
+- **Helpers**: `src/OpenClaw.Tray.WinUI/Helpers/GatewayChatHelper.cs` - Shared WebView2 chat URL builder
 
 ---
 

@@ -1,10 +1,10 @@
+using OpenClaw.Connection;
 using OpenClaw.Shared;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.NetworkInformation;
-using System.Runtime.InteropServices;
 
 namespace OpenClawTray.Services;
 
@@ -12,7 +12,10 @@ public static class PortDiagnosticsService
 {
     public static List<PortDiagnosticInfo> BuildDiagnostics(
         GatewayTopologyInfo topology,
-        TunnelCommandCenterInfo? tunnel)
+        TunnelCommandCenterInfo? tunnel,
+        int? browserControlPortOverride = null,
+        bool useSshTunnelForBrowserProxy = false,
+        bool allowGatewayPortFallback = true)
     {
         var localTcpPorts = GetLocalTcpListeners();
         var diagnostics = new List<PortDiagnosticInfo>();
@@ -22,7 +25,13 @@ public static class PortDiagnosticsService
             diagnostics.Add(Create("Gateway endpoint", gatewayPort, localTcpPorts));
         }
 
-        if (TryGetBrowserProxyPort(topology, tunnel, out var browserProxyPort))
+        if (TryGetBrowserProxyPort(
+                topology,
+                tunnel,
+                browserControlPortOverride,
+                useSshTunnelForBrowserProxy,
+                allowGatewayPortFallback,
+                out var browserProxyPort))
         {
             diagnostics.Add(Create("Browser proxy host", browserProxyPort, localTcpPorts));
         }
@@ -96,26 +105,45 @@ public static class PortDiagnosticsService
         return true;
     }
 
-    private static bool TryGetBrowserProxyPort(GatewayTopologyInfo topology, TunnelCommandCenterInfo? tunnel, out int port)
+    private static bool TryGetBrowserProxyPort(
+        GatewayTopologyInfo topology,
+        TunnelCommandCenterInfo? tunnel,
+        int? browserControlPortOverride,
+        bool useSshTunnelForBrowserProxy,
+        bool allowGatewayPortFallback,
+        out int port)
     {
         port = 0;
-        if (topology.UsesSshTunnel &&
-            TryGetEndpointPort(tunnel?.LocalEndpoint, out var tunnelLocalPort) &&
-            tunnelLocalPort <= 65533)
+
+        // Probe the SAME endpoint browser.proxy dials by resolving through BrowserControlEndpoint,
+        // so the diagnostic's listener check can never diverge from the effective control port.
+        var tunnelLocalPort = useSshTunnelForBrowserProxy &&
+            TryGetEndpointPort(tunnel?.LocalEndpoint, out var tlp)
+                ? tlp
+                : (int?)null;
+
+        // Gateway port + 2 is only a sensible fallback for co-located / known split kinds; for any
+        // other topology we only probe when an explicit override pins a real local listener.
+        var gatewayFallbackAllowed =
+            topology.DetectedKind is (GatewayKind.WindowsNative or GatewayKind.Wsl or GatewayKind.MacOverSsh);
+        var gatewayPort = allowGatewayPortFallback && gatewayFallbackAllowed && TryGetPort(topology.GatewayUrl, out var gp)
+            ? gp
+            : (int?)null;
+
+        if (BrowserControlEndpoint.TryResolveControlPort(
+                gatewayLocalPort: gatewayPort,
+                useSshTunnel: useSshTunnelForBrowserProxy,
+                sshTunnelLocalPort: tunnelLocalPort,
+                controlPortOverride: browserControlPortOverride,
+                out var resolved,
+                out _,
+                allowGatewayPortFallback))
         {
-            port = tunnelLocalPort + 2;
+            port = resolved;
             return true;
         }
 
-        if (topology.DetectedKind is not (GatewayKind.WindowsNative or GatewayKind.Wsl or GatewayKind.MacOverSsh) ||
-            !TryGetPort(topology.GatewayUrl, out var gatewayPort) ||
-            gatewayPort > 65533)
-        {
-            return false;
-        }
-
-        port = gatewayPort + 2;
-        return true;
+        return false;
     }
 
     private static bool TryGetEndpointPort(string? endpoint, out int port)
@@ -159,78 +187,11 @@ public static class PortDiagnosticsService
 
     private static IEnumerable<TcpListenerProcessOwner> GetWindowsTcpListenerOwners()
     {
-        if (!OperatingSystem.IsWindows())
-            yield break;
-
-        var bufferLength = 0;
-        var result = GetExtendedTcpTable(
-            IntPtr.Zero,
-            ref bufferLength,
-            sort: true,
-            ipVersion: AfInet,
-            tableClass: TcpTableOwnerPidListener,
-            reserved: 0);
-        if (result != ErrorInsufficientBuffer || bufferLength <= 0)
-            yield break;
-
-        var tablePtr = Marshal.AllocHGlobal(bufferLength);
-        try
-        {
-            result = GetExtendedTcpTable(
-                tablePtr,
-                ref bufferLength,
-                sort: true,
-                ipVersion: AfInet,
-                tableClass: TcpTableOwnerPidListener,
-                reserved: 0);
-            if (result != ErrorSuccess)
-                yield break;
-
-            var rowCount = Marshal.ReadInt32(tablePtr);
-            var rowPtr = IntPtr.Add(tablePtr, sizeof(int));
-            var rowSize = Marshal.SizeOf<MibTcpRowOwnerPid>();
-            for (var i = 0; i < rowCount; i++)
-            {
-                var row = Marshal.PtrToStructure<MibTcpRowOwnerPid>(rowPtr);
-                var port = (row.LocalPort[0] << 8) + row.LocalPort[1];
-                if (port is >= 1 and <= 65535)
-                    yield return new TcpListenerProcessOwner(port, unchecked((int)row.OwningProcessId));
-                rowPtr = IntPtr.Add(rowPtr, rowSize);
-            }
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(tablePtr);
-        }
+        foreach (var listener in WindowsTcpListenerSnapshot.Capture().Listeners)
+            yield return new TcpListenerProcessOwner(listener.Port, listener.ProcessId);
     }
 
     private readonly record struct TcpListenerOwner(int ProcessId, string? ProcessName);
     private readonly record struct TcpListenerProcessOwner(int Port, int ProcessId);
 
-    private const int AfInet = 2;
-    private const int TcpTableOwnerPidListener = 3;
-    private const uint ErrorSuccess = 0;
-    private const uint ErrorInsufficientBuffer = 122;
-
-    [DllImport("iphlpapi.dll", SetLastError = true)]
-    private static extern uint GetExtendedTcpTable(
-        IntPtr tcpTable,
-        ref int tcpTableLength,
-        bool sort,
-        int ipVersion,
-        int tableClass,
-        uint reserved);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MibTcpRowOwnerPid
-    {
-        public uint State;
-        public uint LocalAddress;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
-        public byte[] LocalPort;
-        public uint RemoteAddress;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 4)]
-        public byte[] RemotePort;
-        public uint OwningProcessId;
-    }
 }

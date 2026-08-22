@@ -11,6 +11,7 @@
 
 .EXAMPLE
     .\scripts\build-inno-local.ps1 -Arch x64 -Fast
+    .\scripts\build-inno-local.ps1 -Arch x64 -Dev -Fast
     .\scripts\build-inno-local.ps1 -Arch All
     .\scripts\build-inno-local.ps1 -Arch x64 -NoPublish -Fast
 #>
@@ -28,6 +29,8 @@ param(
     [switch]$NoPublish,
 
     [switch]$Fast,
+
+    [switch]$Dev,
 
     [switch]$InstallInno
 )
@@ -63,8 +66,9 @@ function Resolve-InnoCompiler {
 
     if ($InstallInno) {
         Write-Step "Installing Inno Setup with winget"
-        winget install --id JRSoftware.InnoSetup -e --accept-source-agreements --accept-package-agreements --disable-interactivity
-        if ($LASTEXITCODE -ne 0) {
+        winget install --id JRSoftware.InnoSetup -e --accept-source-agreements --accept-package-agreements --disable-interactivity 2>&1 | Out-Host
+        $wingetExitCode = $LASTEXITCODE
+        if ($wingetExitCode -ne 0) {
             throw "winget failed to install Inno Setup."
         }
         return Resolve-InnoCompiler
@@ -100,7 +104,8 @@ function Publish-ArchitecturePayload {
         "-r", $RuntimeIdentifier,
         "--self-contained",
         "-o", $publishDir,
-        "-v:minimal"
+        "-v:minimal",
+        "-p:DevBuild=$($Dev.IsPresent.ToString().ToLowerInvariant())"
     )
     if ($PublishVersion) {
         $trayPublishArgs += "-p:Version=$PublishVersion"
@@ -120,6 +125,16 @@ function Assert-PayloadReady {
 
     if (-not (Test-Path -LiteralPath $trayExe)) {
         throw "Missing tray payload at $trayExe. Rerun without -NoPublish."
+    }
+
+    $identityMarker = Join-Path $publishDir "app-identity.txt"
+    $expectedIdentity = if ($Dev) { "dev" } else { "release" }
+    if (-not (Test-Path -LiteralPath $identityMarker)) {
+        throw "Missing payload identity marker at $identityMarker. Rerun without -NoPublish."
+    }
+    $actualIdentity = (Get-Content -LiteralPath $identityMarker -Raw).Trim()
+    if ($actualIdentity -ne $expectedIdentity) {
+        throw "Payload identity '$actualIdentity' does not match requested '$expectedIdentity' installer. Rerun without -NoPublish."
     }
 
     $setupExe = Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter "OpenClaw.SetupEngine.UI.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -151,6 +166,10 @@ function Invoke-InnoCompiler {
         $args += "/DMySolidCompression=no"
     }
 
+    if ($Dev) {
+        $args += "/DDevBuild=1"
+    }
+
     $args += ".\installer.iss"
 
     & $InnoCompiler @args
@@ -176,6 +195,7 @@ $architectures = if ($Arch -eq "All") { @("x64", "arm64") } else { @($Arch) }
 Write-Step "Using ISCC: $iscc"
 Write-Host "Version: $Version"
 Write-Host "Configuration: $Configuration"
+Write-Host "Identity: $(if ($Dev) { 'dev' } else { 'release' })"
 Write-Host "Fast compression: $($Fast.IsPresent)"
 Write-Host "No publish: $($NoPublish.IsPresent)"
 
@@ -191,7 +211,7 @@ foreach ($architecture in $architectures) {
 }
 
 Write-Step "Built installers"
-Get-ChildItem -Path (Join-Path $repoRoot "Output\OpenClawCompanion-Setup-*.exe") |
+Get-ChildItem -Path (Join-Path $repoRoot "Output\OpenClawCompanion*-Setup-*.exe") |
     Sort-Object Name |
     ForEach-Object {
         "{0}`t{1:N2} MB`t{2}" -f $_.FullName, ($_.Length / 1MB), $_.LastWriteTime

@@ -1,16 +1,14 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using OpenClawTray.Helpers;
 using OpenClawTray.Services;
-using System;
+using OpenClawTray.ViewModels;
 using System.Collections.ObjectModel;
-using System.Globalization;
-using System.Linq;
 
 namespace OpenClawTray.Pages;
 
 public sealed partial class NotificationsPage : Page
 {
+    private static App CurrentApp => (App)Application.Current!;
     private readonly ObservableCollection<NotificationItemViewModel> _notificationItems = new();
     private AppNotificationService? _notificationService;
 
@@ -76,55 +74,25 @@ public sealed partial class NotificationsPage : Page
         _notificationService?.Dismiss(notificationId);
     }
 
-    private sealed record NotificationItemViewModel(
-        string Id,
-        string SeverityGlyph,
-        string Title,
-        string Message,
-        string Metadata,
-        string OccurrenceText,
-        Visibility OccurrenceVisibility,
-        string DismissAutomationName)
+    private void OnNotificationActionClick(object sender, RoutedEventArgs e)
     {
-        public static NotificationItemViewModel From(AppNotification notification)
+        if (sender is not FrameworkElement { Tag: NotificationItemViewModel item })
+            return;
+
+        if (string.IsNullOrWhiteSpace(item.ActionRoute))
+            return;
+
+        if (AppNotificationActionRoutes.TryGetChatSessionKey(item.ActionRoute, out var sessionKey))
         {
-            var metadata = new[]
-                {
-                    LocalizeMetadataValue(notification.Source),
-                    LocalizeMetadataValue(notification.Category),
-                    notification.CreatedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)
-                }
-                .Where(value => !string.IsNullOrWhiteSpace(value));
-
-            var occurrenceText = LocalizationHelper.Format(
-                "AppNotification_RepeatedBadgeFormat",
-                notification.OccurrenceCount);
-
-            return new(
-                notification.Id,
-                ToSeverityGlyph(notification.Severity),
-                notification.Title,
-                notification.Message,
-                string.Join(" - ", metadata),
-                occurrenceText,
-                notification.OccurrenceCount > 1 ? Visibility.Visible : Visibility.Collapsed,
-                LocalizationHelper.Format("NotificationsPage_DismissAutomationNameFormat", notification.Title));
+            CurrentApp.PendingChatSessionKey = sessionKey;
+            if (CurrentApp.ActiveHubWindow is OpenClawTray.Windows.HubWindow hub)
+                hub.PendingChatSessionKey = sessionKey;
+            ((IAppCommands)CurrentApp).Navigate("chat");
+            _notificationService?.Dismiss(item.Id);
+            return;
         }
 
-        private static string ToSeverityGlyph(AppNotificationSeverity severity) => severity switch
-        {
-            AppNotificationSeverity.Success => "\uE930",
-            AppNotificationSeverity.Warning => "\uE7BA",
-            AppNotificationSeverity.Error => "\uE783",
-            _ => "\uE946"
-        };
-
-        private static string? LocalizeMetadataValue(string? value) => value switch
-        {
-            null or "" => null,
-            "exec-approval" => LocalizationHelper.GetString("NotificationsPage_MetadataSourceExecApproval"),
-            "node.invoke" => LocalizationHelper.GetString("NotificationsPage_MetadataCategoryNodeInvoke"),
-            _ => value
-        };
+        ((IAppCommands)CurrentApp).Navigate(item.ActionRoute);
+        _notificationService?.Dismiss(item.Id);
     }
 }

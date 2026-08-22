@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OpenClaw.Shared.Capabilities;
@@ -20,19 +21,24 @@ public class ScreenCapability : NodeCapabilityBase
     public override IReadOnlyList<string> Commands => _commands;
     
     // Events for UI/platform-specific implementation
-    public event Func<ScreenCaptureArgs, Task<ScreenCaptureResult>>? CaptureRequested;
-    public event Func<ScreenRecordArgs, Task<ScreenRecordResult>>? RecordRequested;
+    public event Func<ScreenCaptureArgs, CancellationToken, Task<ScreenCaptureResult>>? CaptureRequested;
+    public event Func<ScreenRecordArgs, CancellationToken, Task<ScreenRecordResult>>? RecordRequested;
     
     public ScreenCapability(IOpenClawLogger logger) : base(logger)
     {
     }
     
-    public override async Task<NodeInvokeResponse> ExecuteAsync(NodeInvokeRequest request)
+    public override Task<NodeInvokeResponse> ExecuteAsync(NodeInvokeRequest request)
+        => ExecuteAsync(request, CancellationToken.None);
+
+    public override async Task<NodeInvokeResponse> ExecuteAsync(
+        NodeInvokeRequest request,
+        CancellationToken cancellationToken)
     {
         return request.Command switch
         {
-            "screen.snapshot" => await HandleCaptureAsync(request),
-            "screen.record" => await HandleRecordAsync(request),
+            "screen.snapshot" => await HandleCaptureAsync(request, cancellationToken),
+            "screen.record" => await HandleRecordAsync(request, cancellationToken),
             _ => Error($"Unknown command: {request.Command}")
         };
     }
@@ -44,9 +50,18 @@ public class ScreenCapability : NodeCapabilityBase
     private const int MaxQuality = 100;
     private const int MaxScreenIndex = 32;          // far above any plausible monitor count
 
-    private async Task<NodeInvokeResponse> HandleCaptureAsync(NodeInvokeRequest request)
+    private async Task<NodeInvokeResponse> HandleCaptureAsync(
+        NodeInvokeRequest request,
+        CancellationToken cancellationToken)
     {
-        var format = GetStringArg(request.Args, "format", "png");
+        // The format is interpolated into the data URI, so validate it before
+        // invoking the capture backend.
+        var requestedFormat = GetStringArg(request.Args, "format", "png");
+        if (!TryNormalizeSnapshotFormat(requestedFormat, out var format))
+        {
+            return Error("Unsupported screen snapshot format. Supported formats: png, jpeg.");
+        }
+
         var maxWidth = Clamp(GetIntArg(request.Args, "maxWidth", 1920), MinDimension, MaxScreenWidth);
         var quality = Clamp(GetIntArg(request.Args, "quality", 80), MinQuality, MaxQuality);
         var monitor = GetIntArg(request.Args, "monitor", 0);
@@ -62,24 +77,31 @@ public class ScreenCapability : NodeCapabilityBase
         
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var result = await CaptureRequested(new ScreenCaptureArgs
             {
-                Format = format ?? "png",
+                Format = format,
                 MaxWidth = maxWidth,
                 Quality = quality,
                 MonitorIndex = screenIndex,
                 IncludePointer = includePointer
-            });
-            
-            var image = $"data:image/{result.Format.ToLowerInvariant()};base64,{result.Base64}";
+            }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Use the validated format for the MIME type instead of the backend echo.
+            var image = $"data:image/{format};base64,{result.Base64}";
             return Success(new 
             { 
-                format = result.Format,
+                format,
                 width = result.Width,
                 height = result.Height,
                 base64 = result.Base64,
                 image
             });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Error("cancelled");
         }
         catch (Exception ex)
         {
@@ -88,7 +110,33 @@ public class ScreenCapability : NodeCapabilityBase
         }
     }
 
-    private async Task<NodeInvokeResponse> HandleRecordAsync(NodeInvokeRequest request)
+    // Keep encoded bytes and advertised MIME type aligned.
+    internal static bool TryNormalizeSnapshotFormat(string? requested, out string normalized)
+    {
+        if (string.IsNullOrWhiteSpace(requested))
+        {
+            normalized = "png";
+            return true;
+        }
+
+        switch (requested.Trim().ToLowerInvariant())
+        {
+            case "png":
+                normalized = "png";
+                return true;
+            case "jpeg":
+            case "jpg":
+                normalized = "jpeg";
+                return true;
+            default:
+                normalized = "png";
+                return false;
+        }
+    }
+
+    private async Task<NodeInvokeResponse> HandleRecordAsync(
+        NodeInvokeRequest request,
+        CancellationToken cancellationToken)
     {
         var format = GetStringArg(request.Args, "format", "mp4");
         if (!string.IsNullOrWhiteSpace(format) &&
@@ -112,6 +160,7 @@ public class ScreenCapability : NodeCapabilityBase
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var result = await RecordRequested(new ScreenRecordArgs
             {
                 DurationMs = durationMs,
@@ -119,7 +168,8 @@ public class ScreenCapability : NodeCapabilityBase
                 ScreenIndex = screenIndex,
                 Format = "mp4",
                 IncludeAudio = includeAudio
-            });
+            }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
             return Success(new
             {
@@ -130,6 +180,10 @@ public class ScreenCapability : NodeCapabilityBase
                 screenIndex = result.ScreenIndex,
                 hasAudio = result.HasAudio
             });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return Error("cancelled");
         }
         catch (Exception ex)
         {
@@ -196,4 +250,3 @@ public class ScreenRecordResult
     public int Height { get; set; }
     public bool HasAudio { get; set; }
 }
-

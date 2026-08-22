@@ -1,5 +1,5 @@
+using OpenClaw.Connection;
 using OpenClaw.Shared;
-using OpenClawTray.Services;
 
 namespace OpenClaw.Tray.Tests;
 
@@ -53,12 +53,125 @@ public class WslGatewayControllerTests
         Assert.Contains("not registered", result.StandardError);
     }
 
+    [Fact]
+    public async Task RunAsync_AttemptsCommand_WhenDistroEnumerationIsEmpty()
+    {
+        // An empty distro list is ambiguous — the `wsl --list` probe may have failed
+        // or timed out — so the controller should fail open and still attempt the
+        // control command rather than dead-ending with a misleading "not registered".
+        var runner = new FakeWslCommandRunner
+        {
+            Distros = [],
+            Result = new WslCommandResult(0, "restarted", string.Empty),
+        };
+        var controller = new WslGatewayController(runner, NullLogger.Instance);
+
+        var result = await controller.RunAsync("OpenClawGateway", WslGatewayControlAction.Restart);
+
+        Assert.True(result.Success);
+        Assert.Equal("OpenClawGateway", runner.LastDistroName);
+        Assert.Equal(WslGatewayControlCommandBuilder.Build(WslGatewayControlAction.Restart), runner.LastDistroCommand);
+        Assert.DoesNotContain("not registered", result.StandardError);
+    }
+
+    [Fact]
+    public async Task ForceRestartAsync_TerminatesDistroThenColdRestarts()
+    {
+        var runner = new FakeWslCommandRunner
+        {
+            Distros = [new WslDistroInfo("OpenClawGateway", "Running", 2)],
+            Result = new WslCommandResult(0, "ok", string.Empty),
+        };
+        var controller = new WslGatewayController(runner, NullLogger.Instance);
+
+        var result = await controller.ForceRestartAsync("OpenClawGateway");
+
+        Assert.True(result.Success);
+        Assert.Equal(1, runner.TerminateCount);                      // host-side terminate happened first
+        Assert.Equal("OpenClawGateway", runner.LastTerminatedDistro);
+        Assert.Equal(                                                 // then a cold in-distro restart
+            WslGatewayControlCommandBuilder.Build(WslGatewayControlAction.Restart),
+            runner.LastDistroCommand);
+    }
+
+    [Fact]
+    public async Task Restarter_WhenInPlaceRestartFails_EscalatesToTerminateAndForceRestart()
+    {
+        // Wedged-VM case: the in-place `gateway restart` fails; the restarter must escalate to a
+        // host-side terminate + cold restart rather than giving up (Sol-A).
+        var runner = new FakeWslCommandRunner
+        {
+            Distros = [new WslDistroInfo("OpenClawGateway", "Running", 2)],
+            InDistroResults = new Queue<WslCommandResult>(
+            [
+                new WslCommandResult(1, string.Empty, "wedged"),  // in-place restart fails
+                new WslCommandResult(0, "ok", string.Empty),      // cold restart after terminate succeeds
+            ]),
+        };
+        var controller = new WslGatewayController(runner, NullLogger.Instance);
+        var restarter = new OpenClawTray.Services.WslManagedLocalGatewayRestarter(controller);
+
+        var result = await restarter.RestartAsync("OpenClawGateway", CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, runner.TerminateCount);   // escalated: host-side terminate happened
+        Assert.Equal(2, runner.InDistroCount);     // in-place attempt + post-terminate cold restart
+    }
+
+    [Fact]
+    public async Task Restarter_WhenBothRestartsFail_ReportsFailure()
+    {
+        var runner = new FakeWslCommandRunner
+        {
+            Distros = [new WslDistroInfo("OpenClawGateway", "Running", 2)],
+            Result = new WslCommandResult(1, string.Empty, "still wedged"),
+        };
+        var controller = new WslGatewayController(runner, NullLogger.Instance);
+        var restarter = new OpenClawTray.Services.WslManagedLocalGatewayRestarter(controller);
+
+        var result = await restarter.RestartAsync("OpenClawGateway", CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(1, runner.TerminateCount);   // escalation was attempted
+        Assert.Equal(2, runner.InDistroCount);
+    }
+
+    [Fact]
+    public async Task Restarter_GatewayChangesAfterInPlaceFailure_DoesNotForceTerminate()
+    {
+        var runner = new FakeWslCommandRunner
+        {
+            Distros = [new WslDistroInfo("OpenClawGateway", "Running", 2)],
+            InDistroResults = new Queue<WslCommandResult>(
+            [
+                new WslCommandResult(1, string.Empty, "wedged"),
+            ]),
+        };
+        var controller = new WslGatewayController(runner, NullLogger.Instance);
+        var restarter = new OpenClawTray.Services.WslManagedLocalGatewayRestarter(controller);
+        var checks = 0;
+
+        var result = await restarter.RestartAsync(
+            "OpenClawGateway",
+            CancellationToken.None,
+            canContinue: () => ++checks == 1);
+
+        Assert.False(result.Success);
+        Assert.Contains("changed", result.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, runner.TerminateCount);
+        Assert.Equal(1, runner.InDistroCount);
+    }
+
     private sealed class FakeWslCommandRunner : IWslCommandRunner
     {
         public IReadOnlyList<WslDistroInfo> Distros { get; init; } = [];
         public WslCommandResult Result { get; init; } = new(0, string.Empty, string.Empty);
+        public Queue<WslCommandResult>? InDistroResults { get; init; }
         public string? LastDistroName { get; private set; }
         public IReadOnlyList<string>? LastDistroCommand { get; private set; }
+        public int InDistroCount { get; private set; }
+        public int TerminateCount { get; private set; }
+        public string? LastTerminatedDistro { get; private set; }
 
         public Task<WslCommandResult> RunAsync(
             IReadOnlyList<string> arguments,
@@ -75,7 +188,9 @@ public class WslGatewayControllerTests
 
         public Task<WslCommandResult> TerminateDistroAsync(string name, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(Result);
+            TerminateCount++;
+            LastTerminatedDistro = name;
+            return Task.FromResult(new WslCommandResult(0, string.Empty, string.Empty));
         }
 
         public Task<WslCommandResult> UnregisterDistroAsync(string name, CancellationToken cancellationToken = default)
@@ -91,7 +206,9 @@ public class WslGatewayControllerTests
         {
             LastDistroName = name;
             LastDistroCommand = command;
-            return Task.FromResult(Result);
+            InDistroCount++;
+            var result = InDistroResults is { Count: > 0 } ? InDistroResults.Dequeue() : Result;
+            return Task.FromResult(result);
         }
     }
 }

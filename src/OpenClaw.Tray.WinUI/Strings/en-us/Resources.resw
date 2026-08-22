@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -301,16 +301,16 @@
   <!-- ==================== Runtime strings (C# code) ==================== -->
   <!-- Window titles -->
   <data name="WindowTitle_Settings" xml:space="preserve">
-    <value>Settings — OpenClaw Tray</value>
+    <value>Settings: OpenClaw Tray</value>
   </data>
   <data name="WindowTitle_Status" xml:space="preserve">
-    <value>Status — OpenClaw Tray</value>
+    <value>Status: OpenClaw Tray</value>
   </data>
   <data name="WindowTitle_ActivityStream" xml:space="preserve">
-    <value>Activity Stream — OpenClaw Tray</value>
+    <value>Activity Stream: OpenClaw Tray</value>
   </data>
   <data name="WindowTitle_NotificationHistory" xml:space="preserve">
-    <value>Notification History — OpenClaw Tray</value>
+    <value>Notification History: OpenClaw Tray</value>
   </data>
   <data name="WindowTitle_WebChat" xml:space="preserve">
     <value>OpenClaw Chat</value>
@@ -394,6 +394,9 @@
   </data>
   <data name="Update_Message_Skipped_Debug" xml:space="preserve">
     <value>Update checks are disabled in debug builds.</value>
+  </data>
+  <data name="Update_Message_Skipped_Dev" xml:space="preserve">
+    <value>Update checks are disabled in development builds.</value>
   </data>
   <data name="Update_OK" xml:space="preserve">
     <value>OK</value>
@@ -689,6 +692,111 @@ Use one of these options:
   <data name="Toast_PairingCommandCopied" xml:space="preserve">
     <value>Pairing command copied</value>
   </data>
+  <data name="Toast_PairingRequestTitle" xml:space="preserve">
+    <value>Pairing request</value>
+  </data>
+  <data name="Toast_PairingRequestBody" xml:space="preserve">
+    <value>{0} wants to connect</value>
+  </data>
+  <data name="Toast_PairingRequestBodyNode" xml:space="preserve">
+    <value>{0} wants to connect as a node</value>
+  </data>
+  <data name="Toast_PairingReview" xml:space="preserve">
+    <value>Review</value>
+  </data>
+  <data name="Toast_PairingApprovedTitle" xml:space="preserve">
+    <value>Pairing approved</value>
+  </data>
+  <data name="Toast_PairingApprovedBody" xml:space="preserve">
+    <value>{0} can now connect</value>
+  </data>
+  <data name="Toast_PairingRejectedTitle" xml:space="preserve">
+    <value>Pairing rejected</value>
+  </data>
+  <data name="Toast_PairingRejectedBody" xml:space="preserve">
+    <value>{0} was not allowed to connect</value>
+  </data>
+  <data name="PairingApproval_WindowTitle" xml:space="preserve">
+    <value>Pairing request</value>
+  </data>
+  <data name="PairingApproval_DeviceHeading" xml:space="preserve">
+    <value>A device wants to connect</value>
+  </data>
+  <data name="PairingApproval_NodeHeading" xml:space="preserve">
+    <value>A node wants to connect</value>
+  </data>
+  <data name="PairingApproval_Subtitle" xml:space="preserve">
+    <value>Only approve if you recognize this request. You can remove it later in Connection settings.</value>
+  </data>
+  <data name="PairingApproval_AccessRequested" xml:space="preserve">
+    <value>Access requested</value>
+  </data>
+  <data name="PairingApproval_RepairBadge" xml:space="preserve">
+    <value>Re-pair request: the device token will rotate.</value>
+  </data>
+  <data name="PairingApproval_Approve" xml:space="preserve">
+    <value>Approve</value>
+  </data>
+  <data name="PairingApproval_ApproveDevice" xml:space="preserve">
+    <value>Approve device</value>
+  </data>
+  <data name="PairingApproval_ApproveNode" xml:space="preserve">
+    <value>Approve node</value>
+  </data>
+  <data name="PairingApproval_Reject" xml:space="preserve">
+    <value>Reject</value>
+  </data>
+  <data name="PairingApproval_Later" xml:space="preserve">
+    <value>Decide later</value>
+  </data>
+  <data name="PairingApproval_MoreWaiting" xml:space="preserve">
+    <value>{0} more waiting</value>
+  </data>
+  <data name="PairingApproval_ApproveHint" xml:space="preserve">
+    <value>Approve becomes available in a moment</value>
+  </data>
+  <data name="PairingApproval_UnknownDevice" xml:space="preserve">
+    <value>Unknown device</value>
+  </data>
+  <data name="PairingApproval_UnknownPlatform" xml:space="preserve">
+    <value>Unknown platform</value>
+  </data>
+  <data name="ExecApproval_WindowTitle" xml:space="preserve">
+    <value>Command Approval</value>
+  </data>
+  <data name="ExecApproval_Heading" xml:space="preserve">
+    <value>Allow Command?</value>
+  </data>
+  <data name="ExecApproval_Body" xml:space="preserve">
+    <value>The following command is requesting permission to run:</value>
+  </data>
+  <data name="ExecApproval_AgentLabel" xml:space="preserve">
+    <value>Agent:</value>
+  </data>
+  <data name="ExecApproval_CwdLabel" xml:space="preserve">
+    <value>Working directory:</value>
+  </data>
+  <data name="ExecApproval_ExecutableLabel" xml:space="preserve">
+    <value>Executable:</value>
+  </data>
+  <data name="ExecApproval_AllowOnce" xml:space="preserve">
+    <value>Allow Once</value>
+  </data>
+  <data name="ExecApproval_AllowAlways" xml:space="preserve">
+    <value>Allow Always</value>
+  </data>
+  <data name="ExecApproval_Deny" xml:space="preserve">
+    <value>Deny</value>
+  </data>
+  <data name="ExecApproval_ArmHint" xml:space="preserve">
+    <value>Allow becomes available in a moment</value>
+  </data>
+  <data name="ExecApproval_ScrollHint" xml:space="preserve">
+    <value>Scroll to the end of the command before allowing</value>
+  </data>
+  <data name="ExecApproval_ConfusableWarning" xml:space="preserve">
+    <value>This command mixes character sets and may not read the way it looks. Check it carefully.</value>
+  </data>
   <data name="Toast_NodePaired" xml:space="preserve">
     <value>✅ Node Paired!</value>
   </data>
@@ -760,7 +868,7 @@ Use one of these options:
   </data>
   <!-- ==================== Recording Consent Dialog ==================== -->
   <data name="RecordingConsent_WindowTitle" xml:space="preserve">
-    <value>OpenClaw · Permission Request</value>
+    <value>Permission Request</value>
   </data>
   <data name="RecordingConsent_ScreenTitle" xml:space="preserve">
     <value>Allow screen recording?</value>
@@ -818,157 +926,6 @@ Use one of these options:
   <data name="Toast_ActivityStreamTipButton" xml:space="preserve">
     <value>Open Activity Stream</value>
   </data>
-  <!-- ==================== SetupWizardWindow (C# code) ==================== -->
-  <data name="Setup_Title" xml:space="preserve">
-    <value>OpenClaw Setup</value>
-  </data>
-  <data name="Setup_StepConnect" xml:space="preserve">
-    <value>Step 1 of 3 — Connect</value>
-  </data>
-  <data name="Setup_ConnectTitle" xml:space="preserve">
-    <value>Connect to your gateway</value>
-  </data>
-  <data name="Setup_ConnectDescription" xml:space="preserve">
-    <value>On your gateway host (Mac/Linux), run this to get a setup code:</value>
-  </data>
-  <data name="Setup_SetupCodeHeader" xml:space="preserve">
-    <value>Setup Code</value>
-  </data>
-  <data name="Setup_SetupCodePlaceholder" xml:space="preserve">
-    <value>Paste the setup code from your gateway dashboard</value>
-  </data>
-  <data name="Setup_PasteSetupButton" xml:space="preserve">
-    <value>Paste setup code / QR</value>
-  </data>
-  <data name="Setup_ImportQrButton" xml:space="preserve">
-    <value>Import QR image...</value>
-  </data>
-  <data name="Setup_QrDecoded" xml:space="preserve">
-    <value>✅ QR image decoded — press Test Connection</value>
-  </data>
-  <data name="Setup_QrDecodeFailed" xml:space="preserve">
-    <value>❌ Could not find a valid setup QR code in that image.</value>
-  </data>
-  <data name="Setup_ClipboardUnsupported" xml:space="preserve">
-    <value>❌ Clipboard does not contain setup code text or a QR image.</value>
-  </data>
-  <data name="Setup_ManualEntryToggle" xml:space="preserve">
-    <value>Or enter URL and token manually ▾</value>
-  </data>
-  <data name="Setup_ManualEntryToggleHide" xml:space="preserve">
-    <value>Hide manual entry ▴</value>
-  </data>
-  <data name="Setup_GatewayUrlHeader" xml:space="preserve">
-    <value>Gateway URL</value>
-  </data>
-  <data name="Setup_GatewayUrlPlaceholder" xml:space="preserve">
-    <value>ws://192.168.1.x:18789</value>
-  </data>
-  <data name="Setup_GatewayUrlHint" xml:space="preserve">
-    <value>💡 Accepts ws://, wss://, http://, or https://</value>
-  </data>
-  <data name="Setup_TokenHeader" xml:space="preserve">
-    <value>Gateway Token</value>
-  </data>
-  <data name="Setup_TokenPlaceholder" xml:space="preserve">
-    <value>Paste your token here</value>
-  </data>
-  <data name="Setup_TestButton" xml:space="preserve">
-    <value>Test Connection</value>
-  </data>
-  <data name="Setup_Testing" xml:space="preserve">
-    <value>⏳ Connecting to gateway...</value>
-  </data>
-  <data name="Setup_Connected" xml:space="preserve">
-    <value>✅ Connected!</value>
-  </data>
-  <data name="Setup_PairingRequired" xml:space="preserve">
-    <value>✅ Gateway reached! Device needs pairing approval.
-
-On your gateway host (Mac/Linux), run:
-
-  openclaw devices approve {0}</value>
-  </data>
-  <data name="Setup_TokenMismatch" xml:space="preserve">
-    <value>❌ Token doesn't match.
-
-💡 Check gateway auth token:
-  cat ~/.openclaw/openclaw.json | grep token</value>
-  </data>
-  <data name="Setup_OriginNotAllowed" xml:space="preserve">
-    <value>❌ Origin not allowed.
-
-💡 Add this machine to gateway.controlUi.allowedOrigins.</value>
-  </data>
-  <data name="Setup_RateLimited" xml:space="preserve">
-    <value>❌ Rate-limited. Wait a minute and try again.</value>
-  </data>
-  <data name="Setup_TimedOut" xml:space="preserve">
-    <value>❌ Timed out. Check the URL and gateway is running.</value>
-  </data>
-  <data name="Setup_TokenRequired" xml:space="preserve">
-    <value>❌ Please enter a token</value>
-  </data>
-  <data name="Setup_TestFirst" xml:space="preserve">
-    <value>⚠️ Please test the connection first</value>
-  </data>
-  <data name="Setup_CodeDecoded" xml:space="preserve">
-    <value>✅ Setup code decoded — press Test Connection</value>
-  </data>
-  <data name="Setup_NodeModeTitle" xml:space="preserve">
-    <value>Enable Node Mode (optional)</value>
-  </data>
-  <data name="Setup_NodeModeDescription" xml:space="preserve">
-    <value>Node Mode lets your Windows machine run tasks for OpenClaw — like screen capture, camera access, and canvas drawing.</value>
-  </data>
-  <data name="Setup_NodeModeSecurityTitle" xml:space="preserve">
-    <value>Only enable Node Mode for gateways and agents you trust</value>
-  </data>
-  <data name="Setup_NodeModeSecurityMessage" xml:space="preserve">
-    <value>Approved agents can run local commands and may access enabled device surfaces such as screen, camera, location, browser, and canvas. You can disable capability groups later in Settings.</value>
-  </data>
-  <data name="Setup_NodeModeToggle" xml:space="preserve">
-    <value>Enable Node Mode</value>
-  </data>
-  <data name="Setup_DeviceIdLoading" xml:space="preserve">
-    <value>Device ID: loading...</value>
-  </data>
-  <data name="Setup_DeviceIdFallback" xml:space="preserve">
-    <value>Device ID: (will be generated on first connect)</value>
-  </data>
-  <data name="Setup_CopyDeviceId" xml:space="preserve">
-    <value>📋 Copy Device ID</value>
-  </data>
-  <data name="Setup_DeviceIdCopied" xml:space="preserve">
-    <value>✅ Copied!</value>
-  </data>
-  <data name="Setup_ApproveInstructions" xml:space="preserve">
-    <value>To approve this node, run on your gateway host:</value>
-  </data>
-  <data name="Setup_ApproveHint" xml:space="preserve">
-    <value>💡 You can finish setup now — pairing will continue in the background. You'll get a notification when approved.</value>
-  </data>
-  <data name="Setup_DoneTitle" xml:space="preserve">
-    <value>🎉 You're all set!</value>
-  </data>
-  <data name="Setup_DoneDescription" xml:space="preserve">
-    <value>OpenClaw Tray will connect to your gateway and start monitoring.</value>
-  </data>
-  <data name="Setup_BackButton" xml:space="preserve">
-    <value>Back</value>
-  </data>
-  <data name="Setup_NextButton" xml:space="preserve">
-    <value>Next</value>
-  </data>
-  <data name="Setup_FinishButton" xml:space="preserve">
-    <value>Finish</value>
-  </data>
-  <data name="Setup_StepNodeMode" xml:space="preserve">
-    <value>Step 2 of 3 — Node Mode</value>
-  </data>
-  <data name="Setup_StepDone" xml:space="preserve">
-    <value>Step 3 of 3 — Done</value>
-  </data>
   <!-- ==================== Local MCP server (SettingsWindow) ==================== -->
   <data name="SettingsDeveloperModeHeader.Text" xml:space="preserve">
     <value>DEVELOPER MODE</value>
@@ -1023,7 +980,7 @@ On your gateway host (Mac/Linux), run:
     <value>Hide</value>
   </data>
   <data name="SettingsMcpToken_NotGenerated" xml:space="preserve">
-    <value>(not generated — enable MCP server and click Save)</value>
+    <value>(not generated: enable MCP server and click Save)</value>
   </data>
   <data name="SettingsMcpToken_StoredAtFormat" xml:space="preserve">
     <value>Stored at {0}</value>
@@ -1061,7 +1018,7 @@ On your gateway host (Mac/Linux), run:
   </data>
   <!-- ==================== UrlNavigationApprovalService prompt ==================== -->
   <data name="UrlApproval_Caption" xml:space="preserve">
-    <value>OpenClaw — Approve URL</value>
+    <value>OpenClaw: Approve URL</value>
   </data>
   <data name="UrlApproval_Body" xml:space="preserve">
     <value>An agent wants to open a high-risk destination in your browser.</value>
@@ -1082,10 +1039,10 @@ On your gateway host (Mac/Linux), run:
     <value>Reasons:</value>
   </data>
   <data name="UrlApproval_YesHint" xml:space="preserve">
-    <value>Yes — open this URL.</value>
+    <value>Yes: open this URL.</value>
   </data>
   <data name="UrlApproval_NoHint" xml:space="preserve">
-    <value>No — block it.</value>
+    <value>No: block it.</value>
   </data>
   <data name="Onboarding_Title" xml:space="preserve">
     <value>OpenClaw Setup</value>
@@ -1196,10 +1153,10 @@ On your gateway host (Mac/Linux), run:
     <value>Device needs approval</value>
   </data>
   <data name="Onboarding_Connection_StatusTokenMismatch" xml:space="preserve">
-    <value>Token mismatch — check your bootstrap token</value>
+    <value>Token mismatch: check your bootstrap token</value>
   </data>
   <data name="Onboarding_Connection_StatusTimeout" xml:space="preserve">
-    <value>Connection timed out (15s) — verify gateway is running</value>
+    <value>Connection timed out (15s): verify gateway is running</value>
   </data>
   <data name="Onboarding_Permissions_Title" xml:space="preserve">
     <value>Grant Permissions</value>
@@ -1271,19 +1228,19 @@ On your gateway host (Mac/Linux), run:
     <value>Disabled by policy</value>
   </data>
   <data name="Onboarding_Perm_DisabledUser" xml:space="preserve">
-    <value>Disabled — open Settings to enable</value>
+    <value>Disabled: open Settings to enable</value>
   </data>
   <data name="Onboarding_Perm_Allowed" xml:space="preserve">
     <value>Allowed</value>
   </data>
   <data name="Onboarding_Perm_DeniedUser" xml:space="preserve">
-    <value>Denied — open Settings to allow</value>
+    <value>Denied: open Settings to allow</value>
   </data>
   <data name="Onboarding_Perm_DeniedSystem" xml:space="preserve">
     <value>Denied by system policy</value>
   </data>
   <data name="Onboarding_Perm_NotDetermined" xml:space="preserve">
-    <value>Not determined — open Settings</value>
+    <value>Not determined: open Settings</value>
   </data>
   <data name="Onboarding_Perm_UnableToCheck" xml:space="preserve">
     <value>Unable to check</value>
@@ -1295,7 +1252,7 @@ On your gateway host (Mac/Linux), run:
     <value>No microphone detected</value>
   </data>
   <data name="Onboarding_Perm_ScreenCaptureAvailable" xml:space="preserve">
-    <value>Available — uses picker per capture</value>
+    <value>Available: uses picker per capture</value>
   </data>
   <data name="Onboarding_Perm_NotSupported" xml:space="preserve">
     <value>Not supported on this device</value>
@@ -1325,10 +1282,10 @@ On your gateway host (Mac/Linux), run:
     <value>Settings → Skills</value>
   </data>
   <data name="Onboarding_Connection_StatusOriginBlocked" xml:space="preserve">
-    <value>Origin not allowed — gateway rejects this connection</value>
+    <value>Origin not allowed: gateway rejects this connection</value>
   </data>
   <data name="Onboarding_Connection_StatusRateLimited" xml:space="preserve">
-    <value>Rate limited — wait a moment and try again</value>
+    <value>Rate limited: wait a moment and try again</value>
   </data>
   <data name="Onboarding_Connection_RunOnGateway" xml:space="preserve">
     <value>Run on your gateway:</value>
@@ -1337,13 +1294,13 @@ On your gateway host (Mac/Linux), run:
     <value>Click to copy</value>
   </data>
   <data name="Onboarding_Connection_CopyFailed" xml:space="preserve">
-    <value>Copy failed — click to retry</value>
+    <value>Copy failed: click to retry</value>
   </data>
   <data name="Onboarding_Connection_Copied" xml:space="preserve">
     <value>Copied!</value>
   </data>
   <data name="Onboarding_Connection_StatusFailed" xml:space="preserve">
-    <value>Connection failed — check URL and token, then try again</value>
+    <value>Connection failed: check URL and token, then try again</value>
   </data>
   <data name="Onboarding_Wizard_StepError" xml:space="preserve">
     <value>An error occurred processing this step</value>
@@ -1494,58 +1451,7 @@ On your gateway host (Mac/Linux), run:
   <data name="Onboarding_Welcome_Trust_Screen" xml:space="preserve">
     <value>Capture screenshots</value>
   </data>
-  <data name="AboutPage_TextBlock_10.Text" xml:space="preserve">
-    <value>About</value>
-  </data>
-  <data name="AboutPage_TextBlock_19.Text" xml:space="preserve">
-    <value>OpenClaw Hub</value>
-  </data>
-  <data name="AboutPage_TextBlock_23.Text" xml:space="preserve">
-    <value>.NET / WinUI / Windows App SDK</value>
-  </data>
-  <data name="AboutPage_TextBlock_35.Text" xml:space="preserve">
-    <value>Gateway Info</value>
-  </data>
-  <data name="AboutPage_TextBlock_48.Text" xml:space="preserve">
-    <value>Version:</value>
-  </data>
-  <data name="AboutPage_TextBlock_52.Text" xml:space="preserve">
-    <value>Protocol:</value>
-  </data>
-  <data name="AboutPage_TextBlock_56.Text" xml:space="preserve">
-    <value>Auth mode:</value>
-  </data>
-  <data name="AboutPage_TextBlock_60.Text" xml:space="preserve">
-    <value>Uptime:</value>
-  </data>
-  <data name="AboutPage_TextBlock_72.Text" xml:space="preserve">
-    <value>Debug</value>
-  </data>
-  <data name="OpenLogButton.Content" xml:space="preserve">
-    <value>Open Log File</value>
-  </data>
-  <data name="OpenConfigButton.Content" xml:space="preserve">
-    <value>Open Config Folder</value>
-  </data>
-  <data name="CopySupportButton.Content" xml:space="preserve">
-    <value>Copy Support Context</value>
-  </data>
-  <data name="CheckUpdatesButton.Content" xml:space="preserve">
-    <value>Check for Updates</value>
-  </data>
-  <data name="AboutPage_TextBlock_91.Text" xml:space="preserve">
-    <value>Links</value>
-  </data>
-  <data name="AboutPage_HyperlinkButton_92.Content" xml:space="preserve">
-    <value>Documentation → docs.openclaw.ai/platforms/windows</value>
-  </data>
-  <data name="AboutPage_HyperlinkButton_94.Content" xml:space="preserve">
-    <value>GitHub → github.com/openclaw/openclaw-windows-node</value>
-  </data>
-  <data name="AboutPage_HyperlinkButton_96.Content" xml:space="preserve">
-    <value>Dashboard → openclaw://dashboard</value>
-  </data>
-  <data name="AgentEventsPage_TextBlock_18.Text" xml:space="preserve">
+<data name="AgentEventsPage_TextBlock_18.Text" xml:space="preserve">
     <value>Event Stream</value>
   </data>
   <data name="AgentFilterCombo.Header" xml:space="preserve">
@@ -1555,7 +1461,7 @@ On your gateway host (Mac/Linux), run:
     <value>All Agents</value>
   </data>
   <data name="AgentEventsPage_IntroText.Text" xml:space="preserve">
-    <value>Real-time stream of agent activity — tool calls, responses, errors, and lifecycle events.</value>
+    <value>Real-time stream of agent activity: tool calls, responses, errors, and lifecycle events.</value>
   </data>
   <data name="AgentEventsPage_ComboBoxItem_26.Content" xml:space="preserve">
     <value>All Agents</value>
@@ -1615,7 +1521,7 @@ On your gateway host (Mac/Linux), run:
     <value>Local MCP Server</value>
   </data>
   <data name="PermissionsPage_McpDescription.Text" xml:space="preserve">
-    <value>Expose capabilities via HTTP for CLI tools and local integrations.</value>
+    <value>Serves capabilities to local MCP clients (CLI tools, integrations) on this PC over HTTP.</value>
   </data>
   <data name="PermissionsPage_McpEndpointLabel.Text" xml:space="preserve">
     <value>Endpoint:</value>
@@ -1746,9 +1652,6 @@ On your gateway host (Mac/Linux), run:
   <data name="ConnectionPage_TextBlock_11.Text" xml:space="preserve">
     <value>Gateway endpoint used by both the operator client and node service.</value>
   </data>
-  <data name="AuthErrorBar.Title" xml:space="preserve">
-    <value>Connection Error</value>
-  </data>
   <data name="StatusText.Text" xml:space="preserve">
     <value>Disconnected</value>
   </data>
@@ -1756,7 +1659,7 @@ On your gateway host (Mac/Linux), run:
     <value>Reconnect</value>
   </data>
   <data name="OperatorStatusText.Text" xml:space="preserve">
-    <value>Operator: —</value>
+    <value>Operator: …</value>
   </data>
   <data name="ConnectToggle.Header" xml:space="preserve">
     <value>Connection</value>
@@ -1876,7 +1779,7 @@ On your gateway host (Mac/Linux), run:
     <value>Store: ~/.openclaw/cron.db</value>
   </data>
   <data name="NextWakeText.Text" xml:space="preserve">
-    <value>Next wake: —</value>
+    <value>Next wake: …</value>
   </data>
   <data name="CronPage_Button_80.Content" xml:space="preserve">
     <value>Run Now</value>
@@ -2035,7 +1938,7 @@ On your gateway host (Mac/Linux), run:
     <value>Forget node</value>
   </data>
   <data name="NodesPage_Forget_Error_Generic" xml:space="preserve">
-    <value>Could not forget node — gateway not reachable or permission denied.</value>
+    <value>Could not forget node: gateway not reachable or permission denied.</value>
   </data>
   <data name="NodesPage_Common_Cancel" xml:space="preserve">
     <value>Cancel</value>
@@ -2047,7 +1950,7 @@ On your gateway host (Mac/Linux), run:
     <value>Exec Policy</value>
   </data>
   <data name="PermissionsPage_TextBlock_17.Text" xml:space="preserve">
-    <value>Controls which commands the agent can execute on this node. Rules are matched against the full command line.</value>
+    <value>Controls which executables the agent can launch on this node. The executable-path allowlist starts empty.</value>
   </data>
   <data name="DefaultActionCombo.Header" xml:space="preserve">
     <value>Default Action</value>
@@ -2062,25 +1965,28 @@ On your gateway host (Mac/Linux), run:
     <value>Ask</value>
   </data>
   <data name="PermissionsPage_TextBlock_28.Text" xml:space="preserve">
-    <value>Rules</value>
+    <value>Executable-path allowlist</value>
   </data>
   <data name="NewRulePattern.PlaceholderText" xml:space="preserve">
-    <value>Command pattern (e.g. echo *)</value>
+    <value>Executable-path pattern (e.g. **/hostname.exe)</value>
+  </data>
+  <data name="PermissionsPage_ExecAllowlistPatternValidation.Text" xml:space="preserve">
+    <value>Enter an executable-path pattern such as **/hostname.exe. Basename or command-text patterns such as hostname are invalid.</value>
   </data>
   <data name="PermissionsPage_ComboBoxItem_54.Content" xml:space="preserve">
-    <value>allow</value>
+    <value>Deny</value>
   </data>
-  <data name="PermissionsPage_ComboBoxItem_55.Content" xml:space="preserve">
-    <value>deny</value>
+  <data name="PermissionsPage_ComboBoxItem_56.Content" xml:space="preserve">
+    <value>Ask</value>
   </data>
   <data name="PermissionsPage_Button_57.Content" xml:space="preserve">
-    <value>Add Rule</value>
+    <value>Add entry</value>
   </data>
   <data name="PermissionsPage_TextBlock_69.Text" xml:space="preserve">
     <value>Node Allowlist</value>
   </data>
   <data name="PermissionsPage_TextBlock_72.Text" xml:space="preserve">
-    <value>Commands allowed by the gateway for connected nodes. This list is read-only — edit via the Config page.</value>
+    <value>Commands allowed by the gateway for connected nodes. This list is read-only: edit via the Config page.</value>
   </data>
   <data name="AllowlistEmpty.Text" xml:space="preserve">
     <value>No allowlist data available. Connect to a gateway first.</value>
@@ -2262,6 +2168,69 @@ On your gateway host (Mac/Linux), run:
   <data name="WorkspacePage_LoadingContent" xml:space="preserve">
     <value>Loading content…</value>
   </data>
+  <data name="WorkspacePage_SearchBox.PlaceholderText" xml:space="preserve">
+    <value>Search files</value>
+  </data>
+  <data name="WorkspacePage_ParentFolderButton.Content" xml:space="preserve">
+    <value>Up</value>
+  </data>
+  <data name="WorkspacePage_OpenConnectionSettings.Content" xml:space="preserve">
+    <value>Open Connection settings</value>
+  </data>
+  <data name="WorkspacePage_NoSearchResults.Text" xml:space="preserve">
+    <value>No files match your search.</value>
+  </data>
+  <data name="WorkspacePage_NoFolderResults" xml:space="preserve">
+    <value>No files found in this folder.</value>
+  </data>
+  <data name="WorkspacePage_LoadErrorMessage" xml:space="preserve">
+    <value>Couldn't load workspace files. Try refreshing.</value>
+  </data>
+  <data name="WorkspacePage_UnsupportedMessage" xml:space="preserve">
+    <value>This gateway doesn't support listing workspace files.</value>
+  </data>
+  <data name="WorkspacePage_Badge_Missing" xml:space="preserve">
+    <value>Missing</value>
+  </data>
+  <data name="WorkspacePage_Badge_Edited" xml:space="preserve">
+    <value>Edited</value>
+  </data>
+  <data name="WorkspacePage_Badge_Read" xml:space="preserve">
+    <value>Read</value>
+  </data>
+  <data name="WorkspacePage_FolderNote" xml:space="preserve">
+    <value>This is a folder.</value>
+  </data>
+  <data name="WorkspacePage_FileUnavailable" xml:space="preserve">
+    <value>Couldn't load this file.</value>
+  </data>
+  <data name="WorkspacePage_BrowserOnlyFileNote" xml:space="preserve">
+    <value>Only files read or edited in this session can be previewed.</value>
+  </data>
+  <data name="WorkspacePage_OpenFolder" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="WorkspacePage_CopyPath" xml:space="preserve">
+    <value>Copy path</value>
+  </data>
+  <data name="WorkspacePage_CopyPathFailed" xml:space="preserve">
+    <value>Couldn't copy the path.</value>
+  </data>
+  <data name="WorkspacePage_FileType_File" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="WorkspacePage_FileType_Folder" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="WorkspacePage_RootFolder" xml:space="preserve">
+    <value>Root</value>
+  </data>
+  <data name="WorkspacePage_SearchResultsPath" xml:space="preserve">
+    <value>Search results for "{0}"</value>
+  </data>
+  <data name="WorkspacePage_BrowserTruncated" xml:space="preserve">
+    <value>Some results were omitted. Narrow your search or open a folder.</value>
+  </data>
   <data name="WorkspacePage_MissingFile" xml:space="preserve">
     <value>(file not found on disk)</value>
   </data>
@@ -2352,18 +2321,12 @@ On your gateway host (Mac/Linux), run:
   <data name="HubWindow_NavigationViewItem_136.Content" xml:space="preserve">
     <value>Permissions</value>
   </data>
-  <data name="HubWindow_NavigationViewItem_Notifications.Content" xml:space="preserve">
-    <value>Notifications</value>
-  </data>
   <data name="HubWindow_NavigationViewItem_145.Content" xml:space="preserve">
     <value>Diagnostics</value>
   </data>
-  <data name="HubWindow_NavigationViewItem_148.Content" xml:space="preserve">
-    <value>Info</value>
-  </data>
-  <data name="Onboarding_UnknownPage" xml:space="preserve">
-    <value>Unknown page</value>
-  </data>
+<data name="Onboarding_UnknownPage" xml:space="preserve">
+  <value>Unknown page</value>
+</data>
   <data name="Onboarding_Retry" xml:space="preserve">
     <value>Retry</value>
   </data>
@@ -2529,35 +2492,17 @@ On your gateway host (Mac/Linux), run:
   <data name="CronPageRemoveJobToolTip.Content" xml:space="preserve">
     <value>Remove job</value>
   </data>
-  <data name="PermissionsPage_SttMoreSettingsLink.Content" xml:space="preserve">
-    <value>More voice settings…</value>
+  <data name="PermissionsPage_VoiceSettingsLink.Content" xml:space="preserve">
+    <value>Voice &amp; Audio settings</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsApiKey.Header" xml:space="preserve">
-    <value>ElevenLabs API key</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_SpeechModel" xml:space="preserve">
+    <value>Download a speech model before speech-to-text can work.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsHelp.Text" xml:space="preserve">
-    <value>API key is encrypted at rest with Windows DPAPI. Leave blank to keep the previously saved value when you change other fields.</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_VoiceSetup" xml:space="preserve">
+    <value>Your selected TTS provider still needs voice setup; chat read aloud can fall back to Windows speech.</value>
   </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.Header" xml:space="preserve">
-    <value>ElevenLabs model</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsModel.PlaceholderText" xml:space="preserve">
-    <value>eleven_multilingual_v2</value>
-  </data>
-  <data name="PermissionsPage_TtsElevenLabsVoiceId.Header" xml:space="preserve">
-    <value>ElevenLabs voice ID</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderComboBox.Header" xml:space="preserve">
-    <value>Provider</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderElevenLabs.Content" xml:space="preserve">
-    <value>ElevenLabs</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderPiper.Content" xml:space="preserve">
-    <value>Piper (local ML, recommended)</value>
-  </data>
-  <data name="PermissionsPage_TtsProviderWindows.Content" xml:space="preserve">
-    <value>Windows built-in speech</value>
+  <data name="PermissionsPage_VoiceSettingsHelp_Both" xml:space="preserve">
+    <value>Download a speech model for voice input. Your selected TTS provider also needs voice setup, though chat read aloud can fall back to Windows speech.</value>
   </data>
   <data name="VoiceSettingsPage_PageTitle.Text" xml:space="preserve">
     <value>Voice &amp; Audio</value>
@@ -2571,23 +2516,26 @@ On your gateway host (Mac/Linux), run:
   <data name="VoiceSettingsPage_SttDescription.Text" xml:space="preserve">
     <value>Enable voice input via microphone. Requires a Whisper model download.</value>
   </data>
-  <data name="VoiceSettingsPage_SttEnabledToggle.Header" xml:space="preserve">
-    <value>Enable Voice Input</value>
-  </data>
   <data name="VoiceSettingsPage_ModelHeader.Text" xml:space="preserve">
     <value>Speech Model</value>
+  </data>
+  <data name="VoiceSettingsPage_SttCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>Speech-to-text is disabled. Configure models here, then enable the capability in Permissions when you're ready.</value>
+  </data>
+  <data name="VoiceSettingsPage_OpenPermissionsLink.Content" xml:space="preserve">
+    <value>Open Permissions</value>
   </data>
   <data name="VoiceSettingsPage_ModelCombo.Header" xml:space="preserve">
     <value>Model Size</value>
   </data>
   <data name="VoiceSettingsPage_ModelTiny.Content" xml:space="preserve">
-    <value>Tiny (~75 MB) — Fast, basic accuracy</value>
+    <value>Tiny (~75 MB): Fast, basic accuracy</value>
   </data>
   <data name="VoiceSettingsPage_ModelBase.Content" xml:space="preserve">
-    <value>Base (~142 MB) — Good balance</value>
+    <value>Base (~142 MB): Good balance</value>
   </data>
   <data name="VoiceSettingsPage_ModelSmall.Content" xml:space="preserve">
-    <value>Small (~466 MB) — High accuracy</value>
+    <value>Small (~466 MB): High accuracy</value>
   </data>
   <data name="VoiceSettingsPage_DownloadButtonText.Text" xml:space="preserve">
     <value>Download Model</value>
@@ -2642,6 +2590,9 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="VoiceSettingsPage_VoiceDescription.Text" xml:space="preserve">
     <value>Choose the voice used when reading responses aloud.</value>
+  </data>
+  <data name="VoiceSettingsPage_TtsCapabilityDisabledNotice.Text" xml:space="preserve">
+    <value>Text-to-speech is disabled. Configure providers and voices here, then enable the capability in Permissions when you're ready.</value>
   </data>
   <data name="VoiceSettingsPage_TtsProviderCombo.Header" xml:space="preserve">
     <value>Provider</value>
@@ -2704,7 +2655,7 @@ On your gateway host (Mac/Linux), run:
     <value>Voice Input Is Off</value>
   </data>
   <data name="ChatVoiceDialog_InputOffMessage" xml:space="preserve">
-    <value>Turn on Speech-to-Text in Voice settings, then download a speech model before using the microphone in chat.</value>
+    <value>Speech-to-text is disabled. Enable the capability in Permissions before using the microphone in chat.</value>
   </data>
   <data name="ChatVoiceDialog_ModelRequiredTitle" xml:space="preserve">
     <value>Speech Model Required</value>
@@ -2712,8 +2663,17 @@ On your gateway host (Mac/Linux), run:
   <data name="ChatVoiceDialog_ModelRequiredMessage" xml:space="preserve">
     <value>Speech-to-Text is on, but voice input will not work until at least one speech model is downloaded.</value>
   </data>
+  <data name="ChatVoiceDialog_OutputOffTitle" xml:space="preserve">
+    <value>Voice Output Is Off</value>
+  </data>
+  <data name="ChatVoiceDialog_OutputOffMessage" xml:space="preserve">
+    <value>Text-to-speech is disabled. Enable the capability in Permissions before using read aloud in chat.</value>
+  </data>
   <data name="ChatVoiceDialog_OpenVoiceSettings" xml:space="preserve">
     <value>Open Voice &amp; Audio Settings</value>
+  </data>
+  <data name="ChatVoiceDialog_OpenPermissionsSettings" xml:space="preserve">
+    <value>Open Permissions</value>
   </data>
   <data name="ChatVoiceDialog_Dismiss" xml:space="preserve">
     <value>Dismiss</value>
@@ -2809,7 +2769,7 @@ On your gateway host (Mac/Linux), run:
     <value>🗣️ Listening...</value>
   </data>
   <data name="VoiceOverlayWindow_StatusSpeakNow" xml:space="preserve">
-    <value>Speak now — I'm listening</value>
+    <value>Speak now: I'm listening</value>
   </data>
   <data name="VoiceOverlayWindow_StateInitializing" xml:space="preserve">
     <value>Initializing...</value>
@@ -2867,6 +2827,9 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="VoiceOverlayWindow_StatusErrorOccurred" xml:space="preserve">
     <value>An error occurred</value>
+  </data>
+  <data name="AudioPipeline_FirstAudioTimeout" xml:space="preserve">
+    <value>No audio was received. Check that your microphone is connected and selected as the Windows input device, then try again.</value>
   </data>
   <data name="VoiceOverlayWindow_winexWindowEx_2.Title" xml:space="preserve">
     <value>Companion Voice</value>
@@ -2928,6 +2891,21 @@ On your gateway host (Mac/Linux), run:
   <data name="Chat_Status_Done" xml:space="preserve">
     <value>Done</value>
   </data>
+  <data name="Chat_Compaction_Title" xml:space="preserve">
+    <value>COMPACTED HISTORY</value>
+  </data>
+  <data name="Chat_Compaction_MetricsFormat" xml:space="preserve">
+    <value>{0} → {1} tokens · {2} saved</value>
+  </data>
+  <data name="Chat_Compaction_FallbackDetail" xml:space="preserve">
+    <value>The compacted transcript is preserved as a checkpoint. Open session checkpoints to branch or restore from that compacted view.</value>
+  </data>
+  <data name="Chat_Compaction_OpenCheckpoints" xml:space="preserve">
+    <value>Open checkpoints</value>
+  </data>
+  <data name="Chat_PendingNewSessionTitle" xml:space="preserve">
+    <value>New session</value>
+  </data>
   <data name="Chat_Status_Running" xml:space="preserve">
     <value>Running</value>
   </data>
@@ -2958,6 +2936,27 @@ On your gateway host (Mac/Linux), run:
   <data name="Chat_Tool_FooterWithTimeFormat" xml:space="preserve">
     <value>Tool · {0}</value>
   </data>
+  <data name="Chat_Activity_CommandOne" xml:space="preserve"><value>Ran {0} command</value></data>
+  <data name="Chat_Activity_CommandMany" xml:space="preserve"><value>Ran {0} commands</value></data>
+  <data name="Chat_Activity_ReadOne" xml:space="preserve"><value>read {0} file</value></data>
+  <data name="Chat_Activity_ReadMany" xml:space="preserve"><value>read {0} files</value></data>
+  <data name="Chat_Activity_EditOne" xml:space="preserve"><value>edited {0} file</value></data>
+  <data name="Chat_Activity_EditMany" xml:space="preserve"><value>edited {0} files</value></data>
+  <data name="Chat_Activity_WriteOne" xml:space="preserve"><value>wrote {0} file</value></data>
+  <data name="Chat_Activity_WriteMany" xml:space="preserve"><value>wrote {0} files</value></data>
+  <data name="Chat_Activity_SearchOne" xml:space="preserve"><value>ran {0} search</value></data>
+  <data name="Chat_Activity_SearchMany" xml:space="preserve"><value>ran {0} searches</value></data>
+  <data name="Chat_Activity_FetchOne" xml:space="preserve"><value>fetched {0} page</value></data>
+  <data name="Chat_Activity_FetchMany" xml:space="preserve"><value>fetched {0} pages</value></data>
+  <data name="Chat_Activity_GenericOne" xml:space="preserve"><value>used {0} tool</value></data>
+  <data name="Chat_Activity_GenericMany" xml:space="preserve"><value>used {0} tools</value></data>
+  <data name="Chat_Activity_GenericNamed" xml:space="preserve"><value>used {1}</value></data>
+  <data name="Chat_Activity_GenericNamedRepeated" xml:space="preserve"><value>used {1} {0} times</value></data>
+  <data name="Chat_Activity_RunningFormat" xml:space="preserve"><value>Running {0}</value></data>
+  <data name="Chat_Activity_Complete" xml:space="preserve"><value>Complete</value></data>
+  <data name="Chat_Activity_Expanded" xml:space="preserve"><value>Expanded</value></data>
+  <data name="Chat_Activity_Collapsed" xml:space="preserve"><value>Collapsed</value></data>
+  <data name="Chat_Activity_AutomationFormat" xml:space="preserve"><value>Activity: {0}. {1} tools. {2}.</value></data>
   <data name="Chat_Reasoning_ThinkingHeader" xml:space="preserve">
     <value>🧠 Thinking</value>
   </data>
@@ -2976,6 +2975,18 @@ On your gateway host (Mac/Linux), run:
   <data name="Chat_Composer_Reasoning_Maximum" xml:space="preserve">
     <value>Maximum</value>
   </data>
+  <data name="Chat_Composer_Accessibility_Session" xml:space="preserve">
+    <value>Session</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_CurrentSession" xml:space="preserve">
+    <value>Current session</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Chat_Composer_Accessibility_Reasoning" xml:space="preserve">
+    <value>Reasoning</value>
+  </data>
   <data name="Chat_Composer_Placeholder_Connected" xml:space="preserve">
     <value>Message Assistant (Enter to send)</value>
   </data>
@@ -2986,7 +2997,7 @@ On your gateway host (Mac/Linux), run:
     <value>Not connected</value>
   </data>
   <data name="Chat_Composer_Placeholder_IncompatibleGateway" xml:space="preserve">
-    <value>Gateway update required — incompatible version</value>
+    <value>Gateway update required: incompatible version</value>
   </data>
   <data name="Chat_Composer_Tooltip_Attach" xml:space="preserve">
     <value>Attach</value>
@@ -3003,6 +3014,9 @@ On your gateway host (Mac/Linux), run:
   <data name="Chat_Composer_Tooltip_More" xml:space="preserve">
     <value>More</value>
   </data>
+  <data name="Chat_Composer_Tooltip_Settings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
   <data name="Chat_Composer_Tooltip_Send" xml:space="preserve">
     <value>Send</value>
   </data>
@@ -3011,6 +3025,30 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="Chat_Composer_AssistantWorking" xml:space="preserve">
     <value>Assistant is working…</value>
+  </data>
+  <data name="Chat_Composer_QueuedCountFormat" xml:space="preserve">
+    <value>Queued ({0})</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageAutomationFormat" xml:space="preserve">
+    <value>Queued message: {0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailedAutomationFormat" xml:space="preserve">
+    <value>Queued message failed: {0}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancel" xml:space="preserve">
+    <value>Cancel queued message</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageCancelAutomationFormat" xml:space="preserve">
+    <value>Cancel queued message {0}: {1}</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailed" xml:space="preserve">
+    <value>Remove failed queued message</value>
+  </data>
+  <data name="Chat_Composer_QueuedMessageRemoveFailedAutomationFormat" xml:space="preserve">
+    <value>Remove failed queued message {0}: {1}</value>
   </data>
   <data name="Chat_Assistant_Action_Copy" xml:space="preserve">
     <value>Copy message</value>
@@ -3025,13 +3063,19 @@ On your gateway host (Mac/Linux), run:
     <value> … [{0} bytes truncated]</value>
   </data>
   <data name="Chat_Permission_Allow" xml:space="preserve">
-    <value>Allow</value>
+    <value>Allow once</value>
+  </data>
+  <data name="Chat_Permission_AllowAlways" xml:space="preserve">
+    <value>Always allow</value>
   </data>
   <data name="Chat_Permission_Deny" xml:space="preserve">
-    <value>Deny</value>
+    <value>Deny once</value>
   </data>
   <data name="Chat_Permission_DecisionAllowed" xml:space="preserve">
     <value>Allowed</value>
+  </data>
+  <data name="Chat_Permission_DecisionAlwaysAllowed" xml:space="preserve">
+    <value>Always allowed</value>
   </data>
   <data name="Chat_Permission_DecisionDenied" xml:space="preserve">
     <value>Denied</value>
@@ -3057,11 +3101,117 @@ On your gateway host (Mac/Linux), run:
   <data name="AppNotification_LocalCommandDenied_PatternSuffixFormat" xml:space="preserve">
     <value>Matched pattern: {0}.</value>
   </data>
+  <data name="AppNotification_ExecApprovalPending_Title" xml:space="preserve">
+    <value>Command approval pending</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_MessageFormat" xml:space="preserve">
+    <value>{0} is waiting for approval to run: {1}</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_OpenChatAction" xml:space="preserve">
+    <value>Open chat</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_UnknownChatLabel" xml:space="preserve">
+    <value>chat</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_MainSessionLabel" xml:space="preserve">
+    <value>Main</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_MainChatLabel" xml:space="preserve">
+    <value>Main chat</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_AgentChatLabelFormat" xml:space="preserve">
+    <value>{0} chat</value>
+  </data>
+  <data name="AppNotification_ExecApprovalPending_AgentSlotLabelFormat" xml:space="preserve">
+    <value>{0} / {1}</value>
+  </data>
   <data name="AppNotification_RepeatedBadgeFormat" xml:space="preserve">
     <value>{0}x</value>
   </data>
   <data name="AppNotification_ShowMore" xml:space="preserve">
     <value>Show more</value>
+  </data>
+  <data name="AppNotification_ActionOpenConnection" xml:space="preserve">
+    <value>Open Connection</value>
+  </data>
+  <data name="AppNotification_ActionOpenChannels" xml:space="preserve">
+    <value>Open Channels</value>
+  </data>
+  <data name="AppNotification_ActionOpenSandbox" xml:space="preserve">
+    <value>Open Sandbox</value>
+  </data>
+  <data name="AppNotification_ActionOpenCron" xml:space="preserve">
+    <value>Open Cron</value>
+  </data>
+  <data name="AppNotification_GatewayConnectionFailed_Title" xml:space="preserve">
+    <value>Gateway connection failed</value>
+  </data>
+  <data name="AppNotification_GatewayConnectionFailed_DefaultMessage" xml:space="preserve">
+    <value>OpenClaw could not connect to the active gateway.</value>
+  </data>
+  <data name="AppNotification_GatewayPairingRequired_Title" xml:space="preserve">
+    <value>Gateway pairing approval required</value>
+  </data>
+  <data name="AppNotification_GatewayPairingRequired_GenericMessage" xml:space="preserve">
+    <value>Open Connection to complete gateway pairing.</value>
+  </data>
+  <data name="AppNotification_GatewayPairingRequired_DeviceMessageFormat" xml:space="preserve">
+    <value>Open Connection to approve device {0}.</value>
+  </data>
+  <data name="AppNotification_WindowsNodeConnectionFailed_Title" xml:space="preserve">
+    <value>Windows node connection failed</value>
+  </data>
+  <data name="AppNotification_WindowsNodeConnectionFailed_DefaultMessage" xml:space="preserve">
+    <value>The gateway is connected, but this Windows node is not available.</value>
+  </data>
+  <data name="AppNotification_WindowsNodeRateLimited_Title" xml:space="preserve">
+    <value>Windows node connection rate-limited</value>
+  </data>
+  <data name="AppNotification_WindowsNodeRateLimited_DefaultMessage" xml:space="preserve">
+    <value>The gateway is connected, but this Windows node is temporarily rate-limited.</value>
+  </data>
+  <data name="AppNotification_ChannelNeedsAttention_TitleFormat" xml:space="preserve">
+    <value>{0} channel needs attention</value>
+  </data>
+  <data name="AppNotification_ChannelNeedsAttention_StatusMessageFormat" xml:space="preserve">
+    <value>The gateway reports {0} as {1}.</value>
+  </data>
+  <data name="AppNotification_SandboxDisabled_Title" xml:space="preserve">
+    <value>Node Sandbox is off: commands run uncontained</value>
+  </data>
+  <data name="AppNotification_SandboxDisabled_Message" xml:space="preserve">
+    <value>Agent-started Windows commands will run without sandbox containment until Node Sandbox is turned back on.</value>
+  </data>
+  <data name="AppNotification_SandboxUnavailable_Title" xml:space="preserve">
+    <value>Sandbox unavailable: host fallback</value>
+  </data>
+  <data name="AppNotification_SandboxUnavailable_MessageFormat" xml:space="preserve">
+    <value>{0}
+
+Commands will run on the host without sandbox protection while sandboxing is unavailable.</value>
+  </data>
+  <data name="AppNotification_SandboxUnavailableBlocked_Title" xml:space="preserve">
+    <value>Sandbox unavailable: commands blocked</value>
+  </data>
+  <data name="AppNotification_SandboxUnavailableBlocked_MessageFormat" xml:space="preserve">
+    <value>{0}
+
+Commands are blocked while sandboxing is unavailable because strict fallback blocking is enabled.</value>
+  </data>
+  <data name="AppNotification_SandboxUnavailable_DefaultReason" xml:space="preserve">
+    <value>MXC sandboxing primitives are not available on this machine.</value>
+  </data>
+  <data name="AppNotification_CronRunFailed_Title" xml:space="preserve">
+    <value>Cron job did not start</value>
+  </data>
+  <data name="AppNotification_CronRunFailed_DefaultDetail" xml:space="preserve">
+    <value>The request failed.</value>
+  </data>
+  <data name="AppNotification_CronRunRejectedDetail" xml:space="preserve">
+    <value>The gateway rejected the cron.run request.</value>
+  </data>
+  <data name="AppNotification_CronRunFailed_MessageFormat" xml:space="preserve">
+    <value>{0}: {1}</value>
   </data>
   <data name="NotificationsPage_Title.Text" xml:space="preserve">
     <value>Notifications</value>
@@ -3087,14 +3237,71 @@ On your gateway host (Mac/Linux), run:
   <data name="NotificationsPage_MetadataCategoryNodeInvoke" xml:space="preserve">
     <value>Node command</value>
   </data>
+  <data name="NotificationsPage_MetadataAuthentication" xml:space="preserve">
+    <value>Authentication</value>
+  </data>
+  <data name="NotificationsPage_MetadataBindings" xml:space="preserve">
+    <value>Bindings</value>
+  </data>
+  <data name="NotificationsPage_MetadataChannels" xml:space="preserve">
+    <value>Channels</value>
+  </data>
+  <data name="NotificationsPage_MetadataConfig" xml:space="preserve">
+    <value>Config</value>
+  </data>
+  <data name="NotificationsPage_MetadataConnection" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="NotificationsPage_MetadataCron" xml:space="preserve">
+    <value>Cron</value>
+  </data>
+  <data name="NotificationsPage_MetadataGateway" xml:space="preserve">
+    <value>Gateway</value>
+  </data>
+  <data name="NotificationsPage_MetadataJobs" xml:space="preserve">
+    <value>Jobs</value>
+  </data>
+  <data name="NotificationsPage_MetadataLoad" xml:space="preserve">
+    <value>Load</value>
+  </data>
+  <data name="NotificationsPage_MetadataLifecycle" xml:space="preserve">
+    <value>Lifecycle</value>
+  </data>
+  <data name="NotificationsPage_MetadataLocalGateway" xml:space="preserve">
+    <value>Local gateway</value>
+  </data>
+  <data name="NotificationsPage_MetadataNode" xml:space="preserve">
+    <value>Node</value>
+  </data>
+  <data name="NotificationsPage_MetadataPairing" xml:space="preserve">
+    <value>Pairing</value>
+  </data>
+  <data name="NotificationsPage_MetadataSandbox" xml:space="preserve">
+    <value>Sandbox</value>
+  </data>
+  <data name="NotificationsPage_MetadataSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="NotificationsPage_MetadataStatus" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="NotificationsPage_MetadataSystemRun" xml:space="preserve">
+    <value>system.run</value>
+  </data>
   <data name="Chat_Permission_Title" xml:space="preserve">
     <value>Exec approval needed</value>
   </data>
+  <data name="Chat_Permission_CommandApprovalTitle" xml:space="preserve">
+    <value>Command approval requested</value>
+  </data>
   <data name="Chat_Permission_Subtitle" xml:space="preserve">
-    <value>Approval is needed to run the command below on this Windows companion. Allow once to proceed, or Deny to cancel.</value>
+    <value>Approval is needed to run the command below on this Windows companion. Allow once to proceed, Always allow to remember this command, or Deny to cancel.</value>
   </data>
   <data name="Chat_Permission_Caption" xml:space="preserve">
-    <value>Approval is required for every command by the active policy. Your choice applies only to this request.</value>
+    <value>Allow once applies only to this request. Always allow saves an exact allow rule when possible.</value>
+  </data>
+  <data name="Chat_Permission_ResultSubmittedFormat" xml:space="preserve">
+    <value>Approval {0} submitted for {1}.</value>
   </data>
   <data name="Chat_Root_ConnectingToGateway" xml:space="preserve">
     <value>Connecting to gateway…</value>
@@ -3104,6 +3311,12 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="Chat_Notification_SendFailed" xml:space="preserve">
     <value>Send failed</value>
+  </data>
+  <data name="Chat_Error_SendReturnedStatusFormat" xml:space="preserve">
+    <value>Gateway returned send status '{0}'.</value>
+  </data>
+  <data name="Chat_Error_SendFailedFormat" xml:space="preserve">
+    <value>Send failed: {0}</value>
   </data>
   <data name="Chat_Notification_AbortFailed" xml:space="preserve">
     <value>Abort failed</value>
@@ -3115,7 +3328,7 @@ On your gateway host (Mac/Linux), run:
     <value>Assistant replied</value>
   </data>
   <data name="Chat_Notification_ConnectionInterrupted" xml:space="preserve">
-    <value>Connection lost — response interrupted.</value>
+    <value>Connection lost: response interrupted.</value>
   </data>
   <data name="Chat_Notification_KeylessEventDropped" xml:space="preserve">
     <value>Gateway timeline event dropped</value>
@@ -3136,7 +3349,7 @@ On your gateway host (Mac/Linux), run:
     <value>Browser control</value>
   </data>
   <data name="PermissionsPage_Cap_Browser_Description" xml:space="preserve">
-    <value>Lets agents drive a Chromium browser on this PC — open pages, click, and read content.</value>
+    <value>Lets agents drive a Chromium browser on this PC: open pages, click, and read content.</value>
   </data>
   <data name="PermissionsPage_Cap_Camera_Label" xml:space="preserve">
     <value>Camera</value>
@@ -3172,25 +3385,13 @@ On your gateway host (Mac/Linux), run:
     <value>Speech-to-text</value>
   </data>
   <data name="PermissionsPage_Cap_Stt_Description" xml:space="preserve">
-    <value>Lets agents transcribe microphone audio locally using Whisper. Turning this on downloads the Whisper model (~140 MB) on first use.</value>
+    <value>Lets agents transcribe microphone audio locally. Download a speech model in Voice &amp; Audio settings before first use.</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Label" xml:space="preserve">
     <value>System tools</value>
   </data>
   <data name="PermissionsPage_Cap_SystemRun_Description" xml:space="preserve">
     <value>Lets agents run shell commands and scripts on this PC. Turn this off to block all command execution.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Ready" xml:space="preserve">
-    <value>Whisper model is ready. Speech-to-text runs fully on this PC; no audio leaves the device.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_Downloading" xml:space="preserve">
-    <value>Whisper model is downloading. Speech-to-text will be available once it's ready.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_FailedFormat" xml:space="preserve">
-    <value>Whisper model download failed: {0}. Toggle Speech-to-text off and back on to retry.</value>
-  </data>
-  <data name="PermissionsPage_SttHint_NotDownloaded" xml:space="preserve">
-    <value>Whisper model is not downloaded. Open More voice settings… to download it before using speech-to-text.</value>
   </data>
   <data name="PermissionsPage_NodeStatus_Disabled" xml:space="preserve">
     <value>Node mode disabled</value>
@@ -3204,6 +3405,18 @@ On your gateway host (Mac/Linux), run:
   <data name="PermissionsPage_NodeStatus_ActiveDetailsFormat" xml:space="preserve">
     <value>Providing {0} capabilities: {1}</value>
   </data>
+  <data name="PermissionsPage_NodeStatus_McpOnly" xml:space="preserve">
+    <value>Local MCP only</value>
+  </data>
+  <data name="PermissionsPage_NodeStatus_McpOnlyDetailsFormat" xml:space="preserve">
+    <value>Serving {0} capabilities to local MCP clients at {1}</value>
+  </data>
+  <data name="PermissionsPage_NodeStatus_Starting" xml:space="preserve">
+    <value>Node starting…</value>
+  </data>
+  <data name="PermissionsPage_NodeStatus_McpError" xml:space="preserve">
+    <value>Local MCP server failed to start</value>
+  </data>
   <data name="PermissionsPage_NodeStatus_NoCapabilities" xml:space="preserve">
     <value>No capabilities enabled.</value>
   </data>
@@ -3214,28 +3427,28 @@ On your gateway host (Mac/Linux), run:
     <value>Connect to a gateway to start providing device capabilities.</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenReady" xml:space="preserve">
-    <value>Server enabled — token ready</value>
+    <value>Server enabled: token ready</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenPending" xml:space="preserve">
-    <value>Server enabled — token will be created on next start</value>
+    <value>Server enabled: token will be created on next start</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenCopied" xml:space="preserve">
     <value>Token copied to clipboard</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenNotFound" xml:space="preserve">
-    <value>Token file not found — start the MCP server first</value>
+    <value>Token file not found: start the MCP server first</value>
   </data>
   <data name="PermissionsPage_McpStatus_UrlCopied" xml:space="preserve">
     <value>URL copied to clipboard</value>
   </data>
   <data name="PermissionsPage_RulesCount_None" xml:space="preserve">
-    <value>No rules</value>
+    <value>No entries</value>
   </data>
   <data name="PermissionsPage_RulesCount_One" xml:space="preserve">
-    <value>1 rule</value>
+    <value>1 entry</value>
   </data>
   <data name="PermissionsPage_RulesCount_ManyFormat" xml:space="preserve">
-    <value>{0} rules</value>
+    <value>{0} entries</value>
   </data>
   <data name="PermissionsPage_Allowlist_NoConfig" xml:space="preserve">
     <value>No allowlist data available. Connect to a gateway first.</value>
@@ -3245,12 +3458,6 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="PermissionsPage_Allowlist_ParseFailed" xml:space="preserve">
     <value>Failed to parse allowlist from config.</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_DefaultProviderFormat" xml:space="preserve">
-    <value>Default provider: {0}</value>
-  </data>
-  <data name="PermissionsPage_TtsStatus_ElevenLabsSaved" xml:space="preserve">
-    <value>ElevenLabs settings saved.</value>
   </data>
   <data name="PermissionsPage_McpStatus_TokenReadFailedFormat" xml:space="preserve">
     <value>Failed to read token: {0}</value>
@@ -3334,19 +3541,19 @@ On your gateway host (Mac/Linux), run:
     <value>Why this presence entry was last updated (debug marker).</value>
   </data>
   <data name="InstancesPage_StatusTooltip_Disconnected" xml:space="preserve">
-    <value>Disconnected — no active presence</value>
+    <value>Disconnected: no active presence</value>
   </data>
   <data name="InstancesPage_StatusTooltip_Active_Format" xml:space="preserve">
-    <value>Active — last seen {0}</value>
+    <value>Active: last seen {0}</value>
   </data>
   <data name="InstancesPage_StatusTooltip_Idle_Format" xml:space="preserve">
-    <value>Idle — last seen {0}</value>
+    <value>Idle: last seen {0}</value>
   </data>
   <data name="InstancesPage_Status_Inactive" xml:space="preserve">
     <value>Inactive</value>
   </data>
   <data name="InstancesPage_StatusTooltip_Inactive_Format" xml:space="preserve">
-    <value>Inactive — last seen {0}</value>
+    <value>Inactive: last seen {0}</value>
   </data>
   <data name="InstancesPage_Role_AccessibilityFormat" xml:space="preserve">
     <value>Role: {0}</value>
@@ -3454,7 +3661,7 @@ On your gateway host (Mac/Linux), run:
     <value>Welcome to OpenClaw gateway</value>
   </data>
   <data name="V2_Gateway_CardBody1" xml:space="preserve">
-    <value>Your local OpenClaw gateway is running at http://localhost:18789 — visit it to add your first AI provider and configure your agent.</value>
+    <value>Your local OpenClaw gateway is running at http://localhost:18789. Visit it to add your first AI provider and configure your agent.</value>
   </data>
   <data name="V2_Gateway_CardBody2" xml:space="preserve">
     <value>All requests are processed on this PC. Your data stays local.</value>
@@ -3579,14 +3786,11 @@ On your gateway host (Mac/Linux), run:
   <data name="HubWindow_NavigationViewItem_Sandbox.Content" xml:space="preserve">
     <value>Sandbox</value>
   </data>
-  <data name="AboutPage_MoreDiagnosticsLink.Content" xml:space="preserve">
-    <value>More diagnostics →</value>
-  </data>
-  <data name="ChannelsPage_GuideBar.Title" xml:space="preserve">
+<data name="ChannelsPage_GuideBar.Title" xml:space="preserve">
     <value>Your gateway didn't list any channels</value>
   </data>
   <data name="ChannelsPage_GuideBar.Message" xml:space="preserve">
-    <value>Channels are configured on your gateway. To add one, expand it below and fill in its credentials — the form saves directly to your gateway's config. The setup guide walks through each channel end-to-end.</value>
+    <value>Channels are configured on your gateway. To add one, expand it below and fill in its credentials. The form saves directly to your gateway's config. The setup guide walks through each channel end-to-end.</value>
   </data>
   <data name="ChannelsPage_DocsLink.Content" xml:space="preserve">
     <value>Read the channels guide</value>
@@ -3649,10 +3853,10 @@ On your gateway host (Mac/Linux), run:
     <value>Connection state, gateway URL, runtime, tunnel.</value>
   </data>
   <data name="DiagnosticsPage_Card_CopyDebugBundle.Header" xml:space="preserve">
-    <value>Copy full debug bundle</value>
+    <value>Copy summary debug bundle</value>
   </data>
   <data name="DiagnosticsPage_Card_CopyDebugBundle.Description" xml:space="preserve">
-    <value>Everything the preview dialog produces, no preview.</value>
+    <value>Generated summaries only; excludes log tails. Use Create diagnostics bundle to review logs before sharing.</value>
   </data>
   <data name="DiagnosticsPage_Card_CopyBrowserSetup.Header" xml:space="preserve">
     <value>Copy browser setup guidance</value>
@@ -3702,6 +3906,93 @@ On your gateway host (Mac/Linux), run:
   <data name="DiagnosticsPage_DeveloperWarning.Message" xml:space="preserve">
     <value>These tools may change app behavior, restart the app, or open experimental UI.</value>
   </data>
+  <data name="DiagnosticsPage_Expander_OpenTelemetry.Header" xml:space="preserve">
+    <value>OpenTelemetry connection</value>
+  </data>
+  <data name="DiagnosticsPage_Expander_OpenTelemetry.Description" xml:space="preserve">
+    <value>Sends a small diagnostic probe only to the OTLP collector endpoint you configure.</value>
+  </data>
+  <data name="DiagnosticsPage_Card_OpenTelemetryEndpoint.Header" xml:space="preserve">
+    <value>OTel endpoint</value>
+  </data>
+  <data name="DiagnosticsPage_Card_OpenTelemetryEndpoint.Description" xml:space="preserve">
+    <value>Collector URL used by OpenClaw telemetry.</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetrySummary.Text" xml:space="preserve">
+    <value>Not configured</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetrySummary_NotConfigured" xml:space="preserve">
+    <value>Not configured</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetrySummary_Configured" xml:space="preserve">
+    <value>Configured</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointBox.Header" xml:space="preserve">
+    <value>Endpoint URL</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointBox.PlaceholderText" xml:space="preserve">
+    <value>http://localhost:4317</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryProtocolLabel.Text" xml:space="preserve">
+    <value>Protocol</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryProtocolGrpc.Content" xml:space="preserve">
+    <value>OTLP/gRPC</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryProtocolHttp.Content" xml:space="preserve">
+    <value>OTLP/HTTP</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus.Title" xml:space="preserve">
+    <value>No telemetry endpoint</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus.Message" xml:space="preserve">
+    <value>No endpoint configured.</value>
+  </data>
+  <data name="DiagnosticsPage_SaveOpenTelemetryEndpointButton.Content" xml:space="preserve">
+    <value>Save connection</value>
+  </data>
+  <data name="DiagnosticsPage_ResendOpenTelemetryProbeButton.Content" xml:space="preserve">
+    <value>Send probe again</value>
+  </data>
+  <data name="DiagnosticsPage_ClearOpenTelemetryEndpointButton.Content" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_InvalidTitle" xml:space="preserve">
+    <value>Endpoint needs attention</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_InvalidMessage" xml:space="preserve">
+    <value>Enter an absolute HTTP or HTTPS OTLP collector URL, for example http://localhost:4317.</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_ClearedTitle" xml:space="preserve">
+    <value>Endpoint cleared</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_OffTitle" xml:space="preserve">
+    <value>No telemetry endpoint</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_OffMessage" xml:space="preserve">
+    <value>No endpoint configured.</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_SavedTitle" xml:space="preserve">
+    <value>Endpoint saved</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_SavedMessageFormat" xml:space="preserve">
+    <value>Telemetry endpoint: {0}</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_ConfiguredTitle" xml:space="preserve">
+    <value>Endpoint configured</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_ConfiguredMessageFormat" xml:space="preserve">
+    <value>Telemetry endpoint: {0}</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_UnsavedMessage" xml:space="preserve">
+    <value>Save to apply this connection.</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_ProbeFlushedMessage" xml:space="preserve">
+    <value>Probe flushed locally; collector receipt is not confirmed.</value>
+  </data>
+  <data name="DiagnosticsPage_OpenTelemetryEndpointStatus_ProbeFailedMessage" xml:space="preserve">
+    <value>Probe did not finish for the saved endpoint. Verify the settings and try again.</value>
+  </data>
   <data name="DiagnosticsPage_Expander_ChatOverrides.Header" xml:space="preserve">
     <value>Chat surface overrides</value>
   </data>
@@ -3714,16 +4005,7 @@ On your gateway host (Mac/Linux), run:
   <data name="DiagnosticsPage_Card_TrayChat.Header" xml:space="preserve">
     <value>Tray chat popup</value>
   </data>
-  <data name="DiagnosticsPage_Card_Reconfigure.Header" xml:space="preserve">
-    <value>Reconfigure…</value>
-  </data>
-  <data name="DiagnosticsPage_Card_Reconfigure.Description" xml:space="preserve">
-    <value>Reopens the OpenClaw onboarding wizard. You will be asked to confirm.</value>
-  </data>
-  <data name="DiagnosticsPage_ReconfigureButton.Content" xml:space="preserve">
-    <value>Reconfigure…</value>
-  </data>
-  <data name="DiagnosticsPage_DetailBack.Text" xml:space="preserve">
+<data name="DiagnosticsPage_DetailBack.Text" xml:space="preserve">
     <value>Back to Diagnostics</value>
   </data>
   <data name="SettingsRow_AutoStart_Description.Text" xml:space="preserve">
@@ -3865,7 +4147,7 @@ On your gateway host (Mac/Linux), run:
     <value>Add a gateway</value>
   </data>
   <data name="ConnectionPage_GetStartedInstallA.Title" xml:space="preserve">
-    <value>Get started — install a local gateway</value>
+    <value>Get started: install a local gateway</value>
   </data>
   <data name="ConnectionPage_GetStartedInstallA.Message" xml:space="preserve">
     <value>The fastest way to start: sets up a WSL-hosted gateway on this PC and makes it the active connection.</value>
@@ -3949,7 +4231,7 @@ On your gateway host (Mac/Linux), run:
     <value>Install local gateway</value>
   </data>
   <data name="ConnectionPage_LocalWSLSetupIsn.Text" xml:space="preserve">
-    <value>Local-WSL setup isn't available on this machine — the install wizard couldn't be initialized.</value>
+    <value>Local-WSL setup isn't available on this machine: the install wizard couldn't be initialized.</value>
   </data>
   <data name="ConnectionPage_UseSSHTunnelOptional.Text" xml:space="preserve">
     <value>Use SSH tunnel (optional)</value>
@@ -4219,19 +4501,19 @@ On your gateway host (Mac/Linux), run:
     <value>Default action</value>
   </data>
   <data name="PermissionsPage_WhatHappensWhenA.Text" xml:space="preserve">
-    <value>What happens when a command doesn't match any rule below.</value>
+    <value>What happens when a command doesn't match the executable-path allowlist below.</value>
   </data>
   <data name="PermissionsPage_PatternsAreMatchedLeft.Text" xml:space="preserve">
-    <value>Patterns are matched left-to-right against the full command line. Use * as a wildcard. Changes save automatically.</value>
+    <value>Allow Always creates an argument-bound entry for an eligible native .exe command. Entries added here are path-only and can allow matching executables with any arguments. Deny and Ask remain controlled by Default action. Changes save automatically.</value>
   </data>
   <data name="PermissionsPage_Saved.Text" xml:space="preserve">
     <value>Saved</value>
   </data>
   <data name="PermissionsPage_0Rules.Text" xml:space="preserve">
-    <value>0 rules</value>
+    <value>0 entries</value>
   </data>
   <data name="PermissionsPage_NoRulesYetAdd.Text" xml:space="preserve">
-    <value>No rules yet. Add a pattern below to allow or deny specific commands.</value>
+    <value>No executable-path allowlist entries. Approve an eligible native .exe command with Allow Always, or add a path-only pattern such as **/hostname.exe.</value>
   </data>
   <data name="PermissionsPage_WindowsPrivacy.Text" xml:space="preserve">
     <value>Windows privacy</value>
@@ -4252,7 +4534,7 @@ On your gateway host (Mac/Linux), run:
     <value>What gets contained</value>
   </data>
   <data name="SandboxPage_SeeWhichCommandsThis.Text" xml:space="preserve">
-    <value>See which commands this page covers — and which need different controls.</value>
+    <value>See which commands this page covers and which need different controls.</value>
   </data>
   <data name="SandboxPage_CommandsTheAgentRuns.Text" xml:space="preserve">
     <value>Commands the agent runs through the Windows node (</value>
@@ -4264,7 +4546,7 @@ On your gateway host (Mac/Linux), run:
     <value>) are contained by the settings below.</value>
   </data>
   <data name="SandboxPage_CommandsTheAgentRuns2.Text" xml:space="preserve">
-    <value>Commands the agent runs directly on the gateway aren't. If the gateway is on WSL on this PC they can reach your Windows files, clipboard, and network — use the gateway's exec approvals.</value>
+    <value>Commands the agent runs directly on the gateway aren't. If the gateway is on WSL on this PC they can reach your Windows files, clipboard, and network: use the gateway's exec approvals.</value>
   </data>
   <data name="SandboxPage_SandboxUnavailable.Title" xml:space="preserve">
     <value>Sandbox unavailable</value>
@@ -4375,10 +4657,10 @@ On your gateway host (Mac/Linux), run:
     <value>None (default)</value>
   </data>
   <data name="SandboxPage_ReadAgentCanSee.Content" xml:space="preserve">
-    <value>Read — agent can see what you copied</value>
+    <value>Read: agent can see what you copied</value>
   </data>
   <data name="SandboxPage_WriteAgentCanReplace.Content" xml:space="preserve">
-    <value>Write — agent can replace your clipboard (cannot read it)</value>
+    <value>Write: agent can replace your clipboard (cannot read it)</value>
   </data>
   <data name="SandboxPage_ReadAmpWrite5.Content" xml:space="preserve">
     <value>Read &amp; write</value>
@@ -4394,6 +4676,42 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="SandboxPage_LocalNetworkDevicesAnd.Text" xml:space="preserve">
     <value>Local network devices and shares are not included yet.</value>
+  </data>
+  <data name="SandboxPage_CommandCompatibility.Text" xml:space="preserve">
+    <value>🪟 Command compatibility</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.Header" xml:space="preserve">
+    <value>Allow Windows UI APIs</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.OffContent" xml:space="preserve">
+    <value>Off: blocks Win32k system calls</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.OnContent" xml:space="preserve">
+    <value>On: PowerShell and similar tools can start</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUi.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Allow Windows UI APIs for sandboxed commands</value>
+  </data>
+  <data name="SandboxPage_WindowsUiCompatibilityDescription.Text" xml:space="preserve">
+    <value>PowerShell (all versions) and some console tools use Windows UI APIs during startup. This setting does not provide a supported host-wide process inventory.</value>
+  </data>
+  <data name="SandboxPage_WindowsUiWarning.Title" xml:space="preserve">
+    <value>Win32k boundary disabled</value>
+  </data>
+  <data name="SandboxPage_WindowsUiWarning.Message" xml:space="preserve">
+    <value>File, network, clipboard, timeout, and command approval controls still apply. Win32k system calls are allowed; clipboard policy and the input-injection denial remain in force.</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogTitle" xml:space="preserve">
+    <value>Allow Windows UI APIs?</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogContent" xml:space="preserve">
+    <value>This lets sandboxed commands use Windows UI system calls. PowerShell (all versions) and some console tools need this to start on current MXC versions. This setting does not grant a supported host-wide process inventory: CIM/WMI host enumeration is not supported and has been observed to fail, tasklist may fail or time out, and Get-Process output should not be treated as complete inventory or a process-metadata secrecy boundary.&#xA;&#xA;File, network, clipboard, timeout, and command approval controls still apply, but Win32k syscall blocking will be disabled. Clipboard policy and the input-injection denial remain in force. Only enable this if you need broader command compatibility.</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogPrimary" xml:space="preserve">
+    <value>Allow UI APIs</value>
+  </data>
+  <data name="SandboxPage_AllowWindowsUiDialogCancel" xml:space="preserve">
+    <value>Cancel</value>
   </data>
   <data name="SandboxPage_Limits.Text" xml:space="preserve">
     <value>⏱ Limits</value>
@@ -4425,6 +4743,37 @@ On your gateway host (Mac/Linux), run:
   <data name="SessionsPage_All.Text" xml:space="preserve">
     <value>All</value>
   </data>
+  <data name="SessionsPage_ShowCompleted.Header" xml:space="preserve">
+    <value>Show completed</value>
+  </data>
+  <data name="SessionsPage_ShowBackground.Header" xml:space="preserve">
+    <value>Show background</value>
+  </data>
+  <data name="SessionTitle_Main" xml:space="preserve"><value>Main session</value></data>
+  <data name="SessionTitle_Global" xml:space="preserve"><value>Global session</value></data>
+  <data name="SessionTitle_Unknown" xml:space="preserve"><value>Unknown session</value></data>
+  <data name="SessionTitle_Direct" xml:space="preserve"><value>{0} direct message</value></data>
+  <data name="SessionTitle_Group" xml:space="preserve"><value>{0} group</value></data>
+  <data name="SessionTitle_Channel" xml:space="preserve"><value>{0} channel</value></data>
+  <data name="SessionTitle_Thread" xml:space="preserve"><value>{0} thread</value></data>
+  <data name="SessionTitle_DirectGeneric" xml:space="preserve"><value>Direct message</value></data>
+  <data name="SessionTitle_GroupGeneric" xml:space="preserve"><value>Group conversation</value></data>
+  <data name="SessionTitle_ChannelGeneric" xml:space="preserve"><value>Channel conversation</value></data>
+  <data name="SessionTitle_ThreadGeneric" xml:space="preserve"><value>Thread</value></data>
+  <data name="SessionTitle_Cron" xml:space="preserve"><value>Scheduled task</value></data>
+  <data name="SessionTitle_Heartbeat" xml:space="preserve"><value>Heartbeat</value></data>
+  <data name="SessionTitle_Subagent" xml:space="preserve"><value>Subagent</value></data>
+  <data name="SessionTitle_Acp" xml:space="preserve"><value>ACP session</value></data>
+  <data name="SessionTitle_Dashboard" xml:space="preserve"><value>New session</value></data>
+  <data name="SessionTitle_Tui" xml:space="preserve"><value>Terminal session</value></data>
+  <data name="SessionTitle_Hook" xml:space="preserve"><value>Hook run</value></data>
+  <data name="SessionTitle_Harness" xml:space="preserve"><value>Harness session</value></data>
+  <data name="SessionTitle_Voice" xml:space="preserve"><value>Voice call</value></data>
+  <data name="SessionTitle_Dreaming" xml:space="preserve"><value>Dreaming</value></data>
+  <data name="SessionTitle_System" xml:space="preserve"><value>Background task</value></data>
+  <data name="SessionSubtitle_Account" xml:space="preserve"><value>account {0}</value></data>
+  <data name="SessionSubtitle_Agent" xml:space="preserve"><value>agent {0}</value></data>
+  <data name="SessionSubtitle_Node" xml:space="preserve"><value>node {0}</value></data>
   <data name="SessionsPage_GatewayDisconnected.Title" xml:space="preserve">
     <value>Gateway disconnected</value>
   </data>
@@ -4438,7 +4787,7 @@ On your gateway host (Mac/Linux), run:
     <value>Loading sessions...</value>
   </data>
   <data name="SessionsPage_NoActiveSessions.Text" xml:space="preserve">
-    <value>No active sessions</value>
+    <value>No sessions</value>
   </data>
   <data name="SessionsPage_Reset.Text" xml:space="preserve">
     <value>Reset</value>
@@ -4446,8 +4795,59 @@ On your gateway host (Mac/Linux), run:
   <data name="SessionsPage_Compact.Text" xml:space="preserve">
     <value>Compact</value>
   </data>
+  <data name="SessionsPage_Checkpoints.Text" xml:space="preserve">
+    <value>Checkpoints</value>
+  </data>
+  <data name="SessionsPage_Checkpoints.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>View, branch or restore compaction checkpoints</value>
+  </data>
+  <data name="SessionsPage_ExportTranscript.Text" xml:space="preserve">
+    <value>Export transcript</value>
+  </data>
+  <data name="SessionsPage_ExportTranscript.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Save the conversation transcript to a text file</value>
+  </data>
   <data name="SessionsPage_Delete.Text" xml:space="preserve">
     <value>Delete</value>
+  </data>
+  <data name="SessionActionPrompt_Reset_Title" xml:space="preserve">
+    <value>Reset session?</value>
+  </data>
+  <data name="SessionActionPrompt_Reset_BodyFormat" xml:space="preserve">
+    <value>Start a fresh session for “{0}”? The current conversation context will be cleared.</value>
+  </data>
+  <data name="SessionActionPrompt_Reset_ConfirmLabel" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="SessionActionPrompt_CancelLabel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SessionActionPrompt_Compact_Title" xml:space="preserve">
+    <value>Compact session log?</value>
+  </data>
+  <data name="SessionActionPrompt_Compact_BodyFormat" xml:space="preserve">
+    <value>Keep the most recent messages for “{0}” and archive the rest. This creates a compaction checkpoint; export the transcript first if you need the full history.</value>
+  </data>
+  <data name="SessionActionPrompt_Compact_ConfirmLabel" xml:space="preserve">
+    <value>Compact</value>
+  </data>
+  <data name="SessionActionPrompt_Delete_Title" xml:space="preserve">
+    <value>Delete session?</value>
+  </data>
+  <data name="SessionActionPrompt_Delete_BodyFormat" xml:space="preserve">
+    <value>Delete “{0}” and archive its transcript? It will be removed from the session list.</value>
+  </data>
+  <data name="SessionActionPrompt_Delete_ConfirmLabel" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="SessionActionPrompt_Restore_Title" xml:space="preserve">
+    <value>Restore checkpoint?</value>
+  </data>
+  <data name="SessionActionPrompt_Restore_BodyFormat" xml:space="preserve">
+    <value>Roll “{0}” back to this compaction checkpoint? Messages added after the checkpoint will be archived.</value>
+  </data>
+  <data name="SessionActionPrompt_Restore_ConfirmLabel" xml:space="preserve">
+    <value>Restore</value>
   </data>
   <data name="SettingsPage_Settings.Text" xml:space="preserve">
     <value>Settings</value>
@@ -4455,14 +4855,47 @@ On your gateway host (Mac/Linux), run:
   <data name="SettingsPage_General.Text" xml:space="preserve">
     <value>General</value>
   </data>
+  <data name="SettingsRow_AppTheme_Header.Text" xml:space="preserve">
+    <value>App theme</value>
+  </data>
+  <data name="SettingsRow_AppTheme_Description.Text" xml:space="preserve">
+    <value>Choose light, dark, or use your Windows setting.</value>
+  </data>
+  <data name="SettingsPage_AppTheme_System.Content" xml:space="preserve">
+    <value>System</value>
+  </data>
+  <data name="SettingsPage_AppTheme_Light.Content" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="SettingsPage_AppTheme_Dark.Content" xml:space="preserve">
+    <value>Dark</value>
+  </data>
   <data name="SettingsPage_Notifications.Text" xml:space="preserve">
     <value>Notifications</value>
+  </data>
+  <data name="SettingsPage_Chat.Text" xml:space="preserve">
+    <value>Chat</value>
+  </data>
+  <data name="SettingsRow_ShowToolCalls_Header.Text" xml:space="preserve">
+    <value>Show tool calls and usage</value>
+  </data>
+  <data name="SettingsRow_ShowToolCalls_Description.Text" xml:space="preserve">
+    <value>Show tool-call and token-usage details inline in the conversation.</value>
   </data>
   <data name="SettingsPage_Privacy.Text" xml:space="preserve">
     <value>Privacy</value>
   </data>
   <data name="SettingsPage_LocalGateway.Text" xml:space="preserve">
     <value>Local Gateway</value>
+  </data>
+  <data name="SettingsPage_Developer.Text" xml:space="preserve">
+    <value>Developer</value>
+  </data>
+  <data name="SettingsRow_ShowDiagnostics_Header.Text" xml:space="preserve">
+    <value>Enable Diagnostics</value>
+  </data>
+  <data name="SettingsRow_ShowDiagnostics_Description.Text" xml:space="preserve">
+    <value>Developer and troubleshooting tools. On by default for local builds.</value>
   </data>
   <data name="SettingsPage_LocalGatewaySetup_Header.Text" xml:space="preserve">
     <value>Set up or reconfigure Local Gateway</value>
@@ -4674,20 +5107,17 @@ On your gateway host (Mac/Linux), run:
   <data name="DiagnosticsBundleDialog_ReviewBeforeSharing.Title" xml:space="preserve">
     <value>Review before sharing</value>
   </data>
-  <data name="DiagnosticsBundleDialog_ReviewBeforeSharing.Message" xml:space="preserve">
-    <value>Sensitive tokens, command arguments, payloads, and recordings are excluded by the bundle builder.</value>
-  </data>
   <data name="HubWindow_Disconnected.Text" xml:space="preserve">
     <value>Disconnected</value>
   </data>
-  <data name="HubWindow_Op.Text" xml:space="preserve">
-    <value>Op</value>
-  </data>
-  <data name="HubWindow_Node.Text" xml:space="preserve">
-    <value>Node</value>
-  </data>
   <data name="HubWindow_Advanced.Content" xml:space="preserve">
     <value>Advanced</value>
+  </data>
+  <data name="DiagnosticsBundleDialog_ReviewBeforeSharingMessage.Text" xml:space="preserve">
+    <value>Log tails are sanitized and truncated. Sensitive tokens, payloads, recordings, and raw settings files are excluded. Review before sharing.</value>
+  </data>
+  <data name="DiagnosticsBundleDialog_ReviewBeforeSharingTitle.Text" xml:space="preserve">
+    <value>Review before sharing</value>
   </data>
   <data name="AgentEventsPage_LiveText.Text" xml:space="preserve">
     <value>Live</value>
@@ -4716,11 +5146,8 @@ On your gateway host (Mac/Linux), run:
   <data name="VoiceSettingsPage_PreviewVoice.Text" xml:space="preserve">
     <value>Preview Voice</value>
   </data>
-  <data name="HubWindow_TitleStatus.Text" xml:space="preserve">
-    <value>Disconnected</value>
-  </data>
   <data name="SandboxPage_GatewayCommandsNote.Text" xml:space="preserve">
-    <value>Commands the agent runs directly on the gateway aren't. If the gateway is on this PC they may still be able to reach your Windows files, clipboard, and network — check your gateway's configuration.</value>
+    <value>Commands the agent runs directly on the gateway aren't. If the gateway is on this PC they may still be able to reach your Windows files, clipboard, and network: check your gateway's configuration.</value>
   </data>  <data name="AgentEventsPage_AllAgents" xml:space="preserve">
     <value>All Agents</value>
   </data>
@@ -4738,6 +5165,60 @@ On your gateway host (Mac/Linux), run:
   </data>
   <data name="CronPage_Running" xml:space="preserve">
     <value>Running...</value>
+  </data>
+  <data name="CronPage_CompletedOneTimeJobTooltip" xml:space="preserve">
+    <value>Completed one-time job</value>
+  </data>
+  <data name="CronPage_EnableJobTooltip" xml:space="preserve">
+    <value>Enable job</value>
+  </data>
+  <data name="CronPage_DisableJobTooltip" xml:space="preserve">
+    <value>Disable job</value>
+  </data>
+  <data name="CronPage_FullResponse" xml:space="preserve">
+    <value>Full response</value>
+  </data>
+  <data name="CronPage_OpenChat" xml:space="preserve">
+    <value>Open chat</value>
+  </data>
+  <data name="CronPage_RunNow" xml:space="preserve">
+    <value>Run Now</value>
+  </data>
+  <data name="CronPage_EditAction" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="CronPage_HistoryAction" xml:space="preserve">
+    <value>History</value>
+  </data>
+  <data name="CronPage_RemoveAction" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="CronPage_RunningBadge" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="CronPage_RunHistory" xml:space="preserve">
+    <value>Run History</value>
+  </data>
+  <data name="CronPage_RunHistoryShowing" xml:space="preserve">
+    <value>Run History - showing {0} of {1}</value>
+  </data>
+  <data name="CronPage_RunHistoryCount" xml:space="preserve">
+    <value>Run History - {0} runs</value>
+  </data>
+  <data name="CronPage_LoadingRunHistory" xml:space="preserve">
+    <value>Loading run history...</value>
+  </data>
+  <data name="CronPage_NoRunHistoryAvailable" xml:space="preserve">
+    <value>No run history available.</value>
+  </data>
+  <data name="CronPage_LoadOlderRuns" xml:space="preserve">
+    <value>Load older runs ({0} more)...</value>
+  </data>
+  <data name="CronPage_LoadMoreRuns" xml:space="preserve">
+    <value>Load more runs...</value>
+  </data>
+  <data name="CronPage_Loading" xml:space="preserve">
+    <value>Loading...</value>
   </data>
   <data name="CronPage_SaveChanges" xml:space="preserve">
     <value>Save Changes</value>
@@ -4807,7 +5288,7 @@ Make sure the gateway is running.</value>
     <value>Awaiting approval</value>
   </data>
   <data name="ConnectionStatus_AwaitingApprovalApproveThenConnect" xml:space="preserve">
-    <value>🔐 Awaiting approval — approve then click Connect</value>
+    <value>🔐 Awaiting approval: approve then click Connect</value>
   </data>
   <data name="ConnectionStatus_AwaitingApprovalFromGateway" xml:space="preserve">
     <value>🔐 Awaiting approval from gateway</value>
@@ -4932,6 +5413,18 @@ Make sure the gateway is running.</value>
   <data name="ConnectionPage_NodeModeDisabledText" xml:space="preserve">
     <value>Node mode disabled</value>
   </data>
+  <data name="ConnectionPage_NodeStarting" xml:space="preserve">
+    <value>Node starting…</value>
+  </data>
+  <data name="ConnectionPage_NodeMcpOnly" xml:space="preserve">
+    <value>Serving capabilities locally (MCP only)</value>
+  </data>
+  <data name="ConnectionPage_NodeMcpOnlyReachable" xml:space="preserve">
+    <value>Reachable by local MCP clients at {0}</value>
+  </data>
+  <data name="ConnectionPage_NodeMcpError" xml:space="preserve">
+    <value>Local MCP server failed to start</value>
+  </data>
   <data name="ConnectionPage_NodeBodyNoCapabilities" xml:space="preserve">
     <value>No capabilities enabled. Pick what to share in Permissions.</value>
   </data>
@@ -4973,6 +5466,9 @@ Make sure the gateway is running.</value>
   </data>
   <data name="ConnectionPage_OpenDashboard" xml:space="preserve">
     <value>Open dashboard</value>
+  </data>
+  <data name="ConnectionPage_GatewayOptionsA11y" xml:space="preserve">
+    <value>Options for {0}</value>
   </data>
   <data name="ConnectionPage_DisconnectAction" xml:space="preserve">
     <value>Disconnect</value>
@@ -5116,7 +5612,7 @@ Make sure the gateway is running.</value>
     <value>Applying…</value>
   </data>
   <data name="ConnectionPage_AppliedGateway" xml:space="preserve">
-    <value>Applied — gateway: {0}</value>
+    <value>Gateway applied: {0}</value>
   </data>
   <data name="ConnectionPage_InvalidSetupCode" xml:space="preserve">
     <value>Invalid setup code</value>
@@ -5178,9 +5674,6 @@ Make sure the gateway is running.</value>
   <data name="ConnectionPage_CancelAction" xml:space="preserve">
     <value>Cancel</value>
   </data>
-  <data name="ConnectionPage_ConnectFailed" xml:space="preserve">
-    <value>Connect failed</value>
-  </data>
   <data name="ConnectionPage_GatewayConnectionFailed" xml:space="preserve">
     <value>Gateway connection failed.</value>
   </data>
@@ -5211,31 +5704,6 @@ Make sure the gateway is running.</value>
   <data name="ConnectionPage_DenyPairingRequest" xml:space="preserve">
     <value>Deny pairing request</value>
   </data>
-  <data name="ConnectionPage_AuthGuidanceToken" xml:space="preserve">
-    <value>{0}
-
-Paste a new setup code from the Add Gateway flow.</value>
-  </data>
-  <data name="ConnectionPage_AuthGuidancePairing" xml:space="preserve">
-    <value>{0}
-
-Your device needs approval on the gateway host.</value>
-  </data>
-  <data name="ConnectionPage_AuthGuidancePassword" xml:space="preserve">
-    <value>{0}
-
-This gateway requires password authentication.</value>
-  </data>
-  <data name="ConnectionPage_AuthGuidanceSignature" xml:space="preserve">
-    <value>{0}
-
-The gateway may require a different auth protocol version.</value>
-  </data>
-  <data name="ConnectionPage_AuthGuidanceDefault" xml:space="preserve">
-    <value>{0}
-
-Check your connection settings and try again.</value>
-  </data>
   <data name="ConnectionPage_AuthModeBootstrap" xml:space="preserve">
     <value>bootstrap</value>
   </data>
@@ -5261,19 +5729,19 @@ Check your connection settings and try again.</value>
     <value>Configuration</value>
   </data>
   <data name="ChannelsPage_CaptionQrLogout" xml:space="preserve">
-    <value>Unlink this device from the channel. Scan a fresh QR to reconnect — your account stays paired on your phone.</value>
+    <value>Unlink this device from the channel. Scan a fresh QR to reconnect: your account stays paired on your phone.</value>
   </data>
   <data name="ChannelsPage_CaptionStopLogout" xml:space="preserve">
-    <value>Pause the channel temporarily — credentials are kept so you can start it again. Or disconnect entirely to clear them.</value>
+    <value>Pause the channel temporarily: credentials are kept so you can start it again. Or disconnect entirely to clear them.</value>
   </data>
   <data name="ChannelsPage_CaptionStartLogout" xml:space="preserve">
-    <value>Start the channel — it’ll begin handling messages with the stored credentials. Or disconnect entirely to clear them.</value>
+    <value>Start the channel: it’ll begin handling messages with the stored credentials. Or disconnect entirely to clear them.</value>
   </data>
   <data name="ChannelsPage_CaptionStopOnly" xml:space="preserve">
-    <value>Pause the channel — credentials are kept so you can start it again.</value>
+    <value>Pause the channel: credentials are kept so you can start it again.</value>
   </data>
   <data name="ChannelsPage_CaptionStartOnly" xml:space="preserve">
-    <value>Start the channel — it’ll begin handling messages with the stored credentials.</value>
+    <value>Start the channel: it’ll begin handling messages with the stored credentials.</value>
   </data>
   <data name="ChannelsPage_Start" xml:space="preserve">
     <value>Start</value>
@@ -5300,7 +5768,7 @@ Check your connection settings and try again.</value>
     <value>How to create a Telegram bot →</value>
   </data>
   <data name="ChannelsPage_HelpDiscord" xml:space="preserve">
-    <value>How to create a Discord webhook →</value>
+    <value>How to create a Discord bot →</value>
   </data>
   <data name="ChannelsPage_HelpGoogleChat" xml:space="preserve">
     <value>How to add a Google Chat webhook →</value>
@@ -5354,19 +5822,19 @@ Check your connection settings and try again.</value>
     <value>Click &quot;Save and start&quot;. The channel will start automatically.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordHeadline" xml:space="preserve">
-    <value>Connect Discord via a webhook</value>
+    <value>Connect Discord via a bot</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep1" xml:space="preserve">
-    <value>Open your Discord server settings → Integrations → Webhooks.</value>
+    <value>Open the Discord Developer Portal, then create or select an application.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep2" xml:space="preserve">
-    <value>Click &quot;New Webhook&quot;, give it a name, and copy the webhook URL.</value>
+    <value>Open Bot, add a bot if needed, then reset and copy its token.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep3" xml:space="preserve">
-    <value>Paste the URL into the Configuration form below.</value>
+    <value>Paste the bot token into the Configuration form below.</value>
   </data>
   <data name="ChannelsPage_GuideDiscordStep4" xml:space="preserve">
-    <value>Click &quot;Save and start&quot;.</value>
+    <value>Click &quot;Save and start&quot;, then add the bot to your server with its OAuth2 installation link.</value>
   </data>
   <data name="ChannelsPage_GuideGoogleChatHeadline" xml:space="preserve">
     <value>Connect Google Chat via a webhook</value>
@@ -5440,6 +5908,12 @@ Check your connection settings and try again.</value>
   <data name="ChannelsPage_FieldBotToken" xml:space="preserve">
     <value>Bot token</value>
   </data>
+  <data name="ChannelsPage_FieldDiscordBotToken" xml:space="preserve">
+    <value>Discord Bot Token</value>
+  </data>
+  <data name="ChannelsPage_PlaceholderDiscordBotToken" xml:space="preserve">
+    <value>Paste Discord bot token</value>
+  </data>
   <data name="ChannelsPage_FieldWebhookUrl" xml:space="preserve">
     <value>Webhook URL</value>
   </data>
@@ -5455,8 +5929,8 @@ Check your connection settings and try again.</value>
   <data name="ChannelsPage_HelpBotToken" xml:space="preserve">
     <value>Get from @BotFather (/newbot).</value>
   </data>
-  <data name="ChannelsPage_HelpWebhookDiscord" xml:space="preserve">
-    <value>Server Settings → Integrations → Webhooks → New Webhook.</value>
+  <data name="ChannelsPage_HelpDiscordBotToken" xml:space="preserve">
+    <value>Copy from Discord Developer Portal → Bot → Reset Token.</value>
   </data>
   <data name="ChannelsPage_HelpWebhookGoogleChat" xml:space="preserve">
     <value>Open a space → Manage webhooks → Add webhook.</value>
@@ -5507,7 +5981,7 @@ Check your connection settings and try again.</value>
     <value>Couldn’t load gateway config</value>
   </data>
   <data name="ChannelsPage_BannerCantLoadConfigMessage" xml:space="preserve">
-    <value>The gateway didn’t return its current config — can’t safely save without it. Try Refresh and save again.</value>
+    <value>The gateway didn’t return its current config: can’t safely save without it. Try Refresh and save again.</value>
   </data>
   <data name="ChannelsPage_BannerConfigClearedMessage" xml:space="preserve">
     <value>The gateway’s config was cleared mid-save. Try Refresh and save again.</value>
@@ -5522,7 +5996,7 @@ Check your connection settings and try again.</value>
     <value>Save failed for {0}</value>
   </data>
   <data name="ChannelsPage_BannerStaleConfigMessage" xml:space="preserve">
-    <value>Your gateway config changed elsewhere (e.g., from the Config page). We refreshed the cache — try Save again. Details: {0}</value>
+    <value>Your gateway config changed elsewhere (e.g., from the Config page). We refreshed the cache. Try Save again. Details: {0}</value>
   </data>
   <data name="ChannelsPage_BannerSaveFailedMessage" xml:space="preserve">
     <value>{0} If this looks like a wire-format mismatch, open the Config page for direct JSON editing.</value>
@@ -5656,13 +6130,7 @@ Check your connection settings and try again.</value>
   <data name="Command_GoToNotifications_Title" xml:space="preserve">
     <value>Go to Notifications</value>
   </data>
-  <data name="Command_GoToInfo_Subtitle" xml:space="preserve">
-    <value>About this app</value>
-  </data>
-  <data name="Command_GoToInfo_Title" xml:space="preserve">
-    <value>Go to Info</value>
-  </data>
-  <data name="Command_GoToInstances_Subtitle" xml:space="preserve">
+<data name="Command_GoToInstances_Subtitle" xml:space="preserve">
     <value>Gateway instances</value>
   </data>
   <data name="Command_GoToInstances_Title" xml:space="preserve">
@@ -5741,7 +6209,7 @@ Check your connection settings and try again.</value>
     <value>Gateway authentication failed</value>
   </data>
   <data name="CommandCenter_BrowserProxyAuthMayNeed" xml:space="preserve">
-    <value>Browser proxy auth may need a gateway token</value>
+    <value>Browser control needs a gateway shared token</value>
   </data>
   <data name="CommandCenter_BrowserProxyHostNotDetected" xml:space="preserve">
     <value>Browser proxy host not detected</value>
@@ -5791,6 +6259,345 @@ Check your connection settings and try again.</value>
   <data name="ConfigPage_ConfigUnavailable" xml:space="preserve">
     <value>Config unavailable</value>
   </data>
+  <data name="ConfigPage_EditingPathFormat" xml:space="preserve">
+    <value>Editing {0} via schema-guided form.</value>
+  </data>
+  <data name="ConfigPage_RenderConfigUnavailableTitle" xml:space="preserve">
+    <value>Config unavailable</value>
+  </data>
+  <data name="ConfigPage_RenderConfigUnavailableMessage" xml:space="preserve">
+    <value>The gateway config could not be rendered. Refresh and try again.</value>
+  </data>
+  <data name="ConfigPage_RenderSchemaUnavailableTitle" xml:space="preserve">
+    <value>Schema unavailable</value>
+  </data>
+  <data name="ConfigPage_RenderSchemaUnavailableMessage" xml:space="preserve">
+    <value>The gateway schema could not be rendered. Raw JSON remains available as a read-only preview.</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayRestartingTitle" xml:space="preserve">
+    <value>Gateway restarting</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayRestartingMessage" xml:space="preserve">
+    <value>Saving changes. The gateway is restarting and will reconnect automatically.</value>
+  </data>
+  <data name="ConfigPage_StatusNoChangesTitle" xml:space="preserve">
+    <value>No changes</value>
+  </data>
+  <data name="ConfigPage_StatusNoChangesMessage" xml:space="preserve">
+    <value>There is nothing to save.</value>
+  </data>
+  <data name="ConfigPage_StatusFixValidationErrorsTitle" xml:space="preserve">
+    <value>Fix validation errors</value>
+  </data>
+  <data name="ConfigPage_StatusValidationErrorMessageFormat" xml:space="preserve">
+    <value>{0}: {1}</value>
+  </data>
+  <data name="ConfigPage_StatusNotConnectedTitle" xml:space="preserve">
+    <value>Not connected</value>
+  </data>
+  <data name="ConfigPage_StatusNotConnectedMessage" xml:space="preserve">
+    <value>Connect to a gateway before saving config.</value>
+  </data>
+  <data name="ConfigPage_StatusReadOnlyMessage" xml:space="preserve">
+    <value>This operator token does not have operator.write permission, so config changes cannot be saved.</value>
+  </data>
+  <data name="ConfigPage_StatusConfigNotLoadedTitle" xml:space="preserve">
+    <value>Config not loaded</value>
+  </data>
+  <data name="ConfigPage_StatusConfigNotLoadedMessage" xml:space="preserve">
+    <value>Refresh the gateway config before saving.</value>
+  </data>
+  <data name="ConfigPage_StatusSavingConfigTitle" xml:space="preserve">
+    <value>Saving config…</value>
+  </data>
+  <data name="ConfigPage_StatusSavingConfigMessageFormat" xml:space="preserve">
+    <value>Writing {0} change(s) to the gateway.</value>
+  </data>
+  <data name="ConfigPage_StatusStaleConfigTitle" xml:space="preserve">
+    <value>Gateway config changed elsewhere</value>
+  </data>
+  <data name="ConfigPage_StatusStaleConfigMessageFormat" xml:space="preserve">
+    <value>Your edits are preserved. The latest config is being refreshed; review the form and try Save again. Details: {0}</value>
+  </data>
+  <data name="ConfigPage_StatusStaleConfigDefaultDetail" xml:space="preserve">
+    <value>stale config hash</value>
+  </data>
+  <data name="ConfigPage_StatusSaveFailedTitle" xml:space="preserve">
+    <value>Save failed</value>
+  </data>
+  <data name="ConfigPage_StatusSaveRejectedMessage" xml:space="preserve">
+    <value>The gateway rejected the config update. Your changes are preserved.</value>
+  </data>
+  <data name="ConfigPage_StatusSaveExceptionMessageFormat" xml:space="preserve">
+    <value>{0} Your changes are preserved.</value>
+  </data>
+  <data name="ConfigPage_SaveStatusCheckingConfigPermissions" xml:space="preserve">
+    <value>Checking config permissions…</value>
+  </data>
+  <data name="ConfigPage_SaveStatusRefreshing" xml:space="preserve">
+    <value>Refreshing…</value>
+  </data>
+  <data name="ConfigPage_StatusChangesDiscardedTitle" xml:space="preserve">
+    <value>Changes discarded</value>
+  </data>
+  <data name="ConfigPage_StatusChangesDiscardedMessage" xml:space="preserve">
+    <value>The form is back to the last config loaded from the gateway.</value>
+  </data>
+  <data name="ConfigPage_FullConfig" xml:space="preserve">
+    <value>Full config</value>
+  </data>
+  <data name="ConfigPage_StatusSectionResetTitle" xml:space="preserve">
+    <value>Section reset</value>
+  </data>
+  <data name="ConfigPage_StatusSectionResetMessageFormat" xml:space="preserve">
+    <value>{0} is back to the last loaded gateway value.</value>
+  </data>
+  <data name="ConfigPage_StatusCopiedJsonDiffTitle" xml:space="preserve">
+    <value>Copied JSON diff</value>
+  </data>
+  <data name="ConfigPage_StatusCopiedJsonDiffMessage" xml:space="preserve">
+    <value>The selected section diff was copied to the clipboard.</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayReconnectedTitle" xml:space="preserve">
+    <value>Gateway reconnected</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayReconnectedRefreshingMessage" xml:space="preserve">
+    <value>Configuration saved and the gateway connection is back. Refreshing the latest config.</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayReconnectedLoadedMessage" xml:space="preserve">
+    <value>Configuration saved and the latest gateway config is loaded.</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayStillReconnectingTitle" xml:space="preserve">
+    <value>Gateway still reconnecting</value>
+  </data>
+  <data name="ConfigPage_StatusGatewayStillReconnectingMessage" xml:space="preserve">
+    <value>The config save was accepted, but the gateway has not reconnected yet. You can keep this page open or use Connection to check status.</value>
+  </data>
+  <data name="ConfigPage_CheckingConfigPermissionsMessage" xml:space="preserve">
+    <value>Waiting for the gateway to report this operator's permissions.</value>
+  </data>
+  <data name="ConfigPage_ConfigUnavailableMessage" xml:space="preserve">
+    <value>This operator token lacks operator.read permission, so the gateway config cannot be loaded here.</value>
+  </data>
+  <data name="ConfigPage_ConfigIsReadOnlyMessage" xml:space="preserve">
+    <value>This operator token can read config but lacks operator.write permission. You can inspect and validate drafts, but Save is disabled.</value>
+  </data>
+  <data name="ConfigPage_MetaNoUnsavedChanges" xml:space="preserve">
+    <value>No unsaved changes.</value>
+  </data>
+  <data name="ConfigPage_MetaUnsavedChangesFormat" xml:space="preserve">
+    <value>{0} unsaved change(s)</value>
+  </data>
+  <data name="ConfigPage_MetaUnsavedChangesWithValidationFormat" xml:space="preserve">
+    <value>{0} unsaved change(s) · {1} validation issue(s)</value>
+  </data>
+  <data name="ConfigPage_SaveStatusSaving" xml:space="preserve">
+    <value>Saving…</value>
+  </data>
+  <data name="ConfigPage_SaveStatusGatewayRestarting" xml:space="preserve">
+    <value>Gateway restarting…</value>
+  </data>
+  <data name="ConfigPage_SaveStatusConnectToGateway" xml:space="preserve">
+    <value>Connect to a gateway to edit</value>
+  </data>
+  <data name="ConfigPage_SaveStatusCheckingPermissions" xml:space="preserve">
+    <value>Checking permissions…</value>
+  </data>
+  <data name="ConfigPage_SaveStatusMissingRead" xml:space="preserve">
+    <value>Config unavailable: missing operator.read</value>
+  </data>
+  <data name="ConfigPage_SaveStatusReadOnlyMissingWrite" xml:space="preserve">
+    <value>Read-only: missing operator.write</value>
+  </data>
+  <data name="ConfigPage_SaveStatusFixValidationBeforeSaving" xml:space="preserve">
+    <value>Fix validation errors before saving</value>
+  </data>
+  <data name="ConfigPage_SaveStatusUnsavedChanges" xml:space="preserve">
+    <value>Unsaved changes</value>
+  </data>
+  <data name="ConfigPage_SaveStatusNoUnsavedChanges" xml:space="preserve">
+    <value>No unsaved changes</value>
+  </data>
+  <data name="ConfigPage_AccessDisconnected" xml:space="preserve">
+    <value>Disconnected</value>
+  </data>
+  <data name="ConfigPage_AccessChecking" xml:space="preserve">
+    <value>Checking access</value>
+  </data>
+  <data name="ConfigPage_AccessNoRead" xml:space="preserve">
+    <value>No config read access</value>
+  </data>
+  <data name="ConfigPage_AccessReadOnly" xml:space="preserve">
+    <value>Read-only access</value>
+  </data>
+  <data name="ConfigPage_AccessReadWrite" xml:space="preserve">
+    <value>Read/write access</value>
+  </data>
+  <data name="ConfigPage_AccessUnknown" xml:space="preserve">
+    <value>Unknown access</value>
+  </data>
+  <data name="ConfigPage_AccessChangesFormat" xml:space="preserve">
+    <value>{0} change(s)</value>
+  </data>
+  <data name="ConfigPage_AccessValidationClean" xml:space="preserve">
+    <value>Local validation clean</value>
+  </data>
+  <data name="ConfigPage_AccessValidationIssuesFormat" xml:space="preserve">
+    <value>{0} validation issue(s)</value>
+  </data>
+  <data name="ConfigPage_AccessSummaryFormat" xml:space="preserve">
+    <value>{0} · {1} · {2}</value>
+  </data>
+  <data name="DebugPage_NoGatewayConfigured" xml:space="preserve">
+    <value>no gateway configured</value>
+  </data>
+  <data name="DebugPage_StatusConnectedFormat" xml:space="preserve">
+    <value>OpenClaw is connected to {0}.</value>
+  </data>
+  <data name="DebugPage_StatusConnectingFormat" xml:space="preserve">
+    <value>Connecting to {0}…</value>
+  </data>
+  <data name="DebugPage_StatusDisconnectedFormat" xml:space="preserve">
+    <value>Not connected. Gateway: {0}.</value>
+  </data>
+  <data name="DebugPage_StatusErrorFormat" xml:space="preserve">
+    <value>Last gateway: {0}. See the event timeline.</value>
+  </data>
+  <data name="DebugPage_StatusGatewayFormat" xml:space="preserve">
+    <value>Gateway: {0}.</value>
+  </data>
+  <data name="DebugPage_RecentLogTitle" xml:space="preserve">
+    <value>Recent log</value>
+  </data>
+  <data name="DebugPage_RecentLogCaptionFormat" xml:space="preserve">
+    <value>Last 200 lines of {0}. Severity is parsed from [info]/[warn]/[error] tags.</value>
+  </data>
+  <data name="DebugPage_CopyFeedbackFormat" xml:space="preserve">
+    <value>{0} copied to clipboard.</value>
+  </data>
+  <data name="SandboxPage_StatusUnavailableTitle" xml:space="preserve">
+    <value>Node Sandbox unavailable: host fallback</value>
+  </data>
+  <data name="SandboxPage_StatusUnavailableSubtext" xml:space="preserve">
+    <value>Containment isn't available on this PC, so agent-started commands run on the host without sandbox protection.</value>
+  </data>
+  <data name="SandboxPage_StatusUnavailableBlockedTitle" xml:space="preserve">
+    <value>Node Sandbox unavailable: commands blocked</value>
+  </data>
+  <data name="SandboxPage_StatusUnavailableBlockedSubtext" xml:space="preserve">
+    <value>Containment isn't available on this PC, and strict fallback blocking is on, so agent-started commands are blocked.</value>
+  </data>
+  <data name="SandboxPage_StatusUnavailableOffTitle" xml:space="preserve">
+    <value>Node Sandbox is off: host execution</value>
+  </data>
+  <data name="SandboxPage_StatusUnavailableOffSubtext" xml:space="preserve">
+    <value>Containment isn't available and Node Sandbox is off, so agent-started commands run on the host without sandbox protection.</value>
+  </data>
+  <data name="SandboxPage_StatusOnTitle" xml:space="preserve">
+    <value>Node Sandbox is on</value>
+  </data>
+  <data name="SandboxPage_StatusOnSubtext" xml:space="preserve">
+    <value>Programs the agent runs on this PC are contained.</value>
+  </data>
+  <data name="SandboxPage_StatusOffTitle" xml:space="preserve">
+    <value>Node Sandbox is off: high risk</value>
+  </data>
+  <data name="SandboxPage_StatusOffSubtext" xml:space="preserve">
+    <value>Programs the agent runs on this PC are not contained.</value>
+  </data>
+  <data name="SandboxPage_UnavailableDefaultReason" xml:space="preserve">
+    <value>MXC sandboxing primitives are not available on this machine.</value>
+  </data>
+  <data name="SandboxPage_ProbeErrorReason" xml:space="preserve">
+    <value>Couldn't check sandbox availability.</value>
+  </data>
+  <data name="SandboxPage_UnavailableBehaviorHostFallback" xml:space="preserve">
+    <value>Commands will run on the host without sandbox protection while sandboxing is unavailable.</value>
+  </data>
+  <data name="SandboxPage_UnavailableBehaviorBlocked" xml:space="preserve">
+    <value>Commands are blocked while sandboxing is unavailable because strict fallback blocking is enabled.</value>
+  </data>
+  <data name="SandboxPage_ProbeErrorTitle" xml:space="preserve">
+    <value>Couldn't verify sandbox availability</value>
+  </data>
+  <data name="SandboxPage_ProbeErrorMessageFormat" xml:space="preserve">
+    <value>{0}&#x0A;&#x0A;{1} The sandbox capability check didn't complete. This is usually transient (a slow or blocked check): retry, and if it persists check whether security software is blocking wxc-exec.</value>
+  </data>
+  <data name="SandboxPage_Retry" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="SandboxPage_WindowsUnsupportedTitle" xml:space="preserve">
+    <value>Your Windows version doesn't support sandboxing yet</value>
+  </data>
+  <data name="SandboxPage_WindowsUnsupportedMessageFormat" xml:space="preserve">
+    <value>{0}&#x0A;&#x0A;{1} Sandboxing requires a recent Windows build with the AppContainer primitives shipped. Install the latest Windows updates (or join the Windows Insider Program for the newest builds) to enable containment.</value>
+  </data>
+  <data name="SandboxPage_OpenWindowsUpdate" xml:space="preserve">
+    <value>Open Windows Update</value>
+  </data>
+  <data name="SandboxPage_ComponentsMissingTitle" xml:space="preserve">
+    <value>Sandboxing components are missing</value>
+  </data>
+  <data name="SandboxPage_ComponentsMissingMessageFormat" xml:space="preserve">
+    <value>{0}&#x0A;&#x0A;The wxc-exec binary couldn't be located. {1} If this is a developer build, build the tray app so wxc-exec.exe is copied into the output folder. Otherwise reinstall the companion app to restore sandboxing.</value>
+  </data>
+  <data name="SandboxPage_ShowInstallInstructions" xml:space="preserve">
+    <value>Show install instructions</value>
+  </data>
+  <data name="SandboxPage_UnavailableTitle" xml:space="preserve">
+    <value>Sandbox unavailable: host fallback</value>
+  </data>
+  <data name="SandboxPage_UnavailableBlockedTitle" xml:space="preserve">
+    <value>Sandbox unavailable: commands blocked</value>
+  </data>
+  <data name="SettingsPage_LocalGatewayRemovedTitle" xml:space="preserve">
+    <value>Local gateway removed</value>
+  </data>
+  <data name="SettingsPage_LocalGatewayRemovedMessage" xml:space="preserve">
+    <value>Setup is reset; you can re-run setup from the tray menu.</value>
+  </data>
+  <data name="SettingsPage_LocalGatewayRemovalErrorsMessage" xml:space="preserve">
+    <value>Removal completed with errors. Check logs for details.</value>
+  </data>
+  <data name="SettingsPage_LocalGatewayRemovalCancelledTitle" xml:space="preserve">
+    <value>Removal cancelled</value>
+  </data>
+  <data name="SettingsPage_LocalGatewayRemovalCancelledMessage" xml:space="preserve">
+    <value>Gateway may be in a partially-removed state. Review logs or retry.</value>
+  </data>
+  <data name="SettingsPage_ViewLogs" xml:space="preserve">
+    <value>View Logs</value>
+  </data>
+  <data name="SettingsPage_LocalGatewayRemovalFailedTitle" xml:space="preserve">
+    <value>Removal failed</value>
+  </data>
+  <data name="SettingsPage_RemoveLocalGatewayButton" xml:space="preserve">
+    <value>Remove Local Gateway</value>
+  </data>
+  <data name="SettingsPage_RemovingDistro" xml:space="preserve">
+    <value>Removing distro…</value>
+  </data>
+  <data name="SettingsPage_RemovingLocalGatewayMessage" xml:space="preserve">
+    <value>Removing the local gateway. This may take 10–30 seconds…</value>
+  </data>
+  <data name="CronPage_NextWakeFormat" xml:space="preserve">
+    <value>· Next wake: {0}</value>
+  </data>
+  <data name="ChatWindow_UnableToLoadChatCredentials" xml:space="preserve">
+    <value>Unable to load chat. The gateway URL or token is not available.</value>
+  </data>
+  <data name="ChatWindow_UnableToLoadChatRetryFormat" xml:space="preserve">
+    <value>Unable to load chat. Please try again. ({0})</value>
+  </data>
+  <data name="ChatWindow_WebViewFailedFormat" xml:space="preserve">
+    <value>WebView2 failed: {0}</value>
+  </data>
+  <data name="CanvasWindow_WebViewInitFailedFormat" xml:space="preserve">
+    <value>Failed to initialize WebView2: {0}</value>
+  </data>
+  <data name="CanvasWindow_NavigationFailedFormat" xml:space="preserve">
+    <value>Navigation failed: {0}</value>
+  </data>
   <data name="ConnectionPage_GatewayHostControlsDescription_Format" xml:space="preserve">
     <value>Open a shell or manage the local gateway service in {0}.</value>
   </data>
@@ -5799,6 +6606,15 @@ Check your connection settings and try again.</value>
   </data>
   <data name="CronPage_JobCompletedRanSuccessfully" xml:space="preserve">
     <value>&quot;{0}&quot; ran successfully and was removed.</value>
+  </data>
+  <data name="CronPage_RunNotStarted" xml:space="preserve">
+    <value>Run not started</value>
+  </data>
+  <data name="CronPage_RunNotStartedGeneric" xml:space="preserve">
+    <value>{0} was not started.</value>
+  </data>
+  <data name="CronPage_RunNotStartedWithReason" xml:space="preserve">
+    <value>{0} was not started: {1}</value>
   </data>
   <data name="GatewayHostAccess_NoTerminalAccess" xml:space="preserve">
     <value>This gateway does not have WSL or SSH terminal access.</value>
@@ -5866,6 +6682,27 @@ Check your connection settings and try again.</value>
   <data name="ConnectionPage_NodeSurfaceNone" xml:space="preserve">
     <value>none</value>
   </data>
+  <data name="ConnectionPage_NodeTechnicalDetails.Text" xml:space="preserve">
+    <value>Show technical details</value>
+  </data>
+  <data name="ConnectionPage_NodePillState_Active" xml:space="preserve">
+    <value>Sharing now</value>
+  </data>
+  <data name="ConnectionPage_NodePillState_Pending" xml:space="preserve">
+    <value>Enabled, not active yet</value>
+  </data>
+  <data name="ConnectionPage_NodePillState_NeedsGatewayToken" xml:space="preserve">
+    <value>Needs gateway shared token</value>
+  </data>
+  <data name="ConnectionPage_NodePillState_Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="ConnectionPage_NodeCap_Device" xml:space="preserve">
+    <value>Device info</value>
+  </data>
+  <data name="ConnectionPage_NodeCap_System" xml:space="preserve">
+    <value>System access</value>
+  </data>
   <data name="ConnectionPage_NodeEffectiveCapabilities" xml:space="preserve">
     <value>Approved/effective capabilities: {0}</value>
   </data>
@@ -5884,4 +6721,361 @@ Check your connection settings and try again.</value>
   <data name="ConnectionPage_NodePendingDeclaredPermissions" xml:space="preserve">
     <value>Pending declared permissions: {0}</value>
   </data>
+  <data name="ConnectionPage_AdviceCleartextTitle" xml:space="preserve">
+    <value>Unencrypted connection</value>
+  </data>
+  <data name="ConnectionPage_AdviceCleartextMessage" xml:space="preserve">
+    <value>This remote gateway uses ws://. Your token would be sent in cleartext. Use wss:// (TLS), an SSH tunnel, or a trusted proxy / Tailscale.</value>
+  </data>
+  <data name="ConnectionPage_AdviceSecureTitle" xml:space="preserve">
+    <value>Encrypted (TLS)</value>
+  </data>
+  <data name="ConnectionPage_AdviceSecureMessage" xml:space="preserve">
+    <value>This gateway uses TLS. Your token is protected in transit when the certificate validates.</value>
+  </data>
+  <data name="ConnectionPage_AdviceTunnelTitle" xml:space="preserve">
+    <value>SSH tunnel</value>
+  </data>
+  <data name="ConnectionPage_AdviceTunnelMessage" xml:space="preserve">
+    <value>Traffic to this gateway is encrypted through the SSH tunnel.</value>
+  </data>
+  <data name="ConnectionPage_RecoveryHeaderTokenDrift" xml:space="preserve">
+    <value>Re-pair this device:</value>
+  </data>
+  <data name="ConnectionPage_RecoveryHeaderScope" xml:space="preserve">
+    <value>Upgrade this device's access:</value>
+  </data>
+  <data name="ConnectionPage_RecoveryHeaderTls" xml:space="preserve">
+    <value>Fix the secure connection:</value>
+  </data>
+  <data name="ConnectionPage_RecoveryTokenDriftBullet1" xml:space="preserve">
+    <value>The gateway no longer trusts this device's saved token (it was rotated or revoked).</value>
+  </data>
+  <data name="ConnectionPage_RecoveryTokenDriftBullet2" xml:space="preserve">
+    <value>Get a fresh setup code from the gateway host and paste it below to re-pair.</value>
+  </data>
+  <data name="ConnectionPage_RecoveryScopeBullet1" xml:space="preserve">
+    <value>This device is authenticated but is missing the scopes it needs (for example operator.admin or operator.pairing).</value>
+  </data>
+  <data name="ConnectionPage_RecoveryScopeBullet2" xml:space="preserve">
+    <value>Re-pair with a fresh setup code to request the required scopes, or approve the higher scopes on the gateway host.</value>
+  </data>
+  <data name="ConnectionPage_RecoveryTlsBullet1" xml:space="preserve">
+    <value>The gateway's TLS/secure transport could not be established.</value>
+  </data>
+  <data name="ConnectionPage_RecoveryTlsBullet2" xml:space="preserve">
+    <value>Verify the certificate on the gateway host, or connect over wss:// or an SSH tunnel.</value>
+  </data>
+  <data name="ConnectionPage_TokenOrPasswordHint.Text" xml:space="preserve">
+    <value>Paste a shared gateway token, or leave it blank to pair with a setup code.</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpDirect.Text" xml:space="preserve">
+    <value>Connect to wss:// or https:// when the gateway has a trusted certificate. Your token is encrypted in transit after certificate validation.</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpTunnel.Text" xml:space="preserve">
+    <value>When the gateway only listens on localhost, expand "Use SSH tunnel" below. The tray forwards a local port over SSH so traffic stays encrypted.</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpProxy.Text" xml:space="preserve">
+    <value>If a Tailscale or reverse proxy already encrypts the path, a plain ws:// URL over that private network is fine.</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpAuth.Text" xml:space="preserve">
+    <value>Paste a shared token, or leave it blank and pair with a setup code. Re-pairing also upgrades this device's scopes.</value>
+  </data>
+  <data name="ConnectionPage_RecoveryHeaderRateLimited" xml:space="preserve">
+    <value>Wait before reconnecting:</value>
+  </data>
+  <data name="ConnectionPage_RecoveryRateLimitedBullet1" xml:space="preserve">
+    <value>The gateway is rate-limiting this client after repeated failed attempts.</value>
+  </data>
+  <data name="ConnectionPage_RecoveryRateLimitedBullet2" xml:space="preserve">
+    <value>Stop retrying for a moment, then reconnect after correcting the token, password, or pairing state.</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpLink.Text" xml:space="preserve">
+    <value>How do I connect to a remote gateway?</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpTip.Title" xml:space="preserve">
+    <value>Connecting to a remote gateway</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpDirectTitle.Text" xml:space="preserve">
+    <value>Direct (TLS)</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpTunnelTitle.Text" xml:space="preserve">
+    <value>SSH tunnel</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpProxyTitle.Text" xml:space="preserve">
+    <value>Trusted proxy / Tailscale</value>
+  </data>
+  <data name="ConnectionPage_RemoteSetupHelpAuthTitle.Text" xml:space="preserve">
+    <value>Auth</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_Title.Text" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_OpenConnection.Content" xml:space="preserve">
+    <value>Open Connection</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_GatewayLabel.Text" xml:space="preserve">
+    <value>Gateway</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_Reconnect.Content" xml:space="preserve">
+    <value>Reconnect</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_OperatorLabel.Text" xml:space="preserve">
+    <value>Operator</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_NodeLabel.Text" xml:space="preserve">
+    <value>Node</value>
+  </data>
+  <data name="HubWindow_StatusFlyout_Approve.Content" xml:space="preserve">
+    <value>Approve…</value>
+  </data>
+  <data name="HubWindow_StatusPill_Tooltip" xml:space="preserve">
+    <value>Connection status</value>
+  </data>
+  <data name="HubWindow_Bell_Tooltip" xml:space="preserve">
+    <value>Notifications</value>
+  </data>
+  <data name="HubWindow_Pill_Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="HubWindow_Pill_PairingRequired" xml:space="preserve">
+    <value>Pairing required</value>
+  </data>
+  <data name="HubWindow_Pill_Degraded" xml:space="preserve">
+    <value>Degraded</value>
+  </data>
+  <data name="HubWindow_Role_Off" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="HubWindow_Role_PairingRequired" xml:space="preserve">
+    <value>Pairing required</value>
+  </data>
+  <data name="HubWindow_Role_PairingRejected" xml:space="preserve">
+    <value>Pairing rejected</value>
+  </data>
+  <data name="HubWindow_Role_RateLimited" xml:space="preserve">
+    <value>Rate limited</value>
+  </data>
+  <data name="HubWindow_Role_Disabled" xml:space="preserve">
+    <value>Disabled</value>
+  </data>
+  <data name="NotificationsFlyout_ClearAll.Content" xml:space="preserve">
+    <value>Clear all</value>
+  </data>
+  <data name="NotificationsFlyout_EmptyTitle.Text" xml:space="preserve">
+    <value>No notifications</value>
+  </data>
+  <data name="NotificationsFlyout_OpenPage.Content" xml:space="preserve">
+    <value>Open notifications</value>
+  </data>
+  <data name="NotificationsFlyout_ActiveCountFormat" xml:space="preserve">
+    <value>{0} active</value>
+  </data>
+  <data name="HubWindow_Role_PermissionsIncomplete" xml:space="preserve">
+    <value>Permissions incomplete</value>
+  </data>
+  <data name="SettingsPage_About.Text" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="SettingsPage_AppInfoExpander.Header" xml:space="preserve">
+    <value>App info</value>
+  </data>
+  <data name="SettingsPage_AppInfoCheckUpdates.Content" xml:space="preserve">
+    <value>Check for updates</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_AppName.Text" xml:space="preserve">
+    <value>App name</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_Version.Text" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_BuildDate.Text" xml:space="preserve">
+    <value>Build date</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_Runtime.Text" xml:space="preserve">
+    <value>Runtime</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_Architecture.Text" xml:space="preserve">
+    <value>Architecture</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_Windows.Text" xml:space="preserve">
+    <value>Windows</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_UpdateChannel.Text" xml:space="preserve">
+    <value>Update channel</value>
+  </data>
+  <data name="SettingsPage_AppInfoLabel_InstallType.Text" xml:space="preserve">
+    <value>Install type</value>
+  </data>
+  <data name="SettingsPage_AppInfoRelatedLinks.Text" xml:space="preserve">
+    <value>Related links</value>
+  </data>
+  <data name="SettingsPage_AppInfoDocumentation.Content" xml:space="preserve">
+    <value>Documentation</value>
+  </data>
+  <data name="SettingsPage_AppInfoGitHub.Content" xml:space="preserve">
+    <value>GitHub</value>
+  </data>
+  <data name="SettingsPage_AppInfoDashboard.Content" xml:space="preserve">
+    <value>Dashboard</value>
+  </data>
+  <data name="SettingsPage_GatewayInfoExpander.Header" xml:space="preserve">
+    <value>Gateway info</value>
+  </data>
+  <data name="SettingsPage_GatewayInfoLabel_Version.Text" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="SettingsPage_GatewayInfoLabel_Protocol.Text" xml:space="preserve">
+    <value>Protocol</value>
+  </data>
+  <data name="SettingsPage_GatewayInfoLabel_AuthMode.Text" xml:space="preserve">
+    <value>Auth mode</value>
+  </data>
+  <data name="SettingsPage_GatewayInfoLabel_Uptime.Text" xml:space="preserve">
+    <value>Uptime</value>
+  </data>
+  <data name="SandboxPage_UnavailablePrimaryButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Sandbox action</value>
+  </data>
+  <data name="SandboxPage_PresetLockedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Locked Down preset: No internet, no clipboard, no standard user folders</value>
+  </data>
+  <data name="SandboxPage_PresetBalancedButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Recommended preset: Internet on, read-only on Documents, Downloads, Desktop</value>
+  </data>
+  <data name="SandboxPage_PresetPermissiveButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Unprotected preset: Internet on, read and write on Documents, Downloads, Desktop</value>
+  </data>
+  <data name="SandboxPage_DocsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Documents access level</value>
+  </data>
+  <data name="SandboxPage_DownloadsAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Downloads access level</value>
+  </data>
+  <data name="SandboxPage_DesktopAccessCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Desktop access level</value>
+  </data>
+  <data name="SettingsPage_NotificationSoundComboBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Notification sound</value>
+  </data>
+  <data name="VoiceSettingsPage_LanguageCombo.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Voice language</value>
+  </data>
+  <data name="HubWindow_MainNavigation.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Main navigation</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Resize JSON preview</value>
+  </data>
+  <data name="JsonPreviewSplitter.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.LocalizedControlType" xml:space="preserve">
+    <value>splitter</value>
+  </data>
+  <data name="PermissionsPage_ExecPolicySaved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="PermissionsPage_ExecPolicySaveFailed" xml:space="preserve">
+    <value>Save failed</value>
+  </data>
+  <data name="SessionsPage_Status_Working" xml:space="preserve">
+    <value>Working</value>
+  </data>
+  <data name="SessionsPage_Status_Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="SessionsPage_Status_NeedsAttention" xml:space="preserve">
+    <value>Needs attention</value>
+  </data>
+  <data name="SessionsPage_LastRunStopped" xml:space="preserve">
+    <value>Last run stopped</value>
+  </data>
+  <data name="ConnectionPage_ProtocolGatewayUpdateRequired" xml:space="preserve">
+    <value>Gateway update required</value>
+  </data>
+  <data name="ConnectionPage_ProtocolGatewayUpdateDetail" xml:space="preserve">
+    <value>This Gateway uses protocol v{0}. This Windows app supports v{1}-v{2}. Its current protocol is v{3}. Update the Gateway to continue.</value>
+  </data>
+  <data name="ConnectionPage_ProtocolWindowsUpdateRequired" xml:space="preserve">
+    <value>Windows app update required</value>
+  </data>
+  <data name="ConnectionPage_ProtocolWindowsUpdateDetail" xml:space="preserve">
+    <value>This Gateway requires protocol v{0}. This Windows app supports v{1}-v{2}. Its current protocol is v{3}. Update the Windows app to continue.</value>
+  </data>
+  <data name="ConnectionPage_ProtocolUnknownMismatch" xml:space="preserve">
+    <value>Gateway version not supported</value>
+  </data>
+  <data name="Chat_AssistantMedia_Preparing" xml:space="preserve">
+    <value>Preparing media</value>
+  </data>
+  <data name="Chat_AssistantMedia_Unavailable" xml:space="preserve">
+    <value>Media unavailable</value>
+  </data>
+  <data name="Chat_AssistantMedia_Retry" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="Chat_AssistantMedia_Image" xml:space="preserve">
+    <value>Image</value>
+  </data>
+  <data name="Chat_AssistantMedia_Audio" xml:space="preserve">
+    <value>Audio</value>
+  </data>
+  <data name="Chat_AssistantMedia_Video" xml:space="preserve">
+    <value>Video</value>
+  </data>
+  <data name="Chat_AssistantMedia_File" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="Chat_AssistantMedia_Media" xml:space="preserve">
+    <value>Media</value>
+  </data>
+  <data name="Chat_AssistantMedia_ImagesOmitted" xml:space="preserve">
+    <value>{0} more images not shown</value>
+  </data>
+  <data name="Chat_AssistantMedia_MediaAttachment" xml:space="preserve">
+    <value>Media attachment</value>
+  </data>
+  <data name="Chat_AssistantMedia_OpenImage" xml:space="preserve">
+    <value>Open image {0}</value>
+  </data>
+  <data name="Chat_AssistantMedia_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="HubWindow_NavigationViewItem_LocalAi.Content" xml:space="preserve"><value>Local AI</value></data>
+  <data name="LocalAiPage_Title.Text" xml:space="preserve"><value>Local AI</value></data>
+  <data name="LocalAiPage_Intro.Text" xml:space="preserve"><value>Run the verified native llama-server privately on this computer. Models load only when requested.</value></data>
+  <data name="LocalAiPage_UnavailableInfoBar.Title" xml:space="preserve"><value>Local AI is not available</value></data>
+  <data name="LocalAiPage_UnavailableDetailsButton.Content" xml:space="preserve"><value>See why</value></data>
+  <data name="LocalAiPage_UnavailableDetailsTip.Title" xml:space="preserve"><value>Why Local AI is unavailable</value></data>
+  <data name="LocalAiPage_EngineHeading.Text" xml:space="preserve"><value>llama-server</value></data>
+  <data name="LocalAiPage_VersionLabel.Text" xml:space="preserve"><value>Version</value></data>
+  <data name="LocalAiPage_EndpointLabel.Text" xml:space="preserve"><value>Endpoint</value></data>
+  <data name="LocalAiPage_ProcessLabel.Text" xml:space="preserve"><value>Process</value></data>
+  <data name="LocalAiPage_StartButton.Content" xml:space="preserve"><value>Start router</value></data>
+  <data name="LocalAiPage_StopButton.Content" xml:space="preserve"><value>Stop</value></data>
+  <data name="LocalAiPage_RestartButton.Content" xml:space="preserve"><value>Restart</value></data>
+  <data name="LocalAiPage_OpenLogsButton.Content" xml:space="preserve"><value>Open logs</value></data>
+  <data name="LocalAiPage_ModelHeading.Text" xml:space="preserve"><value>Model</value></data>
+  <data name="LocalAiPage_RetrySetupButton.Content" xml:space="preserve"><value>Retry setup or download</value></data>
+  <data name="LocalAiPage_GatewayHeading.Text" xml:space="preserve"><value>Gateway connection</value></data>
+  <data name="LocalAiPage_RepairConnectionButton.Content" xml:space="preserve"><value>Repair connection</value></data>
+  <data name="LocalAiPage_OpenChatButton.Content" xml:space="preserve"><value>Open chat</value></data>
+  <data name="LocalAiPage_Engine_Running" xml:space="preserve"><value>Running</value></data>
+  <data name="LocalAiPage_Engine_Starting" xml:space="preserve"><value>Starting</value></data>
+  <data name="LocalAiPage_Engine_Stopped" xml:space="preserve"><value>Stopped</value></data>
+  <data name="LocalAiPage_Engine_Error" xml:space="preserve"><value>Error</value></data>
+  <data name="LocalAiPage_Engine_Managed" xml:space="preserve"><value>Managed by OpenClaw</value></data>
+  <data name="LocalAiPage_Engine_NotInstalled" xml:space="preserve"><value>Not installed</value></data>
+  <data name="LocalAiPage_Model_NotInstalled" xml:space="preserve"><value>Not installed</value></data>
+  <data name="LocalAiPage_Model_Unknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="LocalAiPage_Model_Verified" xml:space="preserve"><value>Downloaded and verified</value></data>
+  <data name="LocalAiPage_Model_Loaded" xml:space="preserve"><value>Loaded on GPU</value></data>
+  <data name="LocalAiPage_Gateway_Connected" xml:space="preserve"><value>Connected</value></data>
+  <data name="LocalAiPage_Gateway_Connecting" xml:space="preserve"><value>Connecting</value></data>
+  <data name="LocalAiPage_Gateway_NeedsAttention" xml:space="preserve"><value>Needs attention</value></data>
+  <data name="LocalAiPage_Gateway_Error" xml:space="preserve"><value>Connection error</value></data>
+  <data name="LocalAiPage_Gateway_Disconnected" xml:space="preserve"><value>Disconnected</value></data>
+  <data name="LocalAiPage_Value_Unknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="LocalAiPage_Process_NotRunning" xml:space="preserve"><value>Not running</value></data>
+  <data name="LocalAiPage_ModelRecipeFormat" xml:space="preserve"><value>{0} context · {1} KV · Loads on first request</value></data>
+  <data name="Command_GoToLocalAi_Title" xml:space="preserve"><value>Go to Local AI</value></data>
+  <data name="Command_GoToLocalAi_Subtitle" xml:space="preserve"><value>View llama-server, model, and gateway status</value></data>
 </root>

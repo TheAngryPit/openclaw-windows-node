@@ -6,6 +6,25 @@ namespace OpenClaw.Tray.Tests;
 public class WslKeepAlivePolicyTests
 {
     [Fact]
+    public void MarkedKeepaliveIdentity_RejectsReusedPidProcessNameOrStartTime()
+    {
+        var markerStart = new DateTime(2026, 7, 24, 1, 2, 3, DateTimeKind.Utc);
+
+        Assert.True(WslKeepAlivePolicy.IsMarkedKeepaliveProcessIdentity(
+            "wsl",
+            markerStart.AddSeconds(1),
+            markerStart));
+        Assert.False(WslKeepAlivePolicy.IsMarkedKeepaliveProcessIdentity(
+            "svchost",
+            markerStart,
+            markerStart));
+        Assert.False(WslKeepAlivePolicy.IsMarkedKeepaliveProcessIdentity(
+            "wsl",
+            markerStart.AddMinutes(1),
+            markerStart));
+    }
+
+    [Fact]
     public void ShouldStart_UsesActiveLocalRegistryRecord_WhenLegacySettingsAreEmpty()
     {
         var record = new GatewayRecord
@@ -17,6 +36,21 @@ public class WslKeepAlivePolicyTests
         };
 
         Assert.True(WslKeepAlivePolicy.ShouldStart(record, legacyGatewayUrl: null));
+    }
+
+    [Fact]
+    public void ShouldStart_UsesAppOwnedTailscaleRegistryRecord()
+    {
+        var record = new GatewayRecord
+        {
+            Id = "tailscale",
+            Url = "wss://openclaw.tailnet.ts.net",
+            IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway",
+        };
+
+        Assert.True(WslKeepAlivePolicy.ShouldStart(record, legacyGatewayUrl: null));
+        Assert.True(WslKeepAlivePolicy.HasSetupManagedLocalGateway([record]));
     }
 
     [Fact]
@@ -156,6 +190,29 @@ public class WslKeepAlivePolicyTests
     }
 
     [Fact]
+    public void SameSetupManagedGateway_RequiresExactEndpointAndOwnership()
+    {
+        var expected = new GatewayRecord
+        {
+            Id = "local",
+            Url = "ws://localhost:18789",
+            IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway",
+        };
+
+        Assert.True(WslKeepAlivePolicy.IsSameSetupManagedGateway(expected, expected with { }));
+        Assert.False(WslKeepAlivePolicy.IsSameSetupManagedGateway(
+            expected,
+            expected with { Url = "ws://localhost:18800" }));
+        Assert.False(WslKeepAlivePolicy.IsSameSetupManagedGateway(
+            expected,
+            expected with { SetupManagedDistroName = null, FriendlyName = null }));
+        Assert.False(WslKeepAlivePolicy.IsSameSetupManagedGateway(
+            expected,
+            expected with { Id = "other" }));
+    }
+
+    [Fact]
     public void HasSetupManagedLocalGateway_ReturnsFalseForNullRecords()
     {
         Assert.False(WslKeepAlivePolicy.HasSetupManagedLocalGateway(null));
@@ -244,6 +301,12 @@ public class WslKeepAlivePolicyTests
         Assert.False(WslKeepAlivePolicy.IsKeepaliveCommandLine(
             @"C:\Windows\System32\wsl.exe -d OtherGateway -- sleep infinity",
             "OpenClawGateway"));
+        Assert.False(WslKeepAlivePolicy.IsKeepaliveCommandLine(
+            @"C:\Windows\System32\wsl.exe -d OpenClawGateway-Dev -- sleep infinity",
+            "OpenClawGateway"));
+        Assert.True(WslKeepAlivePolicy.IsKeepaliveCommandLine(
+            "wsl.exe --distribution \"OpenClawGateway-Dev\" -- sleep infinity",
+            "OpenClawGateway-Dev"));
     }
 
     [Fact]

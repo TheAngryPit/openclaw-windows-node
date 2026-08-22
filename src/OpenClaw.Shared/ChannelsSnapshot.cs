@@ -246,6 +246,43 @@ public sealed class WebLoginStartResult
 
     /// <summary>Raw JSON of the gateway response (or stringified exception). Used by the diagnostic disclosure in the UI.</summary>
     public string? RawResponse { get; init; }
+
+    /// <summary>
+    /// True when the gateway rejected <c>web.login.start</c> because it has no
+    /// web-login (QR) provider loaded for the channel — the telltale
+    /// "web login provider is not available" (issue #957). This is a gateway-host
+    /// provider/plugin state we can't fix from the Windows node, so the page
+    /// upgrades its message to actionable recovery (install/enable the channel's
+    /// provider on the gateway host) instead of surfacing the relayed internal
+    /// exception.
+    ///
+    /// Distinct from <see cref="LooksLikeWebLoginUnsupported"/>: here the method
+    /// exists but the provider is missing, so "install the provider" is the right
+    /// guidance. Mirrors <see cref="ChannelStartResult.LooksLikeMissingPlugin"/>.
+    /// </summary>
+    public bool LooksLikeMissingWebLoginProvider
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(Error)) return false;
+            // Provider not loaded/registered on the gateway host. Require the
+            // "web login provider" phrase so unrelated errors don't match.
+            return Error.Contains("web login provider", System.StringComparison.OrdinalIgnoreCase)
+                || Error.Contains("web-login provider", System.StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// True when the gateway doesn't implement the <c>web.login</c> RPC at all
+    /// ("unknown method: web.login…") — i.e. QR linking isn't supported by this
+    /// gateway version yet. Recovery here is to update/upgrade the gateway, NOT
+    /// to install a channel plugin (which wouldn't add the missing method), so
+    /// the page shows different guidance than
+    /// <see cref="LooksLikeMissingWebLoginProvider"/>.
+    /// </summary>
+    public bool LooksLikeWebLoginUnsupported =>
+        !string.IsNullOrEmpty(Error) &&
+        Error.Contains("unknown method: web.login", System.StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Result of <c>web.login.wait</c> — long-poll outcome.</summary>

@@ -3,9 +3,9 @@ using OpenClaw.Shared;
 namespace OpenClaw.Connection;
 
 /// <summary>
-/// Single owner of the complete connection lifecycle for the active gateway.
-/// Manages operator connection, node connection, credential resolution,
-/// state transitions, and diagnostics.
+/// Stable public façade for the complete active-gateway connection lifecycle.
+/// The implementation owns operator/state orchestration and delegates cohesive
+/// node, bootstrap-token, and device-pair workflows to internal domain owners.
 /// </summary>
 public interface IGatewayConnectionManager : IDisposable, IAsyncDisposable
 {
@@ -22,8 +22,28 @@ public interface IGatewayConnectionManager : IDisposable, IAsyncDisposable
     Task ConnectAsync(string? gatewayId = null);
     Task ConnectNodeOnlyAsync(string? gatewayId = null);
     Task DisconnectAsync();
+    Task DisconnectByUserAsync();
     Task ReconnectAsync();
+    Task<bool> ReconnectIfCurrentAsync(string gatewayId, CancellationToken cancellationToken = default);
+    Task<bool> RecoverSshTunnelAsync(SshTunnelExit tunnelExit);
+    Task<bool> RestartSshTunnelAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
     Task SwitchGatewayAsync(string gatewayId);
+    void SetGatewayConnectionIntent(string gatewayId, bool shouldBeConnected);
+    bool IsAutomaticReconnectAllowed(string gatewayId);
+
+    /// <summary>
+    /// True while a user-initiated gateway lifecycle action (manual WSL start/stop/restart) is in
+    /// progress. Managed-local auto-repair observes this to suppress itself so a manual restart and an
+    /// automatic repair cannot run concurrent distro restarts.
+    /// </summary>
+    bool IsManualGatewayLifecycleInProgress { get; }
+
+    /// <summary>
+    /// Acquires the shared gateway-lifecycle lease for a manual WSL operation (awaiting it so it is
+    /// mutually exclusive with an in-flight auto-repair restart). Dispose the returned scope to release.
+    /// </summary>
+    Task<IDisposable> BeginManualGatewayLifecycleOperationAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Drive the node connection for the active gateway and await its terminal state.
@@ -46,7 +66,7 @@ public interface IGatewayConnectionManager : IDisposable, IAsyncDisposable
     Task EnsureNodeConnectedAsync(CancellationToken cancellationToken = default);
 
     // ─── Setup ───
-    Task<SetupCodeResult> ApplySetupCodeAsync(string setupCode);
+    Task<SetupCodeResult> ApplySetupCodeAsync(string setupCode, SshTunnelConfig? sshTunnel = null);
     Task<SetupCodeResult> ConnectWithSharedTokenAsync(string gatewayUrl, string token, SshTunnelConfig? sshTunnel = null);
 
     // ─── Operator Client Access ───

@@ -14,10 +14,18 @@ public readonly record struct ExecCommandResolution(
     string ExecutableName,
     string? Cwd);
 
-// The three resolution functions required by the pipeline.
+// The resolution functions.
 // resolve()               → singular, for state machine
-// ResolveForAllowlist()   → multi-segment, fail-closed, for allowlist matching
-// ResolveAllowAlwaysPatterns() → UX suggestions for prompt
+//
+// ResolveForAllowlist() and ResolveAllowAlwaysPatterns() are NO LONGER on the
+// security path. Durable allowlist authorization and Allow Always patterns are now
+// derived solely by ExecReusableCommandBinder.TryBind, which is the single gate.
+// These two methods have no production callers and are retained only because the
+// historical test suite in ExecApprovalV2NormalizationTests documents the
+// multi-segment fail-closed rules they encoded. Do not wire them back into the
+// pipeline: passing them does not mean the allowlist path is safe, because the
+// pipeline no longer calls them. Removing them and their tests is tracked as
+// follow-up cleanup.
 internal static class ExecCommandResolver
 {
     // Windows executable extensions, tried in order for basename search.
@@ -67,9 +75,9 @@ internal static class ExecCommandResolver
             var resolutions = new List<ExecCommandResolution>(segments.Count);
             foreach (var segment in segments)
             {
-                var token = ParseFirstToken(segment);
+                var token = ExecCommandToken.ParseFirstToken(segment);
                 if (token is null) return [];
-                // -EncodedCommand and aliases in segment position: fail-closed (research doc 04 S1).
+                // -EncodedCommand and aliases in segment position: fail-closed.
                 if (SegmentUsesEncodedCommand(segment, token)) return [];
                 var res = ResolveExecutable(token, cwd, env);
                 if (res is null) return [];
@@ -110,7 +118,7 @@ internal static class ExecCommandResolver
         // Prefer first token of evaluationRawCommand when present.
         if (!string.IsNullOrWhiteSpace(rawCommand))
         {
-            var token = ParseFirstToken(rawCommand);
+            var token = ExecCommandToken.ParseFirstToken(rawCommand);
             if (token is not null) return ResolveExecutable(token, cwd, env);
         }
         return Resolve(command, cwd, env);
@@ -227,30 +235,6 @@ internal static class ExecCommandResolver
         return null;
     }
 
-    // Extracts the first shell-tokenized word from a command string.
-    private static string? ParseFirstToken(string command)
-    {
-        var trimmed = command.Trim();
-        if (trimmed.Length == 0) return null;
-        var first = trimmed[0];
-        if (first == '"' || first == '\'')
-        {
-            var rest = trimmed.AsSpan(1);
-            var end = rest.IndexOf(first);
-            if (end < 0) return null; // unclosed quote — fail-closed; do not guess the token
-            var inner = rest[..end].ToString();
-            if (inner.Length == 0) return null;
-            // Preserve any suffix after the closing quote up to the next whitespace.
-            // Handles `"git".exe` → "git.exe" and `"C:\Program Files\Git\bin\git".exe` → *.exe.
-            var afterClose = rest[(end + 1)..];
-            var suffixEnd = afterClose.IndexOfAny(' ', '\t');
-            var suffix = suffixEnd >= 0 ? afterClose[..suffixEnd].ToString() : afterClose.ToString();
-            return suffix.Length > 0 ? inner + suffix : inner;
-        }
-        var space = trimmed.AsSpan().IndexOfAny(' ', '\t');
-        return space >= 0 ? trimmed[..space] : trimmed;
-    }
-
     // ── allowAlwaysPatterns collection ───────────────────────────────────────
 
     private static void CollectPatterns(
@@ -266,12 +250,26 @@ internal static class ExecCommandResolver
         var wrapper = ExecShellWrapperNormalizer.Extract(command);
         if (wrapper.IsWrapper && wrapper.InlineCommand is not null)
         {
+            // A runtime shell payload (variable, subexpression, backtick, script block,
+            // encoded command, Invoke-Expression) cannot be pinned to a stable reusable rule,
+            // so it is one-shot: surface no allow-always pattern. Mirrors the macOS one-shot
+            // classification ($VAR/backtick/$(...)), extended for PowerShell forms.
+            if (IsOneShotShellPayload(wrapper.InlineCommand))
+                return;
+
             var segments = SplitShellCommandChain(wrapper.InlineCommand);
             if (segments is null) return;
+            // A segment invoking PowerShell with an encoded command (-EncodedCommand or any
+            // unambiguous alias: -e, -ec, -enc, ...) carries an opaque payload → one-shot.
             foreach (var seg in segments)
             {
-                // allowAlwaysPatterns does NOT fail-closed on -EncodedCommand: it's UX only.
-                var token = ParseFirstToken(seg);
+                var t = ExecCommandToken.ParseFirstToken(seg);
+                if (t is not null && SegmentUsesEncodedCommand(seg, t))
+                    return;
+            }
+            foreach (var seg in segments)
+            {
+                var token = ExecCommandToken.ParseFirstToken(seg);
                 if (token is null) continue;
                 var res = ResolveExecutable(token, cwd, env);
                 if (res is null) continue;
@@ -284,12 +282,45 @@ internal static class ExecCommandResolver
         // For direct exec, unwrap env including with-modifier cases for pattern discovery.
         var effective = ExecEnvInvocationUnwrapper.UnwrapForResolution(command);
         if (effective.Count == 0) return;
+        // A direct PowerShell invocation carrying an encoded or dynamic payload is one-shot:
+        // it must not surface an allow-always pattern (which the command-host guard would reject).
+        if (IsDirectPowerShellOneShot(effective)) return;
         var rawToken = effective[0].Trim();
         if (rawToken.Length == 0) return;
         var resolution = ResolveExecutable(rawToken, cwd, env);
         if (resolution is null) return;
         var pat = resolution.Value.ResolvedPath ?? resolution.Value.RawExecutable;
         if (seen.Add(pat)) patterns.Add(pat);
+    }
+
+    // ── one-shot payload detection ────────────────────────────────────────────
+
+    // Runtime shell payloads cannot be pinned to a stable allowlist rule, so a command that
+    // contains one is one-shot and must not offer allow-always. Flags variables, subexpressions,
+    // braced expansions, backticks, script blocks, encoded commands, and Invoke-Expression across
+    // PowerShell and POSIX shells. Mirrors the macOS one-shot classification ($VAR/backtick/$(...)).
+    private static readonly System.Text.RegularExpressions.Regex OneShotPayloadRe =
+        new(@"\$\(|\$\{|\$\w|`|&\s*\{|-enc(?:odedcommand)?\b|\b(?:iex|invoke-expression)\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static bool IsOneShotShellPayload(string inlineCommand)
+        => !string.IsNullOrEmpty(inlineCommand) && OneShotPayloadRe.IsMatch(inlineCommand);
+
+    // A direct (non-shell-wrapped) PowerShell invocation is one-shot when it carries an encoded
+    // command (any -EncodedCommand alias) or a dynamic payload (variable/subexpression/etc.).
+    private static bool IsDirectPowerShellOneShot(IReadOnlyList<string> command)
+    {
+        if (command.Count == 0) return false;
+        var basename = ExecCommandToken.NormalizedBasename(command[0]);
+        if (basename is not ("powershell" or "pwsh")) return false;
+
+        for (var i = 1; i < command.Count; i++)
+        {
+            if (IsEncodedCommandFlag(command[i]))
+                return true;
+        }
+        return OneShotPayloadRe.IsMatch(string.Join(' ', command));
     }
 
     // ── -EncodedCommand detection ─────────────────────────────────────────────
@@ -383,6 +414,19 @@ internal static class ExecCommandResolver
         }
         return null;
     }
+
+    // NOTE: this type used to expose HasCurrentDirectoryCandidate, which reported
+    // whether a bare command name would resolve inside the working directory. Our PATH
+    // search deliberately excludes the current directory, but cmd.exe searches it
+    // first, so that helper was the guard that refused to durably bind a carrier whose
+    // payload was a bare name.
+    //
+    // It has been deleted rather than kept as a diagnostic. A check taken at approval
+    // time cannot decide what cmd.exe will find at launch time: anything able to write
+    // to the working directory in between simply wins after the check has passed. A
+    // trusted carrier's payload executable is now pinned to its resolved absolute path
+    // (CanonicalCmdCarrier.TryBuildPinnedCarrier), which leaves cmd nothing to search
+    // for. Do not restore a working-directory check as an authorization boundary.
 
     private static string? FindInPath(
         string name,
@@ -494,7 +538,7 @@ internal static class ExecCommandResolver
     private static string TryNormalizePath(string path)
     {
         // GetFullPath resolves . and .. but does not expand 8.3 short names.
-        // Full GetLongPathName P/Invoke is left as OQ-R1 in the research docs.
+        // Full GetLongPathName P/Invoke is a known gap — short names not expanded.
         try { return Path.GetFullPath(path); }
         catch { return path; } // hostile path must not throw out of resolution
     }

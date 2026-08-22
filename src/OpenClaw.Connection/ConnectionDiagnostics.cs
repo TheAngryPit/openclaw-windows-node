@@ -27,7 +27,11 @@ public sealed class ConnectionDiagnostics
 
     public void Record(string category, string message, string? detail = null)
     {
-        var evt = new ConnectionDiagnosticEvent(_clock.UtcNow, category, message, detail);
+        var evt = new ConnectionDiagnosticEvent(
+            _clock.UtcNow,
+            TokenSanitizer.SanitizeLogMessage(category),
+            TokenSanitizer.SanitizeLogMessage(message),
+            detail is null ? null : TokenSanitizer.SanitizeLogMessage(detail));
         lock (_lock)
         {
             _buffer[_head] = evt;
@@ -48,6 +52,22 @@ public sealed class ConnectionDiagnostics
             Record("credential", "No credential resolved");
         else
             Record("credential", $"Resolved: {credential.Source}", $"IsBootstrap={credential.IsBootstrapToken}");
+    }
+
+    public void RecordCredentialResolutionResult(GatewayCredentialResolution resolution)
+    {
+        ArgumentNullException.ThrowIfNull(resolution);
+
+        if (resolution.Credential == null)
+        {
+            Record("credential", $"No credential resolved: {resolution.Status}", resolution.Detail);
+            return;
+        }
+
+        var detail = $"IsBootstrap={resolution.Credential.IsBootstrapToken}; Status={resolution.Status}; FallbackUsed={resolution.FallbackUsed}";
+        if (!string.IsNullOrWhiteSpace(resolution.Detail))
+            detail += $"; {resolution.Detail}";
+        Record("credential", $"Resolved: {resolution.Credential.Source}", detail);
     }
 
     public void RecordWebSocketEvent(string eventName, string? detail = null)

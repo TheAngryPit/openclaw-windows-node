@@ -1,6 +1,8 @@
 using System.Runtime.Versioning;
 using Microsoft.Win32;
 using OpenClaw.Connection;
+using OpenClaw.Shared;
+using OpenClaw.Shared.ExecApprovals;
 
 namespace OpenClaw.SetupEngine;
 
@@ -12,21 +14,25 @@ namespace OpenClaw.SetupEngine;
 public static class TrayArtifactCleanup
 {
     private const string AutoStartKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
-    private const string AutoStartValue = "OpenClawTray";
+    private const string DefaultAutoStartValue = "OpenClawTray";
 
-    public static void Run(SetupContext ctx, bool preserveLogs = false)
+    public static void Run(
+        SetupContext ctx,
+        bool preserveLogs = false,
+        string autoStartValue = DefaultAutoStartValue,
+        string startupTaskName = WindowsStartupTaskRegistration.TaskName)
     {
         var logger = ctx.Logger;
         var appDataDir = ctx.DataDir; // %APPDATA%\OpenClawTray
         var localDataDir = ctx.LocalDataDir;
 
-        // 1. Remove autostart registry key
+        // 1. Remove autostart entries
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(AutoStartKey, writable: true);
-            if (key?.GetValue(AutoStartValue) != null)
+            if (key?.GetValue(autoStartValue) != null)
             {
-                key.DeleteValue(AutoStartValue);
+                key.DeleteValue(autoStartValue);
                 logger.Info("[Uninstall] Removed autostart registry key");
             }
             else
@@ -39,11 +45,35 @@ public static class TrayArtifactCleanup
             logger.Warn($"[Uninstall] Failed to remove autostart registry key: {ex.Message}");
         }
 
+        if (WindowsStartupTaskRegistration.Unregister(startupTaskName))
+            logger.Info("[Uninstall] Removed autostart scheduled task");
+        else
+            logger.Info("[Uninstall] Autostart scheduled task already absent or unavailable");
+
         // 2. Delete run.marker
         DeleteFileIfExists(Path.Combine(localDataDir, "run.marker"), "run.marker", logger);
 
-        // 3. Delete exec-policy.json
+        // 3. Delete current exec approvals (including an alternate OPENCLAW_STATE_DIR)
+        // and the retired policy file.
+        var activeExecApprovalsPath = ExecApprovalsStore.ResolveFilePath(appDataDir);
+        DeleteFileIfExists(activeExecApprovalsPath, "exec-approvals.json", logger);
+        var legacyExecApprovalsPath = Path.Combine(appDataDir, "exec-approvals.json");
+        if (!string.Equals(
+                Path.GetFullPath(activeExecApprovalsPath),
+                Path.GetFullPath(legacyExecApprovalsPath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            DeleteFileIfExists(
+                legacyExecApprovalsPath,
+                "legacy exec-approvals.json",
+                logger);
+        }
+        DeleteFileIfExists(
+            Path.Combine(localDataDir, "exec-approvals.json"),
+            "local legacy exec-approvals.json",
+            logger);
         DeleteFileIfExists(Path.Combine(appDataDir, "exec-policy.json"), "exec-policy.json", logger);
+        DeleteFileIfExists(Path.Combine(localDataDir, "exec-policy.json"), "local exec-policy.json", logger);
 
         // 4. Reset onboarding settings in settings.json
         ResetOnboardingSettings(appDataDir, logger, preserveNodeSettings: HasRemainingGatewayRecords(appDataDir, logger));

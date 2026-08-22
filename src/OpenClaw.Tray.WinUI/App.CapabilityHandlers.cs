@@ -1,7 +1,9 @@
 using OpenClaw.Connection;
+using OpenClaw.Chat;
 using OpenClaw.Shared;
 using OpenClaw.Shared.Capabilities;
 using OpenClawTray.Helpers;
+using OpenClawTray.Presentation;
 using OpenClawTray.Services;
 using System;
 using System.Collections.Generic;
@@ -46,17 +48,25 @@ public partial class App
             return await tcs.Task;
         };
 
-        app.StatusHandler = () => new
+        app.StatusHandler = () =>
         {
-            connectionStatus = _appState!.Status.ToString(),
-            nodeConnected = _nodeService?.IsConnected ?? false,
-            nodePaired = _nodeService?.IsPaired ?? false,
-            nodePendingApproval = _nodeService?.IsPendingApproval ?? false,
-            gatewayVersion = _appState!.GatewaySelf?.ServerVersion,
-            sessionCount = _appState!.Sessions?.Length ?? 0,
-            nodeCount = _appState!.Nodes?.Length ?? 0,
-            operatorScopes = _connectionManager?.OperatorClient?.GrantedOperatorScopes.ToArray() ?? Array.Empty<string>(),
-            operatorDeviceId = _connectionManager?.CurrentSnapshot.OperatorDeviceId,
+            var snapshot = _connectionManager?.CurrentSnapshot;
+            return new
+            {
+                connectionStatus = _appState!.Status.ToString(),
+                overallState = snapshot?.OverallState.ToString(),
+                operatorState = snapshot?.OperatorState.ToString(),
+                nodeState = snapshot?.NodeState.ToString(),
+                nodeConnected = snapshot?.NodeState == RoleConnectionState.Connected,
+                nodePaired = snapshot?.NodePairingStatus == PairingStatus.Paired,
+                nodePendingApproval = snapshot?.NodeState == RoleConnectionState.PairingRequired,
+                nodeError = snapshot?.NodeError,
+                gatewayVersion = _appState!.GatewaySelf?.ServerVersion,
+                sessionCount = _appState!.Sessions?.Length ?? 0,
+                nodeCount = _appState!.Nodes?.Length ?? 0,
+                operatorScopes = _connectionManager?.OperatorClient?.GrantedOperatorScopes.ToArray() ?? Array.Empty<string>(),
+                operatorDeviceId = snapshot?.OperatorDeviceId,
+            };
         };
 
         app.SessionsHandler = async (agentId) =>
@@ -146,8 +156,33 @@ public partial class App
             try
             {
                 var converted = Convert.ChangeType(value, prop.PropertyType);
-                prop.SetValue(_settings, converted);
-                _settings.Save();
+                if (TryGetStoreManagedPermissionValue(name, converted, out var permissionValue))
+                {
+                    if (!TryPersistPermissionSetting(
+                        ref _appCapabilityPermissionWriteOrigin,
+                        $"app.settings.set({name})",
+                        edit => ApplyStoreManagedPermissionSetting(edit, name, permissionValue),
+                        settings => ApplyStoreManagedPermissionSetting(settings, name, permissionValue),
+                        out var persistError))
+                    {
+                        return new { error = persistError ?? $"Failed to persist setting '{name}'" };
+                    }
+                }
+                else
+                {
+                    prop.SetValue(_settings, converted);
+                    _settings.Save();
+                }
+
+                OnSettingsSaved(this, EventArgs.Empty);
+                var runtimeError = McpRuntimeStatePolicy.GetSettingsSetError(
+                    name,
+                    converted,
+                    _nodeService?.IsMcpRunning == true,
+                    _nodeService?.McpStartupError);
+                if (!string.IsNullOrWhiteSpace(runtimeError))
+                    return new { error = runtimeError };
+
                 return new { name, value = prop.GetValue(_settings) };
             }
             catch (Exception ex)
@@ -159,9 +194,17 @@ public partial class App
 
         app.MenuHandler = () =>
         {
+            var snapshot = _connectionManager?.CurrentSnapshot;
             var items = new List<object>
             {
-                new { type = "status", status = _appState!.Status.ToString() },
+                new
+                {
+                    type = "status",
+                    status = _appState!.Status.ToString(),
+                    overallState = snapshot?.OverallState.ToString(),
+                    nodeState = snapshot?.NodeState.ToString(),
+                    nodeError = snapshot?.NodeError
+                },
                 new { type = "sessions", count = _appState!.Sessions?.Length ?? 0 },
                 new { type = "nodes", count = _appState!.Nodes?.Length ?? 0 },
             };
@@ -170,8 +213,8 @@ public partial class App
 
         app.SearchHandler = (query) =>
         {
-            if (_hubWindow == null) return Array.Empty<object>();
-            var commands = _hubWindow.BuildCommandList();
+            if (ActiveHubWindow is not OpenClawTray.Windows.HubWindow hubWindow) return Array.Empty<object>();
+            var commands = hubWindow.BuildCommandList();
             var matches = commands
                 .Where(c => c.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
                     || (c.Subtitle?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))
@@ -201,6 +244,47 @@ public partial class App
             };
         };
 
+        app.ChatSnapshotHandler = BuildChatSnapshotForMcpAsync;
+        app.ChatSendHandler = SendChatMessageForMcpAsync;
+        app.ChatResetHandler = ResetChatSessionForMcpAsync;
+        app.ChatQueueListHandler = ListQueuedChatMessagesForMcpAsync;
+        app.ChatQueueCancelHandler = CancelQueuedChatMessageForMcpAsync;
+
+        connection.StatusHandler = () =>
+        {
+            var enableMcpServer = _settings?.EnableMcpServer == true;
+            var isMcpRunning = _nodeService?.IsMcpRunning == true;
+            var mcpPlan = McpRuntimeStatePolicy.PlanStartupNotification(
+                enableMcpServer,
+                isMcpRunning,
+                _nodeService?.McpStartupError);
+            var diagnostics = _connectionManager?.Diagnostics;
+            var recentDiagnostics = diagnostics?.GetRecent(50) ?? [];
+            return Task.FromResult<object?>(ConnectionDiagnosticsProjection.BuildStatus(
+                _connectionManager?.CurrentSnapshot,
+                _gatewayRegistry?.GetActive(),
+                enableNodeMode: _settings?.EnableNodeMode == true,
+                enableMcpServer: enableMcpServer,
+                isMcpRunning: isMcpRunning,
+                mcpError: mcpPlan.ShouldShow ? mcpPlan.Message : null,
+                nodeBrowserProxyEnabled: _settings?.NodeBrowserProxyEnabled != false,
+                recentDiagnostics: recentDiagnostics,
+                diagnosticEventCount: diagnostics?.Count ?? recentDiagnostics.Count,
+                gatewaySelf: _appState?.GatewaySelf));
+        };
+
+        connection.GatewaysHandler = () =>
+        {
+            var nodeSessionLive = BrowserProxyActivation.IsNodeSessionLive(
+                _connectionManager?.CurrentSnapshot.NodeState
+                    ?? OpenClaw.Connection.RoleConnectionState.Idle);
+            return Task.FromResult<object?>(ConnectionDiagnosticsProjection.BuildGateways(
+                _gatewayRegistry?.GetAll() ?? [],
+                _gatewayRegistry?.ActiveGatewayId,
+                nodeBrowserProxyEnabled: _settings?.NodeBrowserProxyEnabled != false,
+                nodeSessionLive: nodeSessionLive));
+        };
+
         connection.ApplySetupCodeHandler = async setupCode =>
         {
             if (_connectionManager == null)
@@ -220,8 +304,18 @@ public partial class App
         {
             if (_connectionManager == null)
                 return new { outcome = "ConnectionFailed", error = "Connection manager is not initialized", connected = false };
+            if (_gatewayDirectConnectService is null)
+                return new { outcome = "ConnectionFailed", error = "Gateway settings service is not initialized", connected = false };
 
-            var result = await _connectionManager.ConnectWithSharedTokenAsync(gatewayUrl, token);
+            var result = await _connectionManager.ConnectWithSharedTokenAsync(
+                gatewayUrl,
+                token,
+                sshTunnel: null,
+                onGatewayCommitted: (record, _) =>
+                {
+                    _gatewayDirectConnectService.SynchronizeSettingsWithCommittedGateway(record);
+                    return Task.CompletedTask;
+                });
             return new
             {
                 outcome = result.Outcome.ToString(),
@@ -332,6 +426,94 @@ public partial class App
         };
     }
 
+    private static bool TryGetStoreManagedPermissionValue(string name, object? converted, out bool value)
+    {
+        switch (name)
+        {
+            case nameof(SettingsManager.EnableNodeMode):
+            case nameof(SettingsManager.EnableMcpServer):
+            case nameof(SettingsManager.NodeCanvasEnabled):
+            case nameof(SettingsManager.NodeScreenEnabled):
+            case nameof(SettingsManager.NodeCameraEnabled):
+            case nameof(SettingsManager.NodeLocationEnabled):
+            case nameof(SettingsManager.NodeBrowserProxyEnabled):
+            case nameof(SettingsManager.NodeTtsEnabled):
+                value = converted is bool booleanValue
+                    ? booleanValue
+                    : throw new InvalidCastException($"Setting '{name}' must be a boolean.");
+                return true;
+            default:
+                value = false;
+                return false;
+        }
+    }
+
+    private static void ApplyStoreManagedPermissionSetting(ISettingsEditor edit, string name, bool value)
+    {
+        switch (name)
+        {
+            case nameof(SettingsManager.EnableNodeMode):
+                edit.EnableNodeMode = value;
+                break;
+            case nameof(SettingsManager.EnableMcpServer):
+                edit.EnableMcpServer = value;
+                break;
+            case nameof(SettingsManager.NodeCanvasEnabled):
+                edit.NodeCanvasEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeScreenEnabled):
+                edit.NodeScreenEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeCameraEnabled):
+                edit.NodeCameraEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeLocationEnabled):
+                edit.NodeLocationEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeBrowserProxyEnabled):
+                edit.NodeBrowserProxyEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeTtsEnabled):
+                edit.NodeTtsEnabled = value;
+                break;
+            default:
+                throw new InvalidOperationException($"Setting '{name}' is not store-managed.");
+        }
+    }
+
+    private static void ApplyStoreManagedPermissionSetting(SettingsManager settings, string name, bool value)
+    {
+        switch (name)
+        {
+            case nameof(SettingsManager.EnableNodeMode):
+                settings.EnableNodeMode = value;
+                break;
+            case nameof(SettingsManager.EnableMcpServer):
+                settings.EnableMcpServer = value;
+                break;
+            case nameof(SettingsManager.NodeCanvasEnabled):
+                settings.NodeCanvasEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeScreenEnabled):
+                settings.NodeScreenEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeCameraEnabled):
+                settings.NodeCameraEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeLocationEnabled):
+                settings.NodeLocationEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeBrowserProxyEnabled):
+                settings.NodeBrowserProxyEnabled = value;
+                break;
+            case nameof(SettingsManager.NodeTtsEnabled):
+                settings.NodeTtsEnabled = value;
+                break;
+            default:
+                throw new InvalidOperationException($"Setting '{name}' is not store-managed.");
+        }
+    }
+
     private async Task<object?> GetPendingApprovalsForMcpAsync()
     {
         var client = GatewayClient;
@@ -402,6 +584,309 @@ public partial class App
 
         return payload;
     }
+
+    private async Task<object?> BuildChatSnapshotForMcpAsync(string? threadId)
+    {
+        var provider = _chatCoordinator?.Provider;
+        if (provider == null)
+            return new { error = "Chat provider is not initialized" };
+
+        var snapshot = await provider.LoadAsync();
+        var resolvedThreadId = ResolveChatThreadId(snapshot, threadId);
+        return BuildChatSnapshotPayload(snapshot, resolvedThreadId);
+    }
+
+    private async Task<object?> SendChatMessageForMcpAsync(string? threadId, string message)
+    {
+        var provider = _chatCoordinator?.Provider;
+        if (provider == null)
+            return new { sent = false, error = "Chat provider is not initialized" };
+
+        var snapshot = await provider.LoadAsync();
+        var resolvedThreadId = ResolveChatThreadId(snapshot, threadId);
+        if (string.IsNullOrWhiteSpace(resolvedThreadId))
+            return new { sent = false, error = "Chat compose target is not ready" };
+
+        try
+        {
+            await provider.SendMessageAsync(resolvedThreadId, message);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"App: Chat send for '{resolvedThreadId}' failed: {ex.Message}");
+            return new { sent = false, threadId = resolvedThreadId, error = ex.Message };
+        }
+
+        var updated = await provider.LoadAsync();
+        var timeline = updated.Timelines.TryGetValue(resolvedThreadId, out var tl)
+            ? tl
+            : ChatTimelineState.Initial();
+
+        return new
+        {
+            sent = true,
+            threadId = resolvedThreadId,
+            entryCount = timeline.Entries.Count,
+            turnActive = timeline.TurnActive
+        };
+    }
+
+    private async Task<object?> ResetChatSessionForMcpAsync(string? threadId)
+    {
+        var client = GatewayClient;
+        if (client == null || !client.IsConnectedToGateway)
+            return new { reset = false, error = "Gateway client is not connected" };
+
+        var provider = _chatCoordinator?.Provider;
+        if (provider == null)
+            return new { reset = false, error = "Chat provider is not initialized" };
+
+        var snapshot = await provider.LoadAsync();
+        var resolvedThreadId = ResolveChatThreadId(snapshot, threadId);
+        if (string.IsNullOrWhiteSpace(resolvedThreadId))
+            return new { reset = false, error = "Chat compose target is not ready" };
+
+        var reset = await client.ResetSessionAsync(resolvedThreadId);
+        if (reset)
+            await WaitForAppStateUpdateAsync(nameof(AppState.Sessions), () => client.RequestSessionsAsync());
+
+        return new
+        {
+            reset,
+            threadId = resolvedThreadId,
+            error = reset ? null : "sessions.reset was rejected or unavailable"
+        };
+    }
+
+    private async Task<object?> ListQueuedChatMessagesForMcpAsync(string? threadId)
+    {
+        var provider = _chatCoordinator?.Provider;
+        if (provider == null)
+            return new { error = "Chat provider is not initialized" };
+
+        var snapshot = await provider.LoadAsync();
+        var resolvedThreadId = ResolveChatThreadId(snapshot, threadId);
+        return BuildChatQueuePayload(snapshot, resolvedThreadId, filterToThread: !string.IsNullOrWhiteSpace(threadId));
+    }
+
+    private async Task<object?> CancelQueuedChatMessageForMcpAsync(string? threadId, string queuedMessageId)
+    {
+        var provider = _chatCoordinator?.Provider;
+        if (provider == null)
+            return new { canceled = false, error = "Chat provider is not initialized" };
+
+        var snapshot = await provider.LoadAsync();
+        var resolvedThreadId = ResolveChatThreadId(snapshot, threadId);
+        if (string.IsNullOrWhiteSpace(resolvedThreadId))
+            return new { canceled = false, queuedMessageId, error = "Chat compose target is not ready" };
+
+        if (!TryGetQueuedMessage(snapshot, resolvedThreadId, queuedMessageId, out var queuedMessage))
+        {
+            return new
+            {
+                canceled = false,
+                threadId = resolvedThreadId,
+                queuedMessageId,
+                error = "Queued message was not found"
+            };
+        }
+
+        if (!CanCancelQueuedMessage(queuedMessage))
+        {
+            return new
+            {
+                canceled = false,
+                threadId = resolvedThreadId,
+                queuedMessageId,
+                sendState = queuedMessage.SendState.ToString(),
+                error = "Queued message is already sending and cannot be canceled"
+            };
+        }
+
+        bool canceled;
+        try
+        {
+            canceled = await provider.CancelQueuedMessageAsync(resolvedThreadId, queuedMessageId);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"App: Chat queue cancel for '{resolvedThreadId}' message '{queuedMessageId}' failed: {ex.Message}");
+            return new { canceled = false, threadId = resolvedThreadId, queuedMessageId, error = ex.Message };
+        }
+
+        var updated = await provider.LoadAsync();
+        var stillQueued = TryGetQueuedMessage(updated, resolvedThreadId, queuedMessageId, out var remaining);
+        var remainingCount = GetQueuedMessagesForThread(updated, resolvedThreadId).Length;
+        return new
+        {
+            canceled,
+            threadId = resolvedThreadId,
+            queuedMessageId,
+            remainingCount,
+            error = canceled
+                ? null
+                : stillQueued
+                    ? $"Queued message is still present with state '{remaining!.SendState}'."
+                    : "Queued message was not canceled; it may have started sending before cancellation was processed."
+        };
+    }
+
+    private static string? ResolveChatThreadId(ChatDataSnapshot snapshot, string? requestedThreadId)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedThreadId))
+            return requestedThreadId;
+
+        if (snapshot.ComposeTarget.IsReady && !string.IsNullOrWhiteSpace(snapshot.ComposeTarget.SessionKey))
+            return snapshot.ComposeTarget.SessionKey;
+
+        return snapshot.DefaultThreadId;
+    }
+
+    private static object BuildChatSnapshotPayload(ChatDataSnapshot snapshot, string? resolvedThreadId)
+    {
+        var selectedTimeline = resolvedThreadId is not null
+            && snapshot.Timelines.TryGetValue(resolvedThreadId, out var timeline)
+                ? timeline
+                : null;
+
+        return new
+        {
+            connectionStatus = snapshot.ConnectionStatus,
+            defaultThreadId = snapshot.DefaultThreadId,
+            requestedThreadId = resolvedThreadId,
+            composeTarget = new
+            {
+                sessionKey = snapshot.ComposeTarget.SessionKey,
+                isReady = snapshot.ComposeTarget.IsReady
+            },
+            threads = snapshot.Threads.Select(t => new
+            {
+                t.Id,
+                t.Title,
+                status = t.Status.ToString(),
+                activity = t.Activity.ToString(),
+                t.Model,
+                t.ModelProvider,
+                t.ThinkingLevel,
+                t.InputTokens,
+                t.OutputTokens,
+                t.TotalTokens,
+                t.ContextTokens
+            }).ToArray(),
+            queue = BuildChatQueuePayload(snapshot, resolvedThreadId, filterToThread: false),
+            selectedTimeline = selectedTimeline is null ? null : new
+            {
+                turnActive = selectedTimeline.TurnActive,
+                historyLoaded = selectedTimeline.HistoryLoaded,
+                pendingPermission = selectedTimeline.PendingPermission is null ? null : new
+                {
+                    selectedTimeline.PendingPermission.RequestId,
+                    selectedTimeline.PendingPermission.PermissionKind,
+                    selectedTimeline.PendingPermission.ToolName,
+                    selectedTimeline.PendingPermission.Detail,
+                    selectedTimeline.PendingPermission.Actions
+                },
+                entries = selectedTimeline.Entries
+                    .TakeLast(30)
+                    .Select(e => new
+                    {
+                        e.Id,
+                        kind = e.Kind.ToString(),
+                        e.Text,
+                        e.IsStreaming,
+                        e.ToolName,
+                        toolResult = e.ToolResult?.ToString(),
+                        e.IntentSummary,
+                        e.ToolCallId,
+                        e.PermissionRequestId,
+                        permissionDecision = e.PermissionDecision.ToString()
+                    })
+                    .ToArray()
+            }
+        };
+    }
+
+    private static object BuildChatQueuePayload(
+        ChatDataSnapshot snapshot,
+        string? resolvedThreadId,
+        bool filterToThread)
+    {
+        var queued = snapshot.QueuedMessagesByThread ?? new Dictionary<string, IReadOnlyList<ChatQueuedMessage>>();
+        var threadQueues = filterToThread && !string.IsNullOrWhiteSpace(resolvedThreadId)
+            ? new[]
+            {
+                new KeyValuePair<string, IReadOnlyList<ChatQueuedMessage>>(
+                    resolvedThreadId,
+                    GetQueuedMessagesForThread(snapshot, resolvedThreadId))
+            }
+            : queued
+                .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
+                .ToArray();
+
+        var selectedMessages = !string.IsNullOrWhiteSpace(resolvedThreadId)
+            ? GetQueuedMessagesForThread(snapshot, resolvedThreadId)
+            : Array.Empty<ChatQueuedMessage>();
+
+        return new
+        {
+            defaultThreadId = snapshot.DefaultThreadId,
+            requestedThreadId = resolvedThreadId,
+            totalCount = threadQueues.Sum(kvp => kvp.Value.Count),
+            selectedThread = string.IsNullOrWhiteSpace(resolvedThreadId)
+                ? null
+                : new
+                {
+                    threadId = resolvedThreadId,
+                    count = selectedMessages.Length,
+                    messages = selectedMessages.Select(ToMcpQueuedMessage).ToArray()
+                },
+            threads = threadQueues.Select(kvp => new
+            {
+                threadId = kvp.Key,
+                count = kvp.Value.Count,
+                messages = kvp.Value.Select(ToMcpQueuedMessage).ToArray()
+            }).ToArray()
+        };
+    }
+
+    private static ChatQueuedMessage[] GetQueuedMessagesForThread(ChatDataSnapshot snapshot, string threadId)
+    {
+        if (snapshot.QueuedMessagesByThread?.TryGetValue(threadId, out var messages) == true)
+            return messages.ToArray();
+        return Array.Empty<ChatQueuedMessage>();
+    }
+
+    private static bool TryGetQueuedMessage(
+        ChatDataSnapshot snapshot,
+        string threadId,
+        string queuedMessageId,
+        out ChatQueuedMessage queuedMessage)
+    {
+        foreach (var message in GetQueuedMessagesForThread(snapshot, threadId))
+        {
+            if (string.Equals(message.Id, queuedMessageId, StringComparison.Ordinal))
+            {
+                queuedMessage = message;
+                return true;
+            }
+        }
+
+        queuedMessage = null!;
+        return false;
+    }
+
+    private static bool CanCancelQueuedMessage(ChatQueuedMessage message) =>
+        message.SendState != ChatQueuedMessageSendState.Sending;
+
+    private static object ToMcpQueuedMessage(ChatQueuedMessage message) => new
+    {
+        id = message.Id,
+        text = message.Text,
+        createdAt = message.CreatedAt,
+        sendState = message.SendState.ToString(),
+        errorText = message.ErrorText,
+        canCancel = CanCancelQueuedMessage(message)
+    };
 
     private async Task WaitForAppStateUpdateAsync(string propertyName, Func<Task> requestAsync)
     {

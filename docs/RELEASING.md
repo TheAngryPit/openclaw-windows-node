@@ -20,17 +20,17 @@ build/sign/publish release artifacts.
 
    ```powershell
    Select-String .\.github\workflows\ci.yml -Pattern `
-     "Verify Release Executable Signing Policy", `
+     "Verify Release Binary Signing Policy", `
      "OpenClaw.Tray.WinUI.exe", `
      "build-msix:", `
-     "Paused for alpha"
+     "MSIX distribution is paused"
    ```
 
-3. Create a new tag from `origin/main`. Prefer a new alpha tag over moving a
-   previously failed tag.
+3. Create a new stable or prerelease tag from `origin/main`. Never move a
+   previously published tag.
 
    ```powershell
-   $tag = "v0.6.0-alpha.4"
+   $tag = "vX.Y.Z" # or vX.Y.Z-alpha.N for a prerelease
    if ((git rev-parse HEAD) -ne (git rev-parse origin/main)) {
        throw "HEAD is not origin/main; do not tag."
    }
@@ -55,25 +55,27 @@ build/sign/publish release artifacts.
    # Expected: $version
    ```
 
-6. Confirm the GitHub release is a prerelease and not latest for alpha tags.
+6. Confirm the GitHub release channel matches the tag. Stable tags should be
+   non-prerelease releases; alpha tags should be prereleases and not latest.
 
    ```powershell
    gh release view $tag --repo openclaw/openclaw-windows-node `
      --json tagName,isPrerelease,isLatest,url,assets
    ```
 
-## Alpha release policy
+## Release channel policy
 
-Alpha tags use the same signed CI release pipeline, but GitHub marks them as
-pre-releases and not latest releases so normal updater checks do not offer them
-to stable users.
+Stable and alpha tags use the same signed CI release pipeline:
+
+- `vX.Y.Z` creates a normal release eligible to become latest.
+- `vX.Y.Z-alpha.N` creates a prerelease that stable updater checks do not offer.
 
 ```powershell
 git tag -a vX.Y.Z-alpha.N -m "OpenClaw Windows Hub vX.Y.Z-alpha.N"
 git push origin vX.Y.Z-alpha.N
 ```
 
-For the current alpha flow, ship only:
+Current release artifacts are:
 
 - Inno setup installers:
   - `OpenClawCompanion-Setup-x64.exe`
@@ -82,18 +84,26 @@ For the current alpha flow, ship only:
   - `OpenClawTray-<version>-win-x64.zip`
   - `OpenClawTray-<version>-win-arm64.zip`
 
-MSIX artifacts are intentionally paused for alpha while we focus on the Inno
-installer path and signed portable update payloads. Re-enable MSIX only when we
-explicitly want packaged camera/microphone consent validation again.
+MSIX artifacts remain paused while the supported distribution path uses Inno
+installers and signed portable update payloads. This pause is independent of
+whether a tag is stable or alpha. Re-enable MSIX only with packaged
+camera/microphone consent validation and release coverage.
 
-## Executable signing policy
+## Binary signing policy
 
-Only OpenClaw-owned executables should be signed by the OpenClaw release signing
+Only OpenClaw-owned binaries should be signed by the OpenClaw release signing
 identity.
 
-OpenClaw-owned executables:
+OpenClaw-owned binaries:
 
 - `OpenClaw.Tray.WinUI.exe`
+- `OpenClaw.Tray.WinUI.dll`
+- `OpenClaw.Chat.dll`
+- `OpenClaw.Connection.dll`
+- `OpenClaw.SetupEngine.UI.dll`
+- `OpenClaw.SetupEngine.dll`
+- `OpenClaw.Shared.dll`
+- `OpenClawTray.FunctionalUI.dll`
 
 Third-party/runtime executables that must not be OpenClaw-signed:
 
@@ -103,15 +113,18 @@ Third-party/runtime executables that must not be OpenClaw-signed:
 - `SetupEngine\RestartAgent.exe`
 
 CI enforces this with `scripts\Test-ReleaseExecutableSignatures.ps1`. The
-verifier fails closed on unknown `.exe` files so future payload changes are
-reviewed deliberately.
+verifier inspects every shipped `.exe` and `.dll`, fails closed on unknown
+executables and unknown OpenClaw-named binaries, and rejects an OpenClaw
+signature on third-party/runtime binaries. When release signing is required,
+every allowlisted OpenClaw binary must have a valid signature from the expected
+OpenClaw release signer; a valid signature from another publisher is rejected.
 
 CI also checks native runtime dependencies before release packaging. Both the
-x64 and ARM64 portable payloads must ship `vcruntime140.dll` next to every
-`libsodium.dll` copy. Both build legs source their loose VC runtime DLLs from
-the Visual Studio install on the CI runner (resolved via `vswhere` in
+x64 and ARM64 portable payloads must ship `vcruntime140.dll` in the payload
+root for the native speech stack. Both build legs source their loose VC runtime
+DLLs from the Visual Studio install on the CI runner (resolved via `vswhere` in
 `src\Directory.Build.targets`). This ensures the bundled CRT is new enough for
-`onnxruntime` — the `VCRuntime.CefSharp.140` NuGet is only used as a dev-time
+`onnxruntime` - the `VCRuntime.CefSharp.140` NuGet is only used as a dev-time
 convenience for local `dotnet build` (not publish). The release validation
 script enforces a minimum VC++ runtime version floor (currently 14.38) to
 prevent regressions, and the x64 verifier load-probes the native TTS stack
@@ -121,7 +134,7 @@ The release job must Authenticode-verify Microsoft's x64 and ARM64 Visual C++
 Runtime redistributables before passing the
 architecture-matching redistributable to Inno. The installer runs the
 redistributable before launching the tray so clean or stale Windows hosts can
-repair the runtime before Ed25519 device keys are generated or loaded, and it
+repair the runtime before native speech components initialize, and it
 skips the post-install tray launch if the runtime installer fails.
 
 The current Azure Artifact Signing resource is:
@@ -143,13 +156,13 @@ Do not add `AZURE_CLIENT_SECRET` back to the release workflow. The Entra app
 registration should have a federated credential for:
 `repo:openclaw/openclaw-windows-node:environment:release-signing`.
 
-## How CI signs payload executables
+## How CI signs payload binaries
 
 The release workflow does not recursively sign every `.exe`. Instead it creates
 temporary signing input directories with hardlinks to only the OpenClaw-owned
-executables from the x64 and ARM64 payloads, then runs Azure Artifact Signing on
-those allowlists. Because these are NTFS hardlinks, signing the staged file
-signs the real payload file.
+executables and DLLs from the x64 and ARM64 payloads, then runs Azure Artifact
+Signing on those allowlists. Because these are NTFS hardlinks, signing the
+staged file signs the real payload file.
 
 After signing, CI verifies the actual payload directory, not the staging folder.
 If hardlink signing does not affect the payload, the verifier fails before
@@ -157,53 +170,61 @@ release artifacts are created.
 
 ## Expected release workflow jobs
 
-For alpha tags, the **Build and Test** workflow should run:
+For release tags, the **Build and Test** workflow should run:
 
 - `repo-hygiene`
 - `test`
-- `e2etests`
-- `build (win-x64)`
-- `build (win-arm64)`
+- `e2etests` shards: `setup-connect`, `revocation-recovery`, and `network-recovery`
+- `build` matrix entries shown by GitHub as `build (win-x64)` and `build (win-arm64)`
 - `release`
 
-MSIX jobs may appear as skipped while MSIX is paused.
+The `setup-connect` E2E shard contains the MXC proof tests for the gateway ->
+Windows node -> `system.run` path and validates that the expected proof test
+names appear in the TRX output. GitHub-hosted runners may report those MXC
+proofs as skipped when the host is not MXC-capable; use
+`.\scripts\validate-mxc-e2e.ps1` for required local/self-hosted MXC merge
+validation. The `build-msix` job is disabled with `if: false` while MSIX
+distribution is paused, so it should not appear in the required run list.
 
 The release job should:
 
 1. Download x64/ARM64 tray payload artifacts.
 2. Authenticate to Azure with OIDC in the `release-signing` environment.
-3. Sign only the OpenClaw-owned EXEs in both payloads.
-4. Verify executable signing policy.
-5. Create the portable x64 ZIP.
+3. Sign only the OpenClaw-owned EXEs and DLLs in both payloads.
+4. Verify binary signing policy.
+5. Create the portable x64 and ARM64 ZIPs.
 6. Build Inno installers.
 7. Sign installers.
-8. Create a GitHub prerelease with installer and x64 ZIP assets only.
+8. Create a GitHub release whose prerelease flag matches the tag, with installer
+   and portable ZIP assets.
 
 ## Post-release verification
 
-After the release exists, download the x64 installer and ZIP and verify:
+After the release exists, download an installer and both portable ZIPs and
+verify:
 
 ```powershell
-$tag = "v0.6.0-alpha.4"
+$tag = "v0.6.12" # replace with the tag being verified
 gh release view $tag --repo openclaw/openclaw-windows-node `
   --json tagName,isPrerelease,isLatest,url,assets
 ```
 
 Expected:
 
-- `isPrerelease` is `true`.
-- `isLatest` is `false` for alpha tags.
+- Stable tags: `isPrerelease` is `false`.
+- Alpha tags: `isPrerelease` is `true` and `isLatest` is `false`.
 - Installer EXEs are signed.
 - In ZIP payload:
   - `OpenClaw.Tray.WinUI.exe` is OpenClaw-signed.
+  - All listed OpenClaw-owned DLLs are OpenClaw-signed.
   - `wxc-exec.exe`, `createdump.exe`, and `RestartAgent.exe` are not
     OpenClaw-signed.
 
 ## If a tag build fails
 
-Do not keep moving a tag repeatedly from chat unless you are certain GitHub and
-local refs agree. Prefer a fresh alpha tag (`alpha.N+1`) after the fix is merged
-to `main`.
+Do not move a published tag. After the fix is merged to `main`, create a new
+tag: increment `alpha.N` for a prerelease, or choose the next intended stable
+version.
 
 Use these commands to inspect state:
 
@@ -211,7 +232,8 @@ Use these commands to inspect state:
 git status --short --branch
 git rev-parse HEAD
 git rev-parse origin/main
-git ls-remote --tags origin "refs/tags/v0.6.0-alpha*"
+$tagPrefix = "vX.Y.Z" # use the stable or prerelease version family being fixed
+git ls-remote --tags origin "refs/tags/$tagPrefix*"
 
 gh run list --repo openclaw/openclaw-windows-node `
   --workflow "Build and Test" `

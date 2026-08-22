@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using OpenClaw.Shared;
 using OpenClaw.Shared.Mcp;
+using OpenClaw.Shared.Telemetry;
+using OpenClaw.Shared.Tests.Telemetry;
 using Xunit;
 
 namespace OpenClaw.Shared.Tests;
@@ -18,6 +20,7 @@ namespace OpenClaw.Shared.Tests;
 /// boots the server on an ephemeral port so they can run in parallel and we
 /// don't collide with the production 8765.
 /// </summary>
+[Collection(McpServerTelemetryCollection.Name)]
 public class McpHttpServerTests
 {
     private sealed class FakeCapability : INodeCapability
@@ -107,6 +110,55 @@ public class McpHttpServerTests
     }
 
     [Fact]
+    public async Task Post_ToolCallResponseWriteFailure_CompletesTransportFailureExactlyOnce()
+    {
+        var port = FreePort();
+        var bridge = new McpToolBridge(() => new INodeCapability[] { new FakeCapability() });
+        var completionSource = new TaskCompletionSource<NodeToolTelemetryCompletion>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var completionCount = 0;
+        bridge.ToolTelemetryCompleted += (_, completion) =>
+        {
+            Interlocked.Increment(ref completionCount);
+            completionSource.TrySetResult(completion);
+        };
+        using var server = new McpHttpServer(
+            bridge,
+            port,
+            NullLogger.Instance,
+            authToken: null,
+            static (response, _, _, _) =>
+            {
+                response.Close();
+                throw new IOException("simulated response write failure");
+            });
+        server.Start();
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/") };
+
+        var requestTask = http.PostAsync(
+            "/",
+            new StringContent(
+                """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"alpha.echo"}}""",
+                Encoding.UTF8,
+                "application/json"));
+        var completion = await completionSource.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            using var response = await requestTask;
+        }
+        catch (HttpRequestException)
+        {
+            // The injected writer closes the response to simulate a disconnected client.
+        }
+
+        Assert.Equal(1, Volatile.Read(ref completionCount));
+        Assert.Equal("alpha.echo", completion.Command);
+        Assert.Equal(NodeToolOutcome.Failure, completion.Outcome);
+        Assert.Equal(NodeToolErrorCategory.TransportFailure, completion.ErrorCategory);
+        Assert.Equal(typeof(IOException).FullName, completion.ErrorType);
+    }
+
+    [Fact]
     public async Task Post_WithBrowserOrigin_RejectedWithForbidden()
     {
         // The CSRF gate: any Origin header means a browser is the caller.
@@ -150,6 +202,24 @@ public class McpHttpServerTests
                 $"Expected Forbidden or NotFound, got {resp.StatusCode}.");
         }
         finally { server.Dispose(); http.Dispose(); }
+    }
+
+    [Theory]
+    [InlineData("[::1]")]
+    [InlineData("[::1]:8765")]
+    public void IsHostAllowed_AcceptsBracketedIpv6Loopback(string host)
+    {
+        Assert.True(McpHttpServer.IsHostAllowed(host));
+    }
+
+    [Theory]
+    [InlineData("[::1]evil")]
+    [InlineData("[::1]:")]
+    [InlineData("[::1]:not-a-port")]
+    [InlineData("[::1]:65536")]
+    public void IsHostAllowed_RejectsMalformedBracketedIpv6Loopback(string host)
+    {
+        Assert.False(McpHttpServer.IsHostAllowed(host));
     }
 
     [Fact]

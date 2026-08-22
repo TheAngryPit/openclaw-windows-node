@@ -24,4 +24,85 @@ public sealed class SpeechInputContractTests
         Assert.Contains("energy >= startThreshold", cs);
         Assert.Contains("energy >= stayThreshold", cs);
     }
+
+    [Fact]
+    public void AudioPipeline_FirstAudioTimeout_UsesLocalizedActionableMessage()
+    {
+        var pipeline = Read("src", "OpenClaw.Tray.WinUI", "Services", "AudioPipeline.cs");
+        var resources = Read("src", "OpenClaw.Tray.WinUI", "Strings", "en-us", "Resources.resw");
+
+        Assert.Contains("LocalizationHelper.GetString(\"AudioPipeline_FirstAudioTimeout\")", pipeline);
+        Assert.Contains("Check that your microphone is connected and selected as the Windows input device", resources);
+    }
+
+    [Fact]
+    public void ChatVoiceDialogs_RouteDisabledSttCapabilityToPermissions_AndMissingModelToVoiceSettings()
+    {
+        var chatPage = Read("src", "OpenClaw.Tray.WinUI", "Pages", "ChatPage.xaml.cs");
+        var chatWindow = Read("src", "OpenClaw.Tray.WinUI", "Windows", "ChatWindow.xaml.cs");
+        var resources = Read("src", "OpenClaw.Tray.WinUI", "Strings", "en-us", "Resources.resw");
+
+        Assert.Contains("ChatVoiceDialog_OpenPermissionsSettings", chatPage);
+        Assert.Contains("NavigateToPermissionsSettings", chatPage);
+        Assert.Contains("_hub.NavigateTo(\"permissions\")", chatPage);
+        Assert.Contains("ChatVoiceDialog_OpenVoiceSettings", chatPage);
+        Assert.Contains("NavigateToVoiceSettings", chatPage);
+        Assert.Contains("_hub.NavigateTo(\"voice\")", chatPage);
+
+        Assert.Contains("ChatVoiceDialog_OpenPermissionsSettings", chatWindow);
+        Assert.Contains("ShowHub(\"permissions\")", chatWindow);
+        Assert.Contains("ChatVoiceDialog_OpenVoiceSettings", chatWindow);
+        Assert.Contains("ShowHub(\"voice\")", chatWindow);
+
+        Assert.Contains("Speech-to-text is disabled. Enable the capability in Permissions", resources);
+        Assert.Contains("ChatVoiceDialog_OpenPermissionsSettings", resources);
+        Assert.Contains("Open Permissions", resources);
+        Assert.Contains("Speech-to-Text is on, but voice input will not work until at least one speech model is downloaded.", resources);
+    }
+
+    [Fact]
+    public void ChatVoiceDialogs_RouteDisabledTtsCapabilityToPermissions_AndPreserveFallbackForMissingSetup()
+    {
+        var chatPage = Read("src", "OpenClaw.Tray.WinUI", "Pages", "ChatPage.xaml.cs");
+        var chatWindow = Read("src", "OpenClaw.Tray.WinUI", "Windows", "ChatWindow.xaml.cs");
+        var permissionsPage = Read("src", "OpenClaw.Tray.WinUI", "Pages", "PermissionsPage.xaml.cs");
+        var resources = Read("src", "OpenClaw.Tray.WinUI", "Strings", "en-us", "Resources.resw");
+
+        Assert.Contains("ReadChatTextAloudAsync", chatPage);
+        Assert.Contains("OnSpeakerMuteChangedAsync", chatPage);
+        Assert.Contains("EnsureTtsReadyForChatAsync", chatPage);
+        Assert.Contains("ShowTtsUnavailableDialogAsync", chatPage);
+        Assert.Contains("IsAutomaticChatTtsEnabled", chatPage);
+        Assert.Contains("IsChatTtsPlaybackReady", chatPage);
+        Assert.Contains("_speakerMuteGate.WaitAsync(0)", chatPage);
+        Assert.Contains("_voiceSettingsDialogOpen", chatPage);
+        Assert.Contains("_reactorHost?.SetSpeakerMuted(true);\r\n            await ShowTtsUnavailableDialogAsync();", chatPage);
+        Assert.Contains("ChatVoiceDialog_OutputOffTitle", chatPage);
+        Assert.Contains("ChatVoiceDialog_OutputOffMessage", chatPage);
+        Assert.Contains("NavigateToPermissionsSettings", chatPage);
+        Assert.DoesNotContain("ChatVoiceDialog_TtsSetupRequired", chatPage);
+
+        Assert.Contains("ReadChatTextAloudAsync", chatWindow);
+        Assert.Contains("OnSpeakerMuteChangedAsync", chatWindow);
+        Assert.Contains("EnsureTtsReadyForChatAsync", chatWindow);
+        Assert.Contains("ShowTtsUnavailableDialogAsync", chatWindow);
+        Assert.Contains("IsAutomaticChatTtsEnabled", chatWindow);
+        Assert.Contains("IsChatTtsPlaybackReady", chatWindow);
+        Assert.Contains("_speakerMuteGate.WaitAsync(0)", chatWindow);
+        Assert.Contains("_voiceSettingsDialogOpen", chatWindow);
+        Assert.Contains("_reactorHost?.SetSpeakerMuted(true);\r\n            await ShowTtsUnavailableDialogAsync();", chatWindow);
+        Assert.Contains("ChatVoiceDialog_OutputOffTitle", chatWindow);
+        Assert.Contains("ChatVoiceDialog_OutputOffMessage", chatWindow);
+        Assert.Contains("ShowHub(\"permissions\")", chatWindow);
+        Assert.DoesNotContain("ChatVoiceDialog_TtsSetupRequired", chatWindow);
+
+        Assert.Contains("VoiceSettingsHelpPanel.Visibility", permissionsPage);
+        Assert.DoesNotContain("SpeechSetupReadiness.IsConfiguredTtsProviderSetupRequired", permissionsPage);
+        Assert.Contains("SpeechSetupReadiness.IsConfiguredTtsProviderSetupRequired", Read("src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
+        Assert.Contains("SpeechSetupReadiness.IsAutomaticChatTtsEnabled", Read("src", "OpenClaw.Tray.WinUI", "App.xaml.cs"));
+        Assert.Contains("IsAutomaticChatTtsEnabled", Read("src", "OpenClaw.Tray.WinUI", "Services", "SpeechSetupReadiness.cs"));
+        Assert.Contains("return settings?.NodeTtsEnabled == true;", Read("src", "OpenClaw.Tray.WinUI", "Services", "SpeechSetupReadiness.cs"));
+        Assert.Contains("Text-to-speech is disabled. Enable the capability in Permissions", resources);
+        Assert.DoesNotContain("ChatVoiceDialog_TtsSetupRequired", resources);
+    }
 }

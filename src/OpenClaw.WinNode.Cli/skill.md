@@ -4,7 +4,7 @@
   The list of supported commands below is checked at CI time against the live
   capability surface (see SkillMdDriftTests). When a capability is added,
   removed, or renamed in src/OpenClaw.Shared/Mcp/McpToolBridge.cs
-  (CommandDescriptions), update this document so the drift test stays green —
+  (CommandDescriptions), update this document so the drift test stays green -
   the test compares command identifiers, so prose can still be tweaked by hand.
 -->
 
@@ -23,37 +23,42 @@ argument shape, and the A2UI v0.8 JSONL grammar. It is shipped alongside
 ## Invocation shape
 
 ```
-winnode --command <name> [--params '<json-object>'] [--invoke-timeout <ms>]
-winnode --list-tools [--mcp-url <url>|--mcp-port <port>]
+winnode --command <name> [--params '<json-object>'] [--invoke-timeout <ms>] [--identity release|dev]
+winnode --list-tools [--mcp-url <url>|--mcp-port <port>] [--identity release|dev]
 ```
 
-- `--command` (required) — node command (e.g. `system.which`, `canvas.a2ui.push`).
-- `--list-tools` — query the live MCP server's `tools/list` method and print the
+- `--command` (required) - node command (e.g. `system.which`, `canvas.a2ui.push`).
+- `--list-tools` - query the live MCP server's `tools/list` method and print the
   advertised tools. Useful when settings-gated capabilities differ from this
   static reference.
-- `--params` — single JSON **object** string, default `{}`. Must be a JSON object,
+- `--params` - single JSON **object** string, default `{}`. Must be a JSON object,
   not an array or scalar. **`--params @<path>`** loads the JSON object from a
   file on disk (useful for big A2UI payloads / `canvas.eval` scripts).
-- `--invoke-timeout` — milliseconds, default 15000, max 600000 (10 min). HTTP
+- `--invoke-timeout` - milliseconds, default 15000, max 600000 (10 min). HTTP
   timeout adds a 5s buffer.
-- `--node` — accepted for parity with `openclaw nodes invoke`; **ignored**
+- `--node` - accepted for parity with `openclaw nodes invoke`; **ignored**
   locally. Safe to copy/paste from gateway-side commands.
-- `--idempotency-key` — accepted for parity; **ignored**, and the CLI emits a
-  `[winnode] WARN` to stderr because local MCP does *not* dedupe retries —
+- `--idempotency-key` - accepted for parity; **ignored**, and the CLI emits a
+  `[winnode] WARN` to stderr because local MCP does *not* dedupe retries -
   re-running a command after a transient failure can double-execute side
   effects. If you need idempotency, target the gateway, not winnode.
-- `--mcp-url <url>` / `--mcp-port <port>` — override the endpoint. Falls back to
+- `--mcp-url <url>` / `--mcp-port <port>` - override the endpoint. Falls back to
   `OPENCLAW_MCP_PORT` env var, then port 8765. `--mcp-port` must be in
   `[1, 65535]`; out of range fails with exit code 2.
-- `--mcp-token <token>` — bearer token override (testing / explicit only). The
+- `--mcp-token <token>` - bearer token override (testing / explicit only). The
   literal value is **visible to other same-user processes via the OS process
   listing** (`Get-CimInstance Win32_Process | Select CommandLine`,
   Process Explorer, etc.). The CLI emits a stderr warning when this flag is
   used. **Prefer `OPENCLAW_MCP_TOKEN` (env var) or the on-disk
-  `%APPDATA%\OpenClawTray\mcp-token.txt`** which the tray writes when MCP is
-  enabled. Both `OPENCLAW_MCP_TOKEN` and the on-disk file should themselves be
-  treated as sensitive operational secrets.
-- `--verbose` — log endpoint + ignored flags to stderr. Without `--verbose`,
+  `%APPDATA%\OpenClawTray\mcp-token.txt`** which the release tray writes when
+  MCP is enabled. Both `OPENCLAW_MCP_TOKEN` and the on-disk file should
+  themselves be treated as sensitive operational secrets.
+- `--identity release|dev` - selects which tray profile supplies the default
+  on-disk MCP token. Defaults to `OPENCLAW_APP_IDENTITY`, then `release`.
+  Use `--identity dev` for a side-by-side dev tray; its default token path is
+  `%APPDATA%\OpenClawTray-Dev\mcp-token.txt`. `OPENCLAW_TRAY_DATA_DIR` still
+  wins for isolated runs and points directly at the data folder.
+- `--verbose` - log endpoint + ignored flags to stderr. Without `--verbose`,
   HTTP error bodies are emitted only as the first line; with `--verbose`, the
   full body is shown (after sanitization + token-shape redaction).
 
@@ -83,18 +88,40 @@ Show a Windows toast notification.
 Returns `{ "sent": true }`. All fields optional except `body` in practice.
 
 ### system.run
-Execute a shell command. Subject to the local exec approval policy at
-`%LOCALAPPDATA%\OpenClawTray\exec-policy.json`.
+Execute canonical argv. Subject to the local exec approval policy at
+`%APPDATA%\OpenClawTray\exec-approvals.json`.
 ```
 {
-  "command": "string OR string[]",   // required
-  "args":    ["string", ...],         // optional, appended to command
-  "shell":   "powershell|pwsh|cmd|bash",
+  "command": ["executable", "arg", ...], // required
+  "rawCommand": "string",                // optional display metadata
   "cwd":     "string",
-  "timeoutMs": 30000,
-  "env":     { "KEY": "VALUE" }
+  "timeoutMs": 30000
 }
 ```
+Shell behavior must be explicit in the argv, for example
+`{"command":["cmd.exe","/d","/s","/c","echo hello"],"rawCommand":"echo hello"}`.
+The gateway's `exec host=node` path performs this wrapping automatically.
+Non-empty custom `env` is rejected until environment values can be identity-bound
+and shown safely during approval.
+
+#### Migration from the pre-V2 low-level contract
+
+The V2 node boundary intentionally rejects string-form `command` with
+`command-array-required`. Update raw MCP, `node.invoke`, plugin, and direct
+`winnode` callers to send the shell transport explicitly:
+
+```json
+// Before
+{"command":"echo hello","shell":"cmd"}
+
+// V2
+{"command":["cmd.exe","/d","/s","/c","echo hello"],"rawCommand":"echo hello"}
+```
+
+PowerShell callers must likewise name `powershell.exe` or `pwsh.exe` and its
+`-Command` arguments explicitly. Remove custom `env` from the request; V2 rejects
+non-empty environments rather than approving an executable under hidden process
+configuration.
 Returns `{ stdout, stderr, exitCode, timedOut, durationMs }`.
 
 ### system.run.prepare
@@ -110,17 +137,44 @@ Resolve binary names to absolute paths.
 Returns `{ "bins": { "git": "C:\\...", ... } }`. Names not found are omitted.
 
 ### system.execApprovals.get
-No params. Returns the active exec policy:
-`{ enabled, defaultAction, rules: [{pattern, action, shells?, description?, enabled}] }`.
+No params. Returns the active V2 snapshot:
+`{ path, exists, hash, file: { version, defaults: { security, ask, askFallback, autoAllowSkills }, agents: { "<agentId>": { security, ask, askFallback, autoAllowSkills, allowlist: [{ id, pattern, lastUsedAt?, lastResolvedPath? }] } } } }`.
+`security` is `deny|allowlist|full`; `ask` is `off|on-miss|always|deny`;
+`askFallback` is `deny|allowlist|full`. Socket credentials are never returned.
+Pass `hash` as `baseHash` when calling `system.execApprovals.set`.
 
 ### system.execApprovals.set
-Replace the exec policy.
+Replace the full V2 file using compare-and-swap. `baseHash` is required and must
+equal the latest hash returned by `system.execApprovals.get`.
 ```
 {
-  "rules": [{"pattern": "echo *", "action": "allow"}, ...],
-  "defaultAction": "allow|deny|prompt"
+  "baseHash": "<hash-from-get>",
+  "file": {
+    "version": 1,
+    "defaults": {
+      "security": "allowlist",
+      "ask": "on-miss",
+      "askFallback": "deny",
+      "autoAllowSkills": false
+    },
+    "agents": {
+      "main": {
+        "security": "allowlist",
+        "ask": "on-miss",
+        "askFallback": "deny",
+        "autoAllowSkills": false,
+        "allowlist": []
+      }
+    }
+  }
 }
 ```
+Returns the updated snapshot. A remote update may preserve or remove existing
+allowlist grants, but it cannot add or change grants or set full access. Missing or
+stale hashes are rejected. This command changes future `system.run` authorization
+decisions. The `winnode` path is local loopback MCP, so no gateway scope applies.
+Remote operators must use the gateway `exec.approvals.node.*` control-plane
+methods, which are separately gated by gateway admin scope.
 
 ### canvas.present
 Open the WebView2 canvas window.
@@ -158,7 +212,7 @@ Returns `{ format, base64 }`.
 
 ### canvas.a2ui.push
 Render an A2UI v0.8 surface in the canvas. The canvas window opens
-automatically — no `canvas.present` required.
+automatically - no `canvas.present` required.
 ```
 {
   "jsonl":     "string",   // OR jsonlPath
@@ -169,15 +223,16 @@ automatically — no `canvas.present` required.
 Returns `{ "pushed": true }`. **See A2UI grammar below.**
 
 ### canvas.a2ui.pushJSONL
-Streaming variant of `canvas.a2ui.push` for very large surfaces. Same protocol
-contract; `jsonlPath` argument must live under the system temp directory.
+Alias of `canvas.a2ui.push`. It uses the identical handler, size/line caps, and
+`jsonl`/`jsonlPath` contract. It exists for naming parity, not as a separate
+streaming path.
 
 ### canvas.a2ui.reset
 No params. Clears any rendered surfaces. Returns `{ "reset": true }`.
 
 ### canvas.a2ui.dump
 No params. Returns the current surface graph for introspection. **Read-all:**
-this exposes every currently-rendered surface — operators should treat it as
+this exposes every currently-rendered surface - operators should treat it as
 equivalent to a screenshot of every open A2UI surface.
 
 ### canvas.caps
@@ -227,7 +282,7 @@ Returns `{ format, durationMs, base64 }`.
 
 ## Speech-to-text (stt.*)
 
-Local Whisper.net runs on this device — no audio leaves the box. The
+Local Whisper.net runs on this device - no audio leaves the box. The
 model is downloaded on first use; until then every `stt.*` call returns
 a clear error pointing the caller at the Voice Settings page.
 **Privacy-sensitive: requires `NodeSttEnabled` in tray Settings.**
@@ -237,7 +292,7 @@ Bounded fixed-duration mic capture + transcription.
 ```
 {
   "maxDurationMs": 5000,      // required, > 0, max 30000
-  "language": "en"            // optional BCP-47 tag or "auto" — falls back to SttLanguage setting
+  "language": "en"            // optional BCP-47 tag or "auto" - falls back to SttLanguage setting
 }
 ```
 Returns `{ transcribed, text, durationMs, language, engineEffective: "whisper" }`.
@@ -263,7 +318,7 @@ where `readiness` ∈ `"ready" | "initializing" | "model-downloading" | "model-n
 
 ## Text-to-speech (tts.*)
 
-Three providers — Piper (local neural via Sherpa-ONNX, default), Windows
+Three providers - Piper (local neural via Sherpa-ONNX, default), Windows
 built-in speech, and ElevenLabs (cloud). Provider + per-provider voice
 are configured in tray Settings.
 
@@ -272,13 +327,27 @@ Speak text aloud on the Windows node.
 ```
 {
   "text": "string",           // required
-  "provider": "piper|windows|elevenlabs",  // optional, falls back to TtsProvider setting
+  "provider": "piper|windows|elevenlabs",  // optional; omit to use TtsProvider setting
   "voiceId": "string",        // optional, overrides the per-provider configured voice
   "model": "string",          // optional, ElevenLabs only
   "interrupt": false          // default false; true cuts off any in-progress playback
 }
 ```
-Returns `{ spoken, provider, contentType, durationMs }`.
+When `provider` is omitted and the configured provider isn't usable (no
+ElevenLabs key, Piper voice not downloaded), the node falls back to Windows
+TTS so playback still happens. Explicit `provider` requests stay strict and
+do not silently reroute. Returns `{ spoken, provider, requestedProvider, fellBack, contentType, durationMs }`
+where `provider` is the provider that actually spoke.
+
+### tts.status
+TTS provider readiness. No params. Carries no PII (no voice ids, no key
+fragments, no device names).
+Returns `{ configuredProvider, effectiveProvider, willFallBack, providers[{ provider, readiness, isReady }] }`
+where `effectiveProvider` is what would run now after fallback and `readiness`
+∈ `"ready" | "needs-api-key" | "needs-voice" | "voice-not-downloaded" | "unavailable"`.
+The configured/effective view reflects configured defaults only; explicit
+`tts.speak` provider requests stay strict and may not match the default
+snapshot.
 
 ## App control (app.*)
 
@@ -294,7 +363,8 @@ Returns `{ navigated, page }`.
 
 ### app.status
 Current connection / node state.
-No params. Returns `{ connectionStatus, nodeConnected, nodePaired, nodePendingApproval, gatewayVersion, sessionCount, nodeCount }`.
+No params. Returns `{ connectionStatus, overallState, operatorState, nodeState, nodeConnected, nodePaired, nodePendingApproval, nodeError, gatewayVersion, sessionCount, nodeCount }`.
+For agent-facing connection troubleshooting, prefer `app.connection.status`.
 
 ### app.sessions
 Active sessions, optionally filtered by agent.
@@ -326,15 +396,15 @@ Read a local app setting by name.
 Returns the setting value (type depends on the setting).
 
 ### app.settings.set
-Set a local app setting.
+Set a local app setting, persist it, and apply the same reconnect/reload behavior as saving settings in the app UI.
 ```
 {"name": "string", "value": "string"}  // both required
 ```
-Returns `{ name, value }`.
+Returns `{ name, value }`; runtime apply failures surface as tool errors.
 
 ### app.menu
 Get tray menu state (status, session count, node count). No params.
-Returns array of menu items.
+Returns array of menu items; the status item includes `status`, `overallState`, `nodeState`, and `nodeError`.
 
 ### app.search
 Search the command palette and return matching commands.
@@ -349,6 +419,162 @@ Build the same gateway dashboard URL the tray opens.
 {"path": "string"}           // optional
 ```
 Returns `{ url, credentialSource, usesSharedGatewayToken, hasTokenQuery }`.
+
+## App connection diagnostics and setup (app.connection.*)
+
+Local MCP-only tools for connection diagnostics, setup, pairing approvals, and
+targeted reconnects. These tools are not advertised to the remote gateway node
+transport. Read-only diagnostics redact token values and expose credential
+presence/outcome only.
+
+### app.connection.status
+Read-only connection diagnostics for agents and CLIs. No params. Returns:
+`{ schemaVersion, connectionState, effectiveMode, legacyConnectionStatus, gateway, protocol, operator, node, mcp, browserProxy, pendingActions, retry, diagnostics }`.
+
+The payload includes the active gateway id/name/url, operator and node role
+states, credential sources/statuses, MCP enabled/running/error state, browser
+proxy shared-token caveat, pending approval commands, retry hints inferred from
+recent diagnostics, and recent connection diagnostic events. `effectiveMode`
+reflects Settings mode (`EnableNodeMode` / `EnableMcpServer`); `node.intended`
+reflects the manager snapshot plus current Node mode setting. `gateway.packageVersion`
+is the installed Gateway npm package version reported by `hello-ok`; it is
+separate from the wire protocol. `protocol` reports the accepted Gateway wire
+protocol, the Windows-supported current/minimum/maximum values (currently
+4/3/4), normalized compatibility
+(`compatible`, `gateway_too_old`, `gateway_too_new`, `mismatch`, or `unknown`),
+the operator/node source, available Gateway protocol expectations, and whether
+the condition is retryable. During an active mismatch, `selectedProtocol` comes
+only from that connection attempt and is otherwise null, even if cached Gateway
+self information remains available.
+
+### app.connection.gateways
+Read-only saved gateway diagnostics. No params. Returns:
+`{ activeGatewayId, count, gateways[] }`.
+
+Each gateway includes id/name/url, active flag, local/v2 flags, lastConnected,
+credential presence booleans (`hasSharedGatewayToken`, `hasBootstrapToken`),
+browser-control port/caveat, and SSH tunnel metadata. Token values are never
+returned.
+
+### app.connection.applySetupCode
+Apply a setup or QR code and connect the tray to that gateway.
+```
+{"setupCode": "string"}      // required
+```
+Returns `{ outcome, error, gatewayUrl, connected }`. Side effects: creates or
+updates a gateway record, sets it active, persists credentials from the setup
+code, and asks `GatewayConnectionManager` to connect.
+
+### app.connection.connectSharedToken
+Connect with a shared gateway token.
+```
+{
+  "gatewayUrl": "string",    // required
+  "token": "string"          // required
+}
+```
+Returns `{ outcome, error, gatewayUrl, connected }`. Side effects: creates or
+updates a gateway record, stores the shared token on that record, sets it active,
+and asks `GatewayConnectionManager` to connect.
+
+### app.connection.pendingApprovals
+Read pending device/node pairing approvals from the connected gateway. No params.
+Returns `{ connected, error, totalPending, devicePending[], nodePending[] }`.
+
+### app.connection.approveDevicePairing
+Approve a pending device pairing request.
+```
+{"requestId": "string"}      // required; "id" alias accepted
+```
+Returns the refreshed pending approvals payload plus `{ decision }`. Side effect:
+calls the connected operator client's device-pair approval RPC.
+
+### app.connection.rejectDevicePairing
+Reject a pending device pairing request.
+```
+{"requestId": "string"}      // required; "id" alias accepted
+```
+Returns the refreshed pending approvals payload plus `{ decision }`. Side effect:
+calls the connected operator client's device-pair rejection RPC.
+
+### app.connection.approveNodePairing
+Approve a pending Windows node pairing or command-trust request.
+```
+{"requestId": "string"}      // required; "id" alias accepted
+```
+Returns the refreshed pending approvals payload plus `{ decision }`. Side effect:
+calls the connected operator client's node-pair approval RPC.
+
+### app.connection.rejectNodePairing
+Reject a pending Windows node pairing or command-trust request.
+```
+{"requestId": "string"}      // required; "id" alias accepted
+```
+Returns the refreshed pending approvals payload plus `{ decision }`. Side effect:
+calls the connected operator client's node-pair rejection RPC.
+
+### app.connection.reconnect
+Reconnect the active gateway through `GatewayConnectionManager`. No params.
+Returns `{ reconnected, error? }`. Side effect: disconnects and reconnects the
+operator/node lifecycle for the active gateway.
+
+### app.connection.reconnectNode
+Reconnect only the Windows node role for the active gateway through
+`GatewayConnectionManager`. No params. Returns `{ reconnected, error? }`.
+Side effect: restarts node connection intent without changing the active gateway.
+
+### app.chat.snapshot
+Read the current native chat snapshot for local automation and diagnostics.
+**READ-ALL:** returns recent chat text from the selected timeline and outgoing
+queue text.
+```
+{"threadId": "string"}       // optional; "sessionKey" alias also accepted
+```
+Returns `{ connectionStatus, defaultThreadId, composeTarget, threads, queue, selectedTimeline }`.
+
+### app.chat.send
+Send a message through the same native chat provider used by the Chat UI.
+```
+{
+  "message": "string",       // required
+  "threadId": "string"       // optional; defaults to compose/default thread
+}
+```
+Returns `{ sent, threadId, entryCount, turnActive, error? }`.
+
+### app.chat.reset
+Reset the target chat session through the gateway `sessions.reset` path.
+```
+{"threadId": "string"}       // optional; "sessionKey" alias also accepted
+```
+When `threadId`/`sessionKey` is omitted this resets the current compose/default
+thread, which usually means the active chat session. Returns `{ reset, threadId,
+error? }`.
+
+### app.chat.queue.list
+List native chat outgoing queue entries.
+**READ-ALL:** returns queued message text.
+```
+{"threadId": "string"}       // optional; "sessionKey" alias also accepted
+```
+When `threadId`/`sessionKey` is omitted this returns all queued threads. Returns:
+`{ defaultThreadId, requestedThreadId, totalCount, selectedThread, threads }`
+where each thread has `{ threadId, count, messages }`, and each message has
+`{ id, text, createdAt, sendState, errorText, canCancel }`. Queue message IDs
+are ephemeral UI/provider IDs; read them from the current `app.chat.queue.list`
+or `app.chat.snapshot` response and do not cache them across app lifetimes.
+
+### app.chat.queue.cancel
+Cancel/remove one native chat outgoing queue entry before it is sent.
+```
+{
+  "queuedMessageId": "string", // required; from the current app.chat.queue.list or app.chat.snapshot queue
+  "threadId": "string"         // required; "sessionKey" alias also accepted
+}
+```
+Only `Queued` and `Failed` entries can be removed. `Sending` entries may already
+have reached the gateway and are not canceled. Returns
+`{ canceled, threadId, queuedMessageId, remainingCount, error? }`.
 
 ## Location (location.*)
 
@@ -393,7 +619,7 @@ Agents should request only the sections they need.
 Proxy an HTTP request to the local OpenClaw browser control host (Chrome DevTools Protocol server) running on gateway port + 2.
 ```
 {
-  "path": "/json/list",        // required — local control path
+  "path": "/json/list",        // required - local control path
   "method": "GET",             // optional, default GET; allowed: GET|POST|DELETE
   "body": {},                  // JSON object, for POST/DELETE
   "query": {},                 // appended as query-string params
@@ -401,7 +627,7 @@ Proxy an HTTP request to the local OpenClaw browser control host (Chrome DevTool
   "timeoutMs": 20000           // optional, max 120000
 }
 ```
-Returns `{ result, files? }` — `files` is an array of `{ path, base64, mimeType }` if the response referenced local file paths.
+Returns `{ result, files? }` - `files` is an array of `{ path, base64, mimeType }` if the response referenced local file paths.
 
 Requires the gateway URL to have an explicit port (e.g. `ws://localhost:8080`).
 The browser control host must be running locally on `127.0.0.1:<gatewayPort + 2>`.
@@ -497,21 +723,21 @@ Pass this as the `jsonl` value (a single JSON string with `\n` between messages)
 
 ## Token-efficient call patterns
 
-1. **Skip `--node` / `--idempotency-key`** — they're ignored locally; including
+1. **Skip `--node` / `--idempotency-key`** - they're ignored locally; including
    them just costs tokens. `--idempotency-key` triggers a stderr warning.
 2. **Omit `--params` when the command takes no args** (`camera.list`,
    `canvas.hide`, `canvas.a2ui.reset`, `canvas.a2ui.dump`, `canvas.caps`,
    `system.execApprovals.get`).
-3. **Large A2UI payloads** — write the JSONL to a file under the system temp
+3. **Large A2UI payloads** - write the JSONL to a file under the system temp
    directory and pass `{"jsonlPath": "<path>"}`. The capability rejects paths
    outside `%TEMP%`. Or pass `--params @<path>` to load the entire JSON
    argument object from disk.
-4. **Big binary results (snapshots, captures)** — output is base64 in stdout.
+4. **Big binary results (snapshots, captures)** - output is base64 in stdout.
    Pipe to a file (`> capture.json`) instead of letting the agent read it
    inline.
-5. **Errors are exit-code-driven** — check `$LASTEXITCODE` (or `$?` in bash)
+5. **Errors are exit-code-driven** - check `$LASTEXITCODE` (or `$?` in bash)
    first, then read stderr only on non-zero. Exit 2 = your call is malformed.
-6. **Debug with `--verbose`, not by sharing transcripts** — without
+6. **Debug with `--verbose`, not by sharing transcripts** - without
    `--verbose` the CLI shows only the first line of an HTTP error body and
    redacts long base64url runs. With `--verbose` it shows the full sanitized
    body. Treat any verbose output as containing potentially sensitive paths
@@ -519,7 +745,7 @@ Pass this as the `jsonl` value (a single JSON string with `\n` between messages)
 
 ## What's NOT exposed
 - Pairing / device approval (gateway concept; doesn't apply locally).
-- `chat.send`, `sessions.list`, `usage.list`, `node.list` — these belong to the
+- `chat.send`, `sessions.list`, `usage.list`, `node.list` - these belong to the
   operator-side `OpenClaw.Cli.exe`, not `winnode.exe`.
 - Idempotency. The gateway de-dupes retries against `--idempotency-key`; local
   MCP does not. Retrying a `system.run` / `system.notify` / `canvas.present`

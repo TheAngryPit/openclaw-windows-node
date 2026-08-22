@@ -8,7 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenClaw.SetupEngine.Tests" />
+    <InternalsVisibleTo Include="OpenClaw.SetupEngine.UI" />
     <ProjectReference Include="..\OpenClaw.Connection\OpenClaw.Connection.csproj" />
+    <ProjectReference Include="..\OpenClaw.Shared\OpenClaw.Shared.csproj" />
   </ItemGroup>
 
 </Project>

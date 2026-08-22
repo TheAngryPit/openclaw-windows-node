@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds and launches the WinUI tray app for local development.
 
@@ -9,8 +9,9 @@
     Use -UseWinApp when you specifically want Microsoft WinAppCLI (`winapp run`)
     to launch with Package.appxmanifest for packaged/MSIX-adjacent validation.
 
-    Use -Isolated (or -DataDir) to run multiple worktrees side-by-side without
-    sharing settings, logs, run markers, device identities, or mutex names.
+    Use -Isolated (or -DataDir) to avoid sharing settings, logs, run markers,
+    and device identities. Use -Dev to opt into the side-by-side dev app
+    identity with separate mutex, protocol, gateway distro, and gateway port.
 
     By default this helper refuses to run outside `main` to avoid accidentally
     launching a stale or experimental worktree. Use -AllowNonMain when you
@@ -21,6 +22,10 @@
 
 .PARAMETER Configuration
     Build/output configuration to use. Defaults to Debug.
+
+.PARAMETER Dev
+    Build and launch with the side-by-side dev app identity. Defaults off so
+    release identity remains the default local-launch behavior.
 
 .PARAMETER AllowNonMain
     Allow launching from a branch other than main.
@@ -60,6 +65,9 @@
     .\run-app-local.ps1 -Isolated
 
 .EXAMPLE
+    .\run-app-local.ps1 -Dev -Isolated
+
+.EXAMPLE
     .\run-app-local.ps1 -Configuration Release -Isolated -UpdateChannel alpha -AllowNonMain
 
 .EXAMPLE
@@ -71,6 +79,8 @@ param(
 
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Debug",
+
+    [switch]$Dev,
 
     [switch]$AllowNonMain,
 
@@ -132,7 +142,14 @@ if ($branch -ne "main" -and -not $AllowNonMain) {
 }
 
 if (-not $NoBuild) {
-    & "$repoRoot\build.ps1" -Configuration $Configuration
+    $buildArgs = @{
+        Configuration = $Configuration
+    }
+    if ($Dev) {
+        $buildArgs["DevBuild"] = $true
+    }
+
+    & "$repoRoot\build.ps1" @buildArgs
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
@@ -146,16 +163,35 @@ if (-not $targetFramework) {
     throw "Unable to determine TargetFramework from $projectPath."
 }
 
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-$runtimeIdentifier = if ($architecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { "win-arm64" } else { "win-x64" }
+# Match build.ps1's architecture detection so this script looks in the same
+# output folder the build wrote to. build.ps1 uses $env:PROCESSOR_ARCHITECTURE,
+# which reflects the PowerShell process architecture (and therefore the RID that
+# `dotnet build -r` produced). Using [RuntimeInformation]::OSArchitecture here can
+# disagree (e.g. an x64-emulated shell on an ARM64 device), sending us to a folder
+# that was never built.
+$architecture = $env:PROCESSOR_ARCHITECTURE
+$runtimeIdentifier = switch ($architecture) {
+    "ARM64" { "win-arm64" }
+    default { "win-x64" }
+}
 $outputDir = Join-Path $repoRoot "src\OpenClaw.Tray.WinUI\bin\$Configuration\$targetFramework\$runtimeIdentifier"
 $exePath = Join-Path $outputDir "OpenClaw.Tray.WinUI.exe"
+$identityMarkerPath = Join-Path $outputDir "app-identity.txt"
 
 if (-not (Test-Path $outputDir)) {
     throw "Build output folder not found: $outputDir. Run without -NoBuild first."
 }
 if (-not (Test-Path $exePath)) {
     throw "Tray executable not found: $exePath. Run without -NoBuild first."
+}
+if (-not (Test-Path $identityMarkerPath)) {
+    throw "App identity marker not found: $identityMarkerPath. Run without -NoBuild first."
+}
+
+$expectedIdentity = if ($Dev) { "dev" } else { "release" }
+$actualIdentity = (Get-Content -LiteralPath $identityMarkerPath -Raw -Encoding UTF8).Trim()
+if ($actualIdentity -ne $expectedIdentity) {
+    throw "Build output identity '$actualIdentity' does not match requested '$expectedIdentity'. Run without -NoBuild or choose the matching -Dev option."
 }
 
 $winapp = $null
@@ -204,6 +240,7 @@ try {
     Write-Host "Launching OpenClaw Tray" -ForegroundColor Cyan
     Write-Host "  Branch:        $branch"
     Write-Host "  Configuration: $Configuration"
+    Write-Host "  Identity:      $(if ($actualIdentity -eq 'dev') { 'Dev (opt-in)' } else { 'Release (default)' })"
     Write-Host "  Runtime:       $runtimeIdentifier"
     Write-Host "  Output:        $outputDir"
     Write-Host "  Mode:          $(if ($UseWinApp) { 'WinAppCLI manifest activation' } else { 'Direct unpackaged executable' })"
@@ -233,6 +270,7 @@ try {
     } else {
         $process = Start-Process -FilePath $exePath -WorkingDirectory $outputDir -PassThru
         Write-Host "Started OpenClaw Tray (PID: $($process.Id))" -ForegroundColor Green
+        Write-Host "Hint: Look for the 🦞 OpenClaw tray icon in the system tray (bottom-right). It may be hidden under the ^ button." -ForegroundColor Cyan
         $exitCode = 0
     }
 } finally {

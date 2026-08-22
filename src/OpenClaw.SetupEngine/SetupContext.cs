@@ -1,5 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenClaw.Connection;
+using OpenClaw.Connection.LocalAi;
+using OpenClaw.Shared;
+using OpenClaw.Shared.Inference;
+using OpenClaw.Shared.Inference.Catalog;
 
 namespace OpenClaw.SetupEngine;
 
@@ -24,6 +30,8 @@ public sealed class SetupConfig
     public string? GatewayUrl { get; set; }
     public string? BootstrapToken { get; set; }
     public Dictionary<string, string>? WizardAnswers { get; set; }
+    [JsonIgnore]
+    public bool UsesBundledDefaultConfig { get; set; }
 
     // Nested config sections — everything is configurable
     public WslConfig Wsl { get; set; } = new();
@@ -31,13 +39,41 @@ public sealed class SetupConfig
     public CapabilitiesConfig Capabilities { get; set; } = new();
     public TraySettingsConfig Settings { get; set; } = new();
     public PairingConfig Pairing { get; set; } = new();
+    public WindowsNodeContextConfig WindowsNodeContext { get; set; } = new();
+    public TailscaleConfig Tailscale { get; set; } = new();
+    public LocalAiConfig LocalAi { get; set; } = new();
 
-    public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://localhost:{GatewayPort}";
+    public string EffectiveGatewayUrl => GatewayUrl ?? $"ws://127.0.0.1:{GatewayPort}";
 
     public static SetupConfig LoadFromFile(string path)
     {
         var json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<SetupConfig>(json, JsonOptions) ?? new SetupConfig();
+        return JsonSerializer.Deserialize<SetupConfig>(json, JsonOptions)
+            ?? throw new JsonException("Config file must contain a JSON object.");
+    }
+
+    public static bool TryLoadFromFile(
+        string path,
+        [NotNullWhen(true)] out SetupConfig? config,
+        out string? error)
+    {
+        try
+        {
+            config = LoadFromFile(path);
+            error = null;
+            return true;
+        }
+        catch (Exception ex) when (
+            ex is IOException
+            or UnauthorizedAccessException
+            or JsonException
+            or ArgumentException
+            or NotSupportedException)
+        {
+            config = null;
+            error = ex.Message;
+            return false;
+        }
     }
 
     public static SetupConfig FromEnvironment(SetupConfig? baseConfig = null)
@@ -52,6 +88,20 @@ public sealed class SetupConfig
             config.Headless = true;
         if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_LOG_PATH") is { Length: > 0 } logPath)
             config.LogPath = logPath;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_TAILSCALE") is "1" or "true")
+            config.Tailscale.Enabled = true;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_TAILSCALE_TRUST_AUTH") is "1" or "true")
+        {
+            config.Tailscale.Enabled = true;
+            config.Tailscale.TrustTailscaleAuth = true;
+        }
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_TAILSCALE_AUTH") is { Length: > 0 } authMode &&
+            TailscaleConfig.TryParseAuthMode(authMode, out var parsedAuthMode))
+            config.Tailscale.AuthMode = parsedAuthMode;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_TAILSCALE_HOSTNAME") is { Length: > 0 } hostname)
+            config.Tailscale.Hostname = hostname;
+        if (Environment.GetEnvironmentVariable("OPENCLAW_SETUP_TAILSCALE_AUTH_KEY") is { Length: > 0 } authKey)
+            config.Tailscale.AuthKey = authKey;
 
         return config;
     }
@@ -84,6 +134,20 @@ public sealed class SetupConfig
 
 // ─── WSL Configuration ───
 
+// Native local inference is disabled for programmatic and backward-compatible
+// configs. The bundled product config explicitly enables it for onboarding.
+public sealed class LocalAiConfig
+{
+    public bool Enabled { get; set; }
+    public string? SelectedModelId { get; set; }
+    /// <summary>Managed llama-server port. Zero selects a free loopback port during setup.</summary>
+    public int Port { get; set; }
+    public bool WslMirroredNetworkingConsent { get; set; }
+    public int HealthTimeoutSeconds { get; set; } = 15;
+    public int AcquisitionTimeoutSeconds { get; set; } = 7_200;
+    public int InferenceTimeoutSeconds { get; set; } = 600;
+}
+
 public sealed class WslConfig
 {
     private static readonly System.Text.RegularExpressions.Regex s_linuxUserNamePattern =
@@ -109,11 +173,17 @@ public sealed class GatewayConfig
 {
     public string Bind { get; set; } = "loopback";
     public string? InstallUrl { get; set; }
+    public string Selection { get; set; } = "recommended";
     public string? Version { get; set; }
+    // Runtime-only input for the explicit headless release-candidate validation lane.
+    [JsonIgnore]
+    public string? ValidationPackagePath { get; set; }
     public int HealthTimeoutSeconds { get; set; } = 90;
-    public string ReloadMode { get; set; } = "hot";
+    public string ReloadMode { get; set; } = "hybrid";
     public string AuthMode { get; set; } = "token";
     public Dictionary<string, string>? ExtraConfig { get; set; }
+    [JsonIgnore]
+    public GatewayReleaseResolution? ResolvedRelease { get; set; }
 }
 
 // ─── Capabilities Configuration ───
@@ -143,7 +213,7 @@ public sealed class CapabilitiesConfig
         if (Screen) result.Add(("screen", ["screen.snapshot", "screen.record"]));
         if (Camera) result.Add(("camera", ["camera.list", "camera.snap", "camera.clip"]));
         if (Location) result.Add(("location", ["location.get"]));
-        if (Tts) result.Add(("tts", ["tts.speak"]));
+        if (Tts) result.Add(("tts", ["tts.speak", "tts.status"]));
         if (Stt) result.Add(("stt", ["stt.transcribe", "stt.listen", "stt.status"]));
         if (Device) result.Add(("device", ["device.info", "device.status"]));
         if (Browser) result.Add(("browser", ["browser.proxy"]));
@@ -164,6 +234,7 @@ public sealed class CapabilitiesConfig
 public sealed class TraySettingsConfig
 {
     public bool EnableNodeMode { get; set; } = true;
+    public bool? EnableManagedLocalGatewayAutoRepair { get; set; }
     public bool AutoStart { get; set; } = false;
     public bool NodeSystemRunEnabled { get; set; } = true;
     public bool NodeCanvasEnabled { get; set; } = true;
@@ -191,9 +262,7 @@ public sealed class TraySettingsConfig
             }
             catch (JsonException ex)
             {
-                var backupPath = settingsPath + $".corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.bak";
-                File.Copy(settingsPath, backupPath, overwrite: false);
-                throw new InvalidDataException($"settings.json is corrupt; backed up to {backupPath}", ex);
+                throw BackupCorruptSettingsFile(settingsPath, ex);
             }
         }
 
@@ -201,10 +270,6 @@ public sealed class TraySettingsConfig
         {
             ["EnableNodeMode"] = EnableNodeMode,
             ["AutoStart"] = AutoStart,
-        };
-
-        var initialDefaults = new Dictionary<string, object>
-        {
             ["NodeSystemRunEnabled"] = NodeSystemRunEnabled,
             ["NodeCanvasEnabled"] = NodeCanvasEnabled,
             ["NodeScreenEnabled"] = NodeScreenEnabled,
@@ -225,12 +290,67 @@ public sealed class TraySettingsConfig
         foreach (var kvp in setupOwnedSettings)
             settings[kvp.Key] = kvp.Value;
 
-        foreach (var kvp in initialDefaults)
-            settings.TryAdd(kvp.Key, kvp.Value);
+        const string autoRepairKey = "EnableManagedLocalGatewayAutoRepair";
+        if (EnableManagedLocalGatewayAutoRepair is { } configuredAutoRepair)
+            settings[autoRepairKey] = configuredAutoRepair;
+        else if (!settings.ContainsKey(autoRepairKey))
+            settings[autoRepairKey] = true;
 
         Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
         var json = JsonSerializer.Serialize(settings, SetupConfig.JsonWriteOptions);
         AtomicFile.WriteAllText(settingsPath, json);
+    }
+
+    public static void UpdateAutoStartInSettingsFile(string settingsPath, bool autoStart)
+    {
+        Dictionary<string, JsonElement>? existing = null;
+
+        if (File.Exists(settingsPath))
+        {
+            try
+            {
+                var content = File.ReadAllText(settingsPath);
+                existing = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(content, SetupConfig.JsonOptions);
+            }
+            catch (JsonException ex)
+            {
+                throw BackupCorruptSettingsFile(settingsPath, ex);
+            }
+        }
+
+        var settings = new Dictionary<string, object>();
+        if (existing != null)
+        {
+            foreach (var kvp in existing)
+                settings[kvp.Key] = kvp.Value;
+        }
+
+        settings["AutoStart"] = autoStart;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settingsPath)!);
+        var json = JsonSerializer.Serialize(settings, SetupConfig.JsonWriteOptions);
+        AtomicFile.WriteAllText(settingsPath, json);
+    }
+
+    public void ApplyCapabilities(CapabilitiesConfig capabilities)
+    {
+        // Device info has no independent runtime setting; it is always registered
+        // when node mode is enabled.
+        NodeSystemRunEnabled = capabilities.System;
+        NodeCanvasEnabled = capabilities.Canvas;
+        NodeScreenEnabled = capabilities.Screen;
+        NodeCameraEnabled = capabilities.Camera;
+        NodeLocationEnabled = capabilities.Location;
+        NodeBrowserProxyEnabled = capabilities.Browser;
+        NodeTtsEnabled = capabilities.Tts;
+        NodeSttEnabled = capabilities.Stt;
+    }
+
+    private static InvalidDataException BackupCorruptSettingsFile(string settingsPath, JsonException ex)
+    {
+        var backupPath = settingsPath + $".corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfffffff}-{Guid.NewGuid():N}.bak";
+        File.Copy(settingsPath, backupPath, overwrite: false);
+        return new InvalidDataException($"settings.json is corrupt; backed up to {backupPath}", ex);
     }
 }
 
@@ -238,9 +358,86 @@ public sealed class TraySettingsConfig
 
 public sealed class PairingConfig
 {
-    // TODO: Wire OperatorScopes/NodeScopes/CliScopes into pairing requests
-    // when the gateway protocol supports scoped token issuance.
     public int TimeoutSeconds { get; set; } = 60;
+}
+
+// ─── Windows Node Context Injection ───
+
+public sealed class WindowsNodeContextConfig
+{
+    public bool Enabled { get; set; } = true;
+    public string? WorkspacePath { get; set; }
+    public int TimeoutSeconds { get; set; } = 180;
+}
+
+// ─── Tailscale Serve Configuration ───
+
+[JsonConverter(typeof(JsonStringEnumConverter<TailscaleAuthMode>))]
+public enum TailscaleAuthMode
+{
+    Browser,
+    AuthKey
+}
+
+public sealed class TailscaleConfig
+{
+    public bool Enabled { get; set; }
+    /// <summary>
+    /// Allows verified Tailscale identity headers to participate in gateway
+    /// authentication. Disabled by default so Serve does not expand the
+    /// gateway's authorization boundary without an explicit choice.
+    /// </summary>
+    public bool TrustTailscaleAuth { get; set; }
+    public TailscaleAuthMode AuthMode { get; set; } = TailscaleAuthMode.Browser;
+    public string? Hostname { get; set; }
+    public int AuthTimeoutSeconds { get; set; } = 300;
+    /// <summary>
+    /// Maximum time to wait for a tailnet HTTPS approval and its Serve route.
+    /// This is separate from node authorization because an administrator may
+    /// approve tailnet HTTPS after the device has already joined.
+    /// </summary>
+    public int ServeApprovalTimeoutSeconds { get; set; } = 300;
+
+    [JsonIgnore]
+    public string? AuthKey { get; set; }
+
+    // Discovered from Windows Tailscale status. Keep this runtime-only so a
+    // previously observed tailnet is never persisted as setup input.
+    [JsonIgnore]
+    public string? TailnetDnsSuffix { get; set; }
+
+    public string EffectiveHostname => TailscaleSetupPolicy.NormalizeHostname(
+        Hostname,
+        Environment.MachineName);
+
+    internal static bool TryParseAuthMode(string value, out TailscaleAuthMode mode)
+    {
+        var normalized = value.Trim().Replace("-", string.Empty, StringComparison.Ordinal);
+        return Enum.TryParse(normalized, ignoreCase: true, out mode);
+    }
+}
+
+public sealed record ExternalAuthorizationRequest(
+    string Provider,
+    Uri AuthorizationUri,
+    string Message);
+
+public interface IExternalAuthorizationPresenter
+{
+    Task PresentAsync(ExternalAuthorizationRequest request, CancellationToken cancellationToken);
+}
+
+public sealed class ConsoleExternalAuthorizationPresenter : IExternalAuthorizationPresenter
+{
+    public Task PresentAsync(ExternalAuthorizationRequest request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Console.WriteLine();
+        Console.WriteLine(request.Message);
+        Console.WriteLine(request.AuthorizationUri.AbsoluteUri);
+        Console.WriteLine();
+        return Task.CompletedTask;
+    }
 }
 
 // ─── Step Result ───
@@ -275,6 +472,28 @@ public sealed class SetupContext
     public string? GatewayRecordId { get; set; }
     public string? OperatorDeviceId { get; set; }
     public string? NodeDeviceId { get; set; }
+    public GatewaySelfInfo? ObservedGatewaySelf { get; set; }
+    public GatewayCompatibilityException? GatewayCompatibilityFailure { get; set; }
+    public string? WindowsTailnetDnsSuffix { get; set; }
+    public string? TailscaleDnsName { get; set; }
+    public IExternalAuthorizationPresenter? ExternalAuthorizationPresenter { get; set; }
+    public IProgress<SetupDetailProgressEvent>? DetailProgress { get; set; }
+    public Func<GatewayRecord, CancellationToken, Task<GatewayEndpointProvenance>>?
+        EndpointProvenanceProbe { get; set; }
+    internal WslViabilityResult? WslViability { get; set; }
+    public HostHardwareInfo? LocalAiHardware { get; set; }
+    public LocalInferenceEligibilityResult? LocalAiEligibility { get; set; }
+    public int? LocalAiPort { get; set; }
+    internal LlamaRuntimeInstallResult? LocalAiRuntimeInstall { get; set; }
+    internal HuggingFaceModelInstallResult? LocalAiModelInstall { get; set; }
+    internal LocalAiResolvedInstall? LocalAiResolvedInstall { get; set; }
+    internal bool LocalAiManifestCreatedThisRun { get; set; }
+    internal ILocalAiRuntime? LocalAiRuntime { get; set; }
+    internal HostHardwareInfo? LocalAiGpuBaseline { get; set; }
+    internal LlamaServerInferenceVerification? LocalAiInferenceVerification { get; set; }
+    internal LocalAiGpuLoadEvidence? LocalAiGpuLoadEvidence { get; set; }
+    internal LocalAiGatewayPriorState? LocalAiGatewayPriorState { get; set; }
+    internal bool IsUninstalling { get; set; }
 
     // Data directory for gateway registry and identity files
     public string DataDir { get; }
@@ -283,16 +502,25 @@ public sealed class SetupContext
     // WSL PATH prefix using configured user
     public string WslPathPrefix => WslConstants.GetPathPrefix(Config.Wsl.User);
 
-    public SetupContext(SetupConfig config, SetupLogger logger, TransactionJournal journal, ICommandRunner commands, CancellationToken ct)
+    public SetupContext(
+        SetupConfig config,
+        SetupLogger logger,
+        TransactionJournal journal,
+        ICommandRunner commands,
+        CancellationToken ct,
+        string? dataDir = null,
+        string? localDataDir = null,
+        IExternalAuthorizationPresenter? externalAuthorizationPresenter = null)
     {
         Config = config;
         Logger = logger;
         Journal = journal;
         Commands = commands;
         CancellationToken = ct;
+        ExternalAuthorizationPresenter = externalAuthorizationPresenter;
 
-        DataDir = ResolveDataDir();
-        LocalDataDir = ResolveLocalDataDir();
+        DataDir = dataDir ?? ResolveDataDir();
+        LocalDataDir = localDataDir ?? ResolveLocalDataDir();
 
         DistroName = config.DistroName;
         GatewayUrl = config.EffectiveGatewayUrl;

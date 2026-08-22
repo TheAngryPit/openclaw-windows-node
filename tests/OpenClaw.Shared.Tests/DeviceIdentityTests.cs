@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using Xunit;
 using OpenClaw.Shared;
+using Org.BouncyCastle.Math.EC.Rfc8032;
 
 // slopwatch-ignore: SW002 Test intentionally disables obsolete warnings while covering legacy DeviceIdentity behavior.
 #pragma warning disable CS0618 // Obsolete - testing legacy methods
@@ -20,6 +21,18 @@ public class DeviceIdentityIntegrationTests
         var dir = Path.Combine(Path.GetTempPath(), "openclaw-test-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
         return dir;
+    }
+
+    private static byte[] DecodeBase64Url(string value)
+    {
+        var padded = value.Replace('-', '+').Replace('_', '/');
+        switch (padded.Length % 4)
+        {
+            case 2: padded += "=="; break;
+            case 3: padded += "="; break;
+        }
+
+        return Convert.FromBase64String(padded);
     }
 
     [IntegrationFact]
@@ -76,6 +89,11 @@ public class DeviceIdentityIntegrationTests
             Assert.NotEmpty(sig1);
             // Ed25519 signature is 64 bytes → base64url is 86 chars (no padding)
             Assert.Equal(86, sig1.Length);
+
+            var publicKey = DecodeBase64Url(identity.PublicKeyBase64Url);
+            var signature = DecodeBase64Url(sig1);
+            var payloadBytes = Encoding.UTF8.GetBytes(identity.BuildDebugPayload("nonce1", 1000, "node-host", "tok"));
+            Assert.True(Ed25519.Verify(signature, 0, publicKey, 0, payloadBytes, 0, payloadBytes.Length));
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -317,6 +335,25 @@ public class DeviceIdentityIntegrationTests
         finally { Directory.Delete(dir, true); }
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    public void ReadStoredDeviceToken_WrongJsonRoot_ReturnsCorrupt(string json)
+    {
+        var dir = CreateTempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(dir, "device-key-ed25519.json"), json);
+
+            var result = DeviceIdentity.ReadStoredDeviceToken(dir);
+
+            Assert.Null(result.Token);
+            Assert.Equal(DeviceTokenReadStatus.Corrupt, result.Status);
+            Assert.Contains("not a JSON object", result.Detail, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     [IntegrationFact]
     public void DifferentDirs_ProduceDifferentIdentities()
     {
@@ -370,13 +407,7 @@ public class DeviceIdentityIntegrationTests
             Assert.DoesNotContain("=", pubKey);
             
             // Decode and verify Ed25519 public key is exactly 32 bytes
-            var padded = pubKey.Replace('-', '+').Replace('_', '/');
-            switch (padded.Length % 4)
-            {
-                case 2: padded += "=="; break;
-                case 3: padded += "="; break;
-            }
-            var bytes = Convert.FromBase64String(padded);
+            var bytes = DecodeBase64Url(pubKey);
             Assert.Equal(32, bytes.Length);
         }
         finally { Directory.Delete(dir, true); }

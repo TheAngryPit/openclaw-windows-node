@@ -5,8 +5,8 @@ namespace OpenClaw.Tray.Tests;
 
 /// <summary>
 /// Pins the <c>FluentIconCatalog</c> contract: every advertised glyph is a
-/// single Unicode Private Use Area character (or the documented Brand
-/// emoji), and the helper builder uses the SymbolThemeFontFamily resource.
+/// single Unicode Private Use Area character, and the helper builder uses
+/// the SymbolThemeFontFamily resource.
 ///
 /// We parse the source rather than reflect on the assembly because
 /// <c>OpenClaw.Tray.Tests</c> is a pure net10.0 project that doesn't
@@ -20,13 +20,12 @@ public sealed class FluentIconCatalogTests
         "Sessions", "Approvals", "Devices", "Hostname", "Permissions",
         "Browser", "Camera", "Canvas", "Screen", "Location", "Voice", "Speech", "System", "Terminal", "Operator",
         "Dashboard", "OpenInBrowser", "Chat", "CanvasAct", "VoiceAct", "Settings",
-        "Setup", "About", "Exit",
+        "Setup", "About", "Notifications", "Exit",
         "Add", "Back", "Sync", "Lock", "Plug", "MoreOverflow",
         "People", "Money", "ServerEnvironment", "CapabilityOff", "Channels",
         "ChevronR", "Check",
-        "Brand",
         // Diagnostics surface (see src/OpenClaw.Tray.WinUI/Pages/DebugPage.xaml).
-        "Bug", "Briefcase", "Folder", "Copy", "Document", "Refresh", "Reset", "Clear", "Develop",
+        "Bug", "Briefcase", "Folder", "Copy", "Document", "Refresh", "Reset", "Clear", "Develop", "Telemetry",
         // Workspace surface (see src/OpenClaw.Tray.WinUI/Pages/WorkspacePage.xaml).
         "Workspace",
     };
@@ -41,8 +40,7 @@ public sealed class FluentIconCatalogTests
 
     private static IDictionary<string, string> ParseConstants(string source)
     {
-        // Matches:   public const string Name = "\uXXXX";   or
-        //            public const string Name = "🦞";
+        // Matches:   public const string Name = "\uXXXX";
         var rx = new Regex(
             @"public\s+const\s+string\s+(?<name>\w+)\s*=\s*""(?<value>(?:\\u[0-9A-Fa-f]{4}|[^""\\]|\\.)*)"";",
             RegexOptions.Compiled);
@@ -74,9 +72,6 @@ public sealed class FluentIconCatalogTests
         var map = ParseConstants(src);
         foreach (var name in ExpectedConstants)
         {
-            if (name == "Brand")
-                continue; // Brand is an emoji surrogate pair by design.
-
             Assert.True(map.TryGetValue(name, out var value),
                 $"FluentIconCatalog.{name} not found in source");
             Assert.True(value!.Length == 1,
@@ -93,6 +88,45 @@ public sealed class FluentIconCatalogTests
         var src = ReadCatalogSource();
         Assert.Contains("public static FontIcon Build", src);
         Assert.Contains("SymbolThemeFontFamily", src);
+    }
+
+    [Fact]
+    public void NativeWinUiSources_DoNotHardcodeSegoeFluentIcons()
+    {
+        var repositoryRoot = TestRepositoryPaths.GetRepositoryRoot();
+        var sourceRoots = new[]
+        {
+            Path.Combine(repositoryRoot, "src", "OpenClaw.Tray.WinUI"),
+            Path.Combine(repositoryRoot, "src", "OpenClaw.SetupEngine.UI"),
+        };
+        var hardcodedIconFont = new Regex(
+            @"FontFamily\s*\(\s*""Segoe Fluent Icons""\s*\)|FontFamily\s*=\s*""Segoe Fluent Icons""",
+            RegexOptions.Compiled);
+
+        var offenders = sourceRoots
+            .SelectMany(sourceRoot => Directory
+                .EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
+                .Where(path => path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)
+                    || path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase))
+                .Where(path => !IsBuildArtifact(sourceRoot, path)))
+            .SelectMany(path => File.ReadLines(path)
+                .Select((line, index) => (path, line, lineNumber: index + 1)))
+            .Where(item => hardcodedIconFont.IsMatch(item.line))
+            .Select(item => $"{Path.GetRelativePath(repositoryRoot, item.path)}:{item.lineNumber}")
+            .ToArray();
+
+        Assert.True(
+            offenders.Length == 0,
+            "Use the SymbolThemeFontFamily theme resource/property so icon glyphs fall back to Segoe MDL2 Assets on Windows 10:"
+            + Environment.NewLine
+            + string.Join(Environment.NewLine, offenders));
+
+        static bool IsBuildArtifact(string sourceRoot, string path)
+        {
+            var relative = Path.GetRelativePath(sourceRoot, path);
+            return relative.StartsWith($"bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                || relative.StartsWith($"obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+        }
     }
 
 }
@@ -112,11 +146,27 @@ public sealed class TrayMenuPopupCompositionTests
         return File.ReadAllText(path);
     }
 
-    private static string ReadStateBuilder()
+    private static string ReadRenderer()
     {
         var path = Path.Combine(
             TestRepositoryPaths.GetRepositoryRoot(),
-            "src", "OpenClaw.Tray.WinUI", "Services", "TrayMenuStateBuilder.cs");
+            "src", "OpenClaw.Tray.WinUI", "Services", "TrayMenuRenderer.cs");
+        return File.ReadAllText(path);
+    }
+
+    private static string ReadTrayController()
+    {
+        var path = Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Services", "TrayController.cs");
+        return File.ReadAllText(path);
+    }
+
+    private static string ReadPresenter()
+    {
+        var path = Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Presentation", "TrayMenuPresenter.cs");
         return File.ReadAllText(path);
     }
 
@@ -145,7 +195,7 @@ public sealed class TrayMenuPopupCompositionTests
     [Fact]
     public void BuildTrayMenuPopup_UsesThemeBrushes()
     {
-        var src = ReadStateBuilder();
+        var src = ReadRenderer();
         Assert.Contains("SystemFillColorSuccessBrush", src);
         Assert.Contains("SystemFillColorCautionBrush", src);
         Assert.Contains("SystemFillColorNeutralBrush", src);
@@ -155,12 +205,12 @@ public sealed class TrayMenuPopupCompositionTests
     [Fact]
     public void BuildTrayMenuPopup_SectionOrder_GatewayThenDevicesThenSessions()
     {
-        var src = ReadStateBuilder();
-        var gateway = src.IndexOf("// ── Gateway Section ──", StringComparison.Ordinal);
-        var devices = src.IndexOf("// ── Connected Devices (moved above Sessions) ──", StringComparison.Ordinal);
-        var sessions = src.IndexOf("// ── Sessions (now below Devices) ──", StringComparison.Ordinal);
-        var actions = src.IndexOf("// ── Actions ──", StringComparison.Ordinal);
-        var footer = src.IndexOf("// ── Footer ──", StringComparison.Ordinal);
+        var src = ReadPresenter();
+        var gateway = src.IndexOf("items.Add(BuildGatewayCard(", StringComparison.Ordinal);
+        var devices = src.IndexOf("items.Add(BuildDeviceCard(", StringComparison.Ordinal);
+        var sessions = src.IndexOf("items.Add(BuildSessionsSummary(", StringComparison.Ordinal);
+        var actions = src.IndexOf("items.Add(Action(\"Dashboard\"", StringComparison.Ordinal);
+        var footer = src.IndexOf("\"Companion Settings...\"", StringComparison.Ordinal);
 
         Assert.True(gateway > 0, "Gateway section marker missing");
         Assert.True(devices > gateway, "Devices must follow Gateway");
@@ -172,22 +222,22 @@ public sealed class TrayMenuPopupCompositionTests
     [Fact]
     public void BuildTrayMenuPopup_EmitsPermissionsSubmenuForLocalDevice()
     {
-        var src = ReadStateBuilder();
-        Assert.Contains("BuildPermissionsFlyoutItems", src);
-        Assert.Contains("FluentIconCatalog.Permissions", src);
+        var src = ReadPresenter();
+        Assert.Contains("BuildPermissions(settings)", src);
+        Assert.Contains("Icon = TrayMenuIconIdentity.Permissions", src);
     }
 
     [Fact]
     public void BuildTrayMenuPopup_RoutesAboutAction()
     {
-        Assert.Contains("\"About\", FluentIconCatalog.Build(FluentIconCatalog.About), \"about\"", ReadStateBuilder());
+        Assert.Contains("Action(\"About\", TrayMenuIconIdentity.About, \"about\")", ReadPresenter());
         Assert.Contains("case \"about\":", ReadAppXaml());
     }
 
     [Fact]
     public void BuildTrayMenuPopup_BatchesUpdates()
     {
-        var src = ReadAppXaml();
+        var src = ReadTrayController();
         Assert.Contains("menu.BeginUpdate();", src);
         Assert.Contains("menu.EndUpdate();", src);
     }
@@ -237,17 +287,19 @@ public sealed class TrayMenuPopupCompositionTests
     public void HubWindow_NavigateTo_Normalizes_LegacyNodesTag_BeforeSelectingNavItem()
     {
         var src = ReadHubWindowXaml();
+        var registry = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Presentation", "HubPageRegistry.cs"));
 
         // Legacy "nodes" deep links must still land on the Instances rail
-        // item. The normalization rule lives in NormalizeNavTag, which
-        // NavigateTo applies before handing the tag to NavigateInternal
+        // item. NavigateTo applies the registry normalization before NavigateInternal
         // (which is what actually highlights the rail item via
         // FindNavItemForTag and calls Frame.Navigate).
-        var aliasIndex = src.IndexOf("if (tag == \"nodes\") return \"instances\";", StringComparison.Ordinal);
-        var funnelIndex = src.IndexOf("NavigateInternal(NormalizeNavTag(tag))", StringComparison.Ordinal);
+        var aliasIndex = registry.IndexOf("\"nodes\" => \"instances\"", StringComparison.Ordinal);
+        var funnelIndex = src.IndexOf("NavigateInternal(HubPageRegistry.NormalizeTag(tag, _currentAgentId))", StringComparison.Ordinal);
         var selectIndex = src.IndexOf("FindNavItemForTag(NavView.MenuItems, tag)", StringComparison.Ordinal);
 
-        Assert.True(aliasIndex >= 0, "NormalizeNavTag must keep legacy 'nodes' deep links pointing at 'instances'.");
+        Assert.True(aliasIndex >= 0, "HubPageRegistry must keep legacy 'nodes' deep links pointing at 'instances'.");
         Assert.True(funnelIndex >= 0, "NavigateTo must normalize the tag before routing through NavigateInternal.");
         Assert.True(selectIndex >= 0, "NavigateInternal must select a nav item by tag before falling back to direct navigation.");
     }

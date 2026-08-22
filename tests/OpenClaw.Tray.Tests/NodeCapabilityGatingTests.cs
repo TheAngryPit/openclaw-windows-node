@@ -86,6 +86,18 @@ public sealed class NodeCapabilityGatingTests : IDisposable
         Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(s, sharedGatewayToken: "   ", hasGatewayClient: true));
         Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(s, sharedGatewayToken: "shared-token", hasGatewayClient: false));
         Assert.True(NodeCapabilityGating.ShouldRegisterBrowserProxy(s, sharedGatewayToken: "shared-token", hasGatewayClient: true));
+        Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(
+            s,
+            sharedGatewayToken: "shared-token",
+            hasGatewayClient: true,
+            browserEndpointVerified: false));
+        Assert.Equal(
+            BrowserProxyActivation.RegistrationBlock.UnverifiedBrowserEndpoint,
+            NodeCapabilityGating.ResolveBrowserProxyRegistrationBlock(
+                s,
+                sharedGatewayToken: "shared-token",
+                hasGatewayClient: true,
+                browserEndpointVerified: false));
     }
 
     [Fact]
@@ -164,6 +176,89 @@ public sealed class NodeCapabilityGatingTests : IDisposable
         Assert.False(NodeCapabilityGating.ShouldRegisterLocation(s));
         Assert.False(NodeCapabilityGating.ShouldRegisterBrowserProxy(s));
         Assert.False(NodeCapabilityGating.ShouldRegisterSystemRun(s));
+    }
+
+    // ── CountMcpServedCapabilities ────────────────────────────────────────────
+
+    [Fact]
+    public void CountMcpServed_Defaults_AreSixCapabilities()
+    {
+        var s = NewSettings();
+        Assert.Equal(6, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void CountMcpServed_NullSettings_AreSix()
+    {
+        Assert.Equal(6, NodeCapabilityGating.CountMcpServedCapabilities(null));
+    }
+
+    [Fact]
+    public void CountMcpServed_ExcludesBrowserProxy()
+    {
+        var s = NewSettings();
+        var before = NodeCapabilityGating.CountMcpServedCapabilities(s);
+        s.NodeBrowserProxyEnabled = false;
+        Assert.Equal(before, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void CountMcpServed_SystemAndDeviceAlwaysCounted_EvenWhenSystemRunDisabled()
+    {
+        var s = NewSettings();
+        s.NodeCanvasEnabled = false;
+        s.NodeScreenEnabled = false;
+        s.NodeCameraEnabled = false;
+        s.NodeLocationEnabled = false;
+        s.NodeBrowserProxyEnabled = false;
+        s.NodeSystemRunEnabled = false;
+        s.NodeTtsEnabled = false;
+        s.NodeSttEnabled = false;
+        Assert.Equal(2, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void CountMcpServed_OptInCapabilities_IncrementCount()
+    {
+        var s = NewSettings();
+        var baseline = NodeCapabilityGating.CountMcpServedCapabilities(s);
+        s.NodeTtsEnabled = true;
+        s.NodeSttEnabled = true;
+        Assert.Equal(baseline + 2, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void McpOnlyRestart_CameraDisabledWhileStoppedUsesFreshCompleteSet()
+    {
+        var s = NewSettings();
+        Assert.True(NodeCapabilityGating.ShouldRegisterCamera(s));
+        Assert.Equal(6, NodeCapabilityGating.CountMcpServedCapabilities(s));
+
+        s.NodeCameraEnabled = false;
+        var plan = McpRuntimeStatePolicy.PlanCapabilityEnable(
+            hasGatewayClient: false,
+            hasCapabilities: true);
+
+        Assert.Equal(McpCapabilityEnablePlan.RebuildFromCurrentSettings, plan);
+        Assert.False(NodeCapabilityGating.ShouldRegisterCamera(s));
+        Assert.Equal(5, NodeCapabilityGating.CountMcpServedCapabilities(s));
+    }
+
+    [Fact]
+    public void McpOnlyRestart_CameraRestoredWhileStoppedUsesFreshCompleteSet()
+    {
+        var s = NewSettings();
+        s.NodeCameraEnabled = false;
+        Assert.Equal(5, NodeCapabilityGating.CountMcpServedCapabilities(s));
+
+        s.NodeCameraEnabled = true;
+        var plan = McpRuntimeStatePolicy.PlanCapabilityEnable(
+            hasGatewayClient: false,
+            hasCapabilities: true);
+
+        Assert.Equal(McpCapabilityEnablePlan.RebuildFromCurrentSettings, plan);
+        Assert.True(NodeCapabilityGating.ShouldRegisterCamera(s));
+        Assert.Equal(6, NodeCapabilityGating.CountMcpServedCapabilities(s));
     }
 
     // ── GetLocalNodeCapabilities ──────────────────────────────────────────────

@@ -9,27 +9,14 @@
     <Grid HorizontalAlignment="Stretch">
         <StackPanel Padding="24" Spacing="8" HorizontalAlignment="Stretch" MaxWidth="900">
 
-            <TextBlock x:Uid="VoiceSettingsPage_PageTitle" x:Name="PageTitleText" Text="Voice &amp; Audio" Style="{StaticResource TitleTextBlockStyle}"/>
+            <TextBlock x:Uid="VoiceSettingsPage_PageTitle" x:Name="PageTitleText" Text="Voice &amp; Audio"
+                       AutomationProperties.AutomationId="VoiceSettingsPageMarker"
+                       Style="{StaticResource TitleTextBlockStyle}"/>
             <TextBlock x:Uid="VoiceSettingsPage_PageDescription" x:Name="PageDescriptionText"
                        Text="Configure speech-to-text and voice interaction settings. All speech processing runs locally on your device."
                        Style="{StaticResource CaptionTextBlockStyle}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                        TextWrapping="Wrap" Margin="0,0,0,8"/>
-
-            <!-- Enable STT -->
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="16">
-                <StackPanel Spacing="8">
-                    <TextBlock x:Uid="VoiceSettingsPage_SttHeader" x:Name="SttHeaderText" Text="Speech-to-Text" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                    <TextBlock x:Uid="VoiceSettingsPage_SttDescription" x:Name="SttDescriptionText"
-                               Text="Enable voice input via microphone. Requires a Whisper model download."
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
-                    <ToggleSwitch x:Uid="VoiceSettingsPage_SttEnabledToggle" x:Name="SttEnabledToggle" Toggled="OnSttToggled"
-                                  Header="Enable Voice Input"/>
-                </StackPanel>
-            </Border>
 
             <!-- Model Management -->
             <Border x:Name="ModelCard"
@@ -38,6 +25,34 @@
                     BorderThickness="1" CornerRadius="8" Padding="16">
                 <StackPanel Spacing="12">
                     <TextBlock x:Uid="VoiceSettingsPage_ModelHeader" x:Name="ModelHeaderText" Text="Speech Model" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                    <Border x:Name="SttCapabilityNotice"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="12"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon x:Name="SttCapabilityNoticeIcon"
+                                      Glyph="&#xE7BA;"
+                                      FontSize="14"
+                                      Margin="0,1,0,0"
+                                      VerticalAlignment="Top"
+                                      Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                      AutomationProperties.AccessibilityView="Raw"/>
+                            <StackPanel Spacing="6">
+                                <TextBlock x:Uid="VoiceSettingsPage_SttCapabilityDisabledNotice"
+                                           Text="Speech-to-text is disabled. Configure models here, then enable the capability in Permissions when you're ready."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap"/>
+                                <HyperlinkButton x:Uid="VoiceSettingsPage_OpenPermissionsLink"
+                                                 Content="Open Permissions"
+                                                 Click="OnOpenPermissionsClick"
+                                                 Padding="0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
                     <TextBlock x:Uid="VoiceSettingsPage_ModelRequirementText" x:Name="ModelRequirementText"
                                Text="Voice input is not ready until at least one speech model is downloaded."
                                Style="{StaticResource CaptionTextBlockStyle}"
@@ -46,13 +61,14 @@
 
                     <ComboBox x:Uid="VoiceSettingsPage_ModelCombo" x:Name="ModelCombo" Header="Model Size"
                               SelectionChanged="OnModelChanged" Width="320">
-                        <ComboBoxItem x:Uid="VoiceSettingsPage_ModelTiny"  Content="Tiny (~75 MB) — Fast, basic accuracy" Tag="tiny"/>
-                        <ComboBoxItem x:Uid="VoiceSettingsPage_ModelBase"  Content="Base (~142 MB) — Good balance"        Tag="base"/>
-                        <ComboBoxItem x:Uid="VoiceSettingsPage_ModelSmall" Content="Small (~466 MB) — High accuracy"      Tag="small"/>
+                        <ComboBoxItem x:Uid="VoiceSettingsPage_ModelTiny"  Content="Tiny (~75 MB): Fast, basic accuracy" Tag="tiny"/>
+                        <ComboBoxItem x:Uid="VoiceSettingsPage_ModelBase"  Content="Base (~142 MB): Good balance"        Tag="base"/>
+                        <ComboBoxItem x:Uid="VoiceSettingsPage_ModelSmall" Content="Small (~466 MB): High accuracy"      Tag="small"/>
                     </ComboBox>
 
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <Button x:Name="DownloadButton" Click="OnDownloadClick"
+                                AutomationProperties.LabeledBy="{Binding ElementName=DownloadButtonText}"
                                 Style="{StaticResource AccentButtonStyle}">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon Glyph="&#xE896;" FontSize="14"/>
@@ -68,6 +84,7 @@
                                  Minimum="0" Maximum="100"/>
 
                     <Button x:Name="TestVoiceButton" Click="OnTestVoiceClick"
+                            AutomationProperties.LabeledBy="{Binding ElementName=TestVoiceButtonText}"
                             Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon x:Name="TestVoiceBtnIcon" Glyph="&#xE720;" FontSize="14"/>
@@ -100,6 +117,7 @@
                             <!-- Centered buttons -->
                             <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
                                 <Button x:Name="InlineTestStartBtn" Click="OnInlineTestStartClick"
+                                        AutomationProperties.LabeledBy="{Binding ElementName=InlineTestBtnLabel}"
                                         Style="{StaticResource AccentButtonStyle}" Padding="12,8">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
                                         <FontIcon x:Name="InlineTestBtnIcon" Glyph="&#xE720;" FontSize="14"/>
@@ -122,7 +140,7 @@
                     BorderThickness="1" CornerRadius="8" Padding="16">
                 <StackPanel Spacing="8">
                     <TextBlock x:Uid="VoiceSettingsPage_LanguageHeader" x:Name="LanguageHeaderText" Text="Language" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                    <ComboBox x:Name="LanguageCombo"
+                    <ComboBox x:Uid="VoiceSettingsPage_LanguageCombo" x:Name="LanguageCombo"
                               SelectionChanged="OnLanguageChanged" Width="200">
                         <ComboBoxItem x:Uid="VoiceSettingsPage_LangAuto" Content="Auto-detect" Tag="auto"/>
                         <ComboBoxItem x:Uid="VoiceSettingsPage_LangEn"   Content="English"     Tag="en"/>
@@ -168,6 +186,34 @@
                                Text="Choose the voice used when reading responses aloud."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
+                    <Border x:Name="TtsCapabilityNotice"
+                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="12"
+                            Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon x:Name="TtsCapabilityNoticeIcon"
+                                      Glyph="&#xE7BA;"
+                                      FontSize="14"
+                                      Margin="0,1,0,0"
+                                      VerticalAlignment="Top"
+                                      Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                      AutomationProperties.AccessibilityView="Raw"/>
+                            <StackPanel Spacing="6">
+                                <TextBlock x:Uid="VoiceSettingsPage_TtsCapabilityDisabledNotice"
+                                           Text="Text-to-speech is disabled. Configure providers and voices here, then enable the capability in Permissions when you're ready."
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap"/>
+                                <HyperlinkButton x:Uid="VoiceSettingsPage_OpenPermissionsLink"
+                                                 Content="Open Permissions"
+                                                 Click="OnOpenPermissionsClick"
+                                                 Padding="0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
 
                     <ComboBox x:Uid="VoiceSettingsPage_TtsProviderCombo" x:Name="TtsProviderCombo" Header="Provider"
                               SelectionChanged="OnTtsProviderChanged" Width="360">
@@ -182,6 +228,7 @@
                                   SelectionChanged="OnPiperVoiceChanged" Width="400"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button x:Name="PiperDownloadButton" Click="OnPiperDownloadClick"
+                                    AutomationProperties.LabeledBy="{Binding ElementName=PiperDownloadButtonText}"
                                     Width="180" MinHeight="32">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon x:Name="PiperDownloadIcon" Glyph="&#xE896;" FontSize="14"/>
@@ -191,6 +238,7 @@
                             <Button x:Uid="VoiceSettingsPage_PiperDeleteButton" x:Name="PiperDeleteButton" Click="OnPiperDeleteClick"
                                     Content="Delete" Width="80" Visibility="Collapsed"/>
                             <Button x:Name="PiperPreviewButton" Click="OnPiperPreviewClick"
+                                    AutomationProperties.LabeledBy="{Binding ElementName=PiperPreviewLabel}"
                                     Width="100" Visibility="Collapsed">
                                 <StackPanel Orientation="Horizontal" Spacing="6">
                                     <FontIcon x:Name="PiperPreviewIcon" Glyph="&#xE768;" FontSize="14"/>
@@ -214,6 +262,7 @@
                         <ComboBox x:Uid="VoiceSettingsPage_WindowsVoiceCombo" x:Name="WindowsVoiceCombo" Header="Voice"
                                   SelectionChanged="OnWindowsVoiceChanged" Width="300"/>
                         <Button x:Name="PreviewVoiceButton" Click="OnPreviewVoiceClick"
+                                AutomationProperties.LabeledBy="{Binding ElementName=PreviewVoiceLabel}"
                                 Width="140">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <FontIcon x:Name="PreviewVoiceIcon" Glyph="&#xE768;" FontSize="14"/>

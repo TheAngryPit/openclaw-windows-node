@@ -1,10 +1,11 @@
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OpenClaw.Shared.ExecApprovals;
 
 /// <summary>
 /// Default V2 handler: always returns <see cref="ExecApprovalV2Code.Unavailable"/>.
-/// Keeps the V2 path inert until a real handler is installed (rail 19).
+/// Keeps the V2 path inert until a real handler is installed.
 /// Never throws, never falls through to legacy.
 /// </summary>
 public sealed class ExecApprovalV2NullHandler : IExecApprovalV2Handler
@@ -13,4 +14,11 @@ public sealed class ExecApprovalV2NullHandler : IExecApprovalV2Handler
 
     public Task<ExecApprovalV2Result> HandleAsync(OpenClaw.Shared.NodeInvokeRequest request, string correlationId)
         => Task.FromResult(ExecApprovalV2Result.Unavailable());
+
+    public ValueTask<ExecApprovalRevalidationResult> RevalidateAsync(
+        ExecApprovedExecution execution,
+        string correlationId,
+        CancellationToken cancellationToken = default)
+        => ValueTask.FromResult(
+            ExecApprovalRevalidationResult.NotCurrent("handler-not-available"));
 }

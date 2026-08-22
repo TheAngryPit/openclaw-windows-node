@@ -1,9 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Numerics;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using OpenClaw.Shared.Telemetry;
 
 namespace OpenClaw.Shared.Mcp;
 
@@ -15,11 +19,17 @@ namespace OpenClaw.Shared.Mcp;
 public class McpToolBridge
 {
     private const string ProtocolVersion = "2024-11-05";
+    private static readonly TimeSpan PendingCancellationTtl = TimeSpan.FromSeconds(5);
+    private const int MaxPendingCancellations = 1_024;
+    private const int MaxRecentCompletions = 1_024;
 
     private readonly Func<IReadOnlyList<INodeCapability>> _capabilityProvider;
     private readonly IOpenClawLogger _logger;
     private readonly string _serverName;
     private readonly string _serverVersion;
+    private readonly InvocationCancellationRegistry _activeRequests;
+
+    public event EventHandler<NodeToolTelemetryCompletion>? ToolTelemetryCompleted;
 
     private static readonly JsonSerializerOptions PayloadJsonOptions = new()
     {
@@ -31,11 +41,32 @@ public class McpToolBridge
         IOpenClawLogger? logger = null,
         string serverName = "openclaw-tray-mcp",
         string serverVersion = "0.0.0")
+        : this(
+            capabilityProvider,
+            logger,
+            serverName,
+            serverVersion,
+            new InvocationCancellationRegistry(
+                allowDuplicateIds: true,
+                pendingCancellationTtl: PendingCancellationTtl,
+                maxPendingCancellations: MaxPendingCancellations,
+                maxRecentCompletions: MaxRecentCompletions,
+                timeProvider: TimeProvider.System))
+    {
+    }
+
+    internal McpToolBridge(
+        Func<IReadOnlyList<INodeCapability>> capabilityProvider,
+        IOpenClawLogger? logger,
+        string serverName,
+        string serverVersion,
+        InvocationCancellationRegistry activeRequests)
     {
         _capabilityProvider = capabilityProvider ?? throw new ArgumentNullException(nameof(capabilityProvider));
         _logger = logger ?? NullLogger.Instance;
         _serverName = serverName;
         _serverVersion = serverVersion;
+        _activeRequests = activeRequests ?? throw new ArgumentNullException(nameof(activeRequests));
     }
 
     /// <summary>
@@ -49,10 +80,20 @@ public class McpToolBridge
     /// Dispatch a JSON-RPC request body, observing a cancellation token (used
     /// by the HTTP transport to enforce a per-request deadline). When the
     /// token fires during a tool dispatch, the call surfaces as a tool error
-    /// ("request timed out") so the slot is freed even if the underlying
-    /// capability work continues to run.
+    /// ("request timed out"). MCP <c>notifications/cancelled</c> messages
+    /// cancel the matching active request and surface as "cancelled".
     /// </summary>
     public async Task<string?> HandleRequestAsync(string requestBody, CancellationToken cancellationToken)
+    {
+        var response = await HandleTransportRequestAsync(requestBody, cancellationToken);
+        response.CompleteDelivery();
+        return response.Body;
+    }
+
+    internal async Task<McpTransportResponse> HandleTransportRequestAsync(
+        string requestBody,
+        CancellationToken cancellationToken,
+        ActivityContext linkedContext = default)
     {
         JsonDocument doc;
         try
@@ -61,27 +102,44 @@ public class McpToolBridge
         }
         catch (JsonException ex)
         {
-            return WriteError(null, JsonRpcErrorCode.ParseError, $"Parse error: {ex.Message}");
+            return new McpTransportResponse(
+                WriteError(null, JsonRpcErrorCode.ParseError, $"Parse error: {ex.Message}"),
+                null);
         }
 
         using (doc)
         {
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
-                return WriteError(null, JsonRpcErrorCode.InvalidRequest, "Request must be a JSON object");
+            {
+                return new McpTransportResponse(
+                    WriteError(null, JsonRpcErrorCode.InvalidRequest, "Request must be a JSON object"),
+                    null);
+            }
 
             var idElement = root.TryGetProperty("id", out var idProp) ? idProp : (JsonElement?)null;
             var hasId = idElement.HasValue && idElement.Value.ValueKind != JsonValueKind.Null;
 
             if (!root.TryGetProperty("method", out var methodProp) || methodProp.ValueKind != JsonValueKind.String)
             {
-                return hasId
-                    ? WriteError(idElement, JsonRpcErrorCode.InvalidRequest, "Missing 'method'")
-                    : null;
+                return new McpTransportResponse(
+                    hasId
+                        ? WriteError(idElement, JsonRpcErrorCode.InvalidRequest, "Missing 'method'")
+                        : null,
+                    null);
             }
 
             var method = methodProp.GetString()!;
             var paramsElement = root.TryGetProperty("params", out var p) ? p : default;
+            var invocation = string.Equals(method, "tools/call", StringComparison.Ordinal)
+                ? new NodeToolInvocation(NodeToolTransport.Mcp, linkedContext)
+                : null;
+            NodeToolOutcome terminalOutcome = NodeToolOutcome.Success;
+            NodeToolErrorCategory terminalCategory = NodeToolErrorCategory.None;
+            NodeToolExecutionMode? terminalExecutionMode = null;
+            Type? terminalErrorType = null;
+            string? responseBody;
+            var requestKey = hasId ? GetRequestKey(idElement!.Value) : null;
 
             try
             {
@@ -90,8 +148,13 @@ public class McpToolBridge
                     "initialize" => HandleInitialize(),
                     "ping" => new { },
                     "notifications/initialized" => null,
+                    "notifications/cancelled" => HandleCancelledNotification(paramsElement),
                     "tools/list" => HandleToolsList(),
-                    "tools/call" => await HandleToolsCallAsync(paramsElement, cancellationToken),
+                    "tools/call" => await HandleToolsCallAsync(
+                        paramsElement,
+                        requestKey,
+                        cancellationToken,
+                        invocation!),
                     // Some clients (notably Cursor) probe these on startup. Returning
                     // empty lists is friendlier than MethodNotFound — both feature sets
                     // are deferred but compatible by being absent rather than failing.
@@ -100,30 +163,68 @@ public class McpToolBridge
                     _ => throw new McpMethodNotFoundException(method),
                 };
 
-                if (!hasId) return null; // notification — no response
-                return WriteResult(idElement, result ?? new { });
+                if (result is McpToolCallResult toolCall)
+                {
+                    result = toolCall.Result;
+                    if (toolCall.Diagnostic != null)
+                    {
+                        terminalOutcome = NodeToolOutcome.Failure;
+                        terminalCategory = toolCall.Diagnostic.ErrorCategory;
+                        terminalExecutionMode = toolCall.Diagnostic.ExecutionMode;
+                    }
+                }
+
+                responseBody = hasId ? WriteResult(idElement, result ?? new { }) : null;
             }
             catch (McpMethodNotFoundException ex)
             {
-                return hasId
+                responseBody = hasId
                     ? WriteError(idElement, JsonRpcErrorCode.MethodNotFound, ex.Message)
                     : null;
             }
             catch (McpToolException ex)
             {
-                return hasId
+                terminalOutcome = ex.Outcome;
+                terminalCategory = ex.ErrorCategory;
+                terminalExecutionMode = ex.ExecutionMode;
+                terminalErrorType = ex.ErrorType;
+                responseBody = hasId
                     ? WriteToolError(idElement, ex.Message)
+                    : null;
+            }
+            catch (McpCapabilityException ex)
+            {
+                terminalOutcome = NodeToolOutcome.Failure;
+                terminalCategory = NodeToolErrorCategory.CapabilityFailure;
+                terminalErrorType = ex.InnerException?.GetType() ?? ex.GetType();
+                _logger.Error($"[MCP] Handler error for {method}", ex.InnerException ?? ex);
+                responseBody = hasId
+                    ? WriteError(idElement, JsonRpcErrorCode.InternalError, "internal error")
                     : null;
             }
             catch (Exception ex)
             {
+                terminalOutcome = NodeToolOutcome.Failure;
+                terminalCategory = NodeToolErrorCategory.InternalFailure;
+                terminalErrorType = ex.GetType();
                 // Full exception with stack goes to the log; the wire response
                 // gets a generic message so we don't leak internals to clients.
                 _logger.Error($"[MCP] Handler error for {method}", ex);
-                return hasId
+                responseBody = hasId
                     ? WriteError(idElement, JsonRpcErrorCode.InternalError, "internal error")
                     : null;
             }
+
+            var pending = invocation == null
+                ? null
+                : new McpPendingToolTelemetry(
+                    this,
+                    invocation,
+                    terminalOutcome,
+                    terminalCategory,
+                    terminalExecutionMode,
+                    terminalErrorType);
+            return new McpTransportResponse(responseBody, pending);
         }
     }
 
@@ -187,15 +288,15 @@ public class McpToolBridge
         ["system.notify"] =
             "Show a Windows toast notification on the node. Args: title (string, default 'OpenClaw'), body (string), subtitle (string), sound (bool, default true). Returns { sent: true }.",
         ["system.run"] =
-            "Execute a shell command on the Windows node host. Args: command (string or string[] argv, required), args (string[]), shell (string), cwd (string), timeoutMs (int, default 30000), env (object). Subject to the local exec approval policy. Returns { stdout, stderr, exitCode, timedOut, durationMs }.",
+            "Execute canonical argv on the Windows node host. Args: command (string[] argv, required), rawCommand (string, optional display metadata), cwd (string), timeoutMs (int, default 30000). Non-empty custom env is not supported. Shell commands must name their wrapper explicitly, for example [\"cmd.exe\",\"/d\",\"/s\",\"/c\",\"echo hello\"]. Subject to the local exec approval policy. Returns { stdout, stderr, exitCode, timedOut, success, durationMs }.",
         ["system.run.prepare"] =
             "Pre-flight a system.run invocation: returns the parsed execution plan (argv, cwd, rawCommand, agentId, sessionKey) without running anything. The gateway uses this to build its approval context before the actual run.",
         ["system.which"] =
             "Resolve executable names to absolute paths by searching PATH (PATHEXT-aware on Windows). Args: bins (string[], required). Returns { bins: { name: resolvedPath, ... } } including only names that were found.",
         ["system.execApprovals.get"] =
-            "Return the current exec approval policy: { enabled, defaultAction ('allow'|'deny'|'prompt'), rules: [{ pattern, action, shells, description, enabled }, ...] }.",
+            "Return the V2 exec approvals snapshot: { path, exists, hash, file: { version, defaults: { security, ask, askFallback, autoAllowSkills }, agents: { agentId: { security, ask, askFallback, autoAllowSkills, allowlist: [{ id, pattern, lastUsedAt?, lastResolvedPath? }] } } } }. Socket credentials are redacted. Pass hash as baseHash to system.execApprovals.set.",
         ["system.execApprovals.set"] =
-            "Replace the exec approval policy. Args: rules (array of { pattern, action, shells?, description?, enabled? }), defaultAction (string, optional). Persisted to disk; used by future system.run calls.",
+            "Replace the V2 exec approvals file using compare-and-swap. Args: baseHash (required hash from system.execApprovals.get), file (required full { version, defaults, agents } object). Remote updates may preserve or remove existing allowlist grants but cannot add or change grants or set full access. Returns the updated { path, exists, hash, file } snapshot.",
 
         // canvas.* — agent-controlled WebView2 panel for HTML/CSS/JS, A2UI, and small interactive UI surfaces.
         ["canvas.present"] =
@@ -217,7 +318,7 @@ public class McpToolBridge
         ["canvas.caps"] =
             "Report the A2UI feature flags this canvas runtime supports (component catalog, max surfaces, render depth, value-size caps). Diagnostic; no side effects.",
         ["canvas.a2ui.pushJSONL"] =
-            "Streaming variant of canvas.a2ui.push for very large surfaces. Same protocol contract; jsonlPath argument must live under the system temp directory and is opened via FileStream + GetFinalPathNameByHandle to defeat reparse-point traversal.",
+            "Alias of canvas.a2ui.push with the same size/line caps and jsonl/jsonlPath contract. Provided for naming parity; there is no separate streaming path.",
 
         // screen.* — names match the canonical OpenClaw protocol
         // (apps/shared/OpenClawKit/Sources/OpenClawKit/ScreenCommands.swift).
@@ -247,13 +348,15 @@ public class McpToolBridge
 
         // tts.*
         ["tts.speak"] =
-            "Speak text aloud on the Windows node. Args: text (string, required), provider ('piper'|'windows'|'elevenlabs', optional — falls back to the configured TtsProvider setting, default 'piper' for fresh installs), voiceId (string, optional — overrides the per-provider configured voice), model (string, optional, ElevenLabs only), interrupt (bool, default false — interrupts any in-progress playback). Returns { spoken, provider, contentType, durationMs }.",
+            "Speak text aloud on the Windows node. Args: text (string, required), provider ('piper'|'windows'|'elevenlabs', optional — omit to use the configured TtsProvider setting, default 'piper' for fresh installs), voiceId (string, optional — overrides the per-provider configured voice), model (string, optional, ElevenLabs only), interrupt (bool, default false — interrupts any in-progress playback). When provider is omitted and the configured provider isn't usable (no ElevenLabs key, Piper voice not downloaded), the node falls back to Windows TTS so playback still happens. Explicit provider requests stay strict and do not silently reroute. Returns { spoken, provider (the provider that actually spoke), requestedProvider, fellBack, contentType, durationMs }.",
+        ["tts.status"] =
+            "Report TTS provider readiness. No args. Returns { configuredProvider, effectiveProvider (the provider that would run now after fallback), willFallBack (bool), providers: [{ provider ('piper'|'windows'|'elevenlabs'), readiness ('ready'|'needs-api-key'|'needs-voice'|'voice-not-downloaded'|'unavailable'), isReady (bool) }] }. Carries no PII (no voice ids, no key fragments, no device names). Requires NodeTtsEnabled.",
 
         // app.*
         ["app.navigate"] =
             "Navigate the companion app to a specific page (e.g., 'home', 'sessions', 'settings'). Args: page (string, required). Returns { navigated, page }.",
         ["app.status"] =
-            "Get current connection status, node state, and gateway info. Returns { connectionStatus, nodeConnected, nodePaired, nodePendingApproval, gatewayVersion, sessionCount, nodeCount }.",
+            "Get current connection status, manager-owned overall/operator/node state, and gateway info. Returns { connectionStatus, overallState, operatorState, nodeState, nodeConnected, nodePaired, nodePendingApproval, nodeError, gatewayVersion, sessionCount, nodeCount }.",
         ["app.sessions"] =
             "List active sessions with optional agent filter. Args: agentId (string, optional). Returns array of { Key, Status, Model, AgeText, tokens }.",
         ["app.agents"] =
@@ -265,13 +368,45 @@ public class McpToolBridge
         ["app.settings.get"] =
             "Read a local app setting by name. Args: name (string, required). Returns the setting value.",
         ["app.settings.set"] =
-            "Set a local app setting (name and value). Args: name (string, required), value (string, required). Returns { name, value }.",
+            "Set a local app setting (name and value), persist it, and apply the same reconnect/reload behavior as saving settings in the app UI. Args: name (string, required), value (string, required). Returns { name, value }; runtime apply failures surface as tool errors.",
         ["app.menu"] =
-            "Get tray menu state (status, session count, node count). Returns array of menu items.",
+            "Get tray menu state (status including overallState/nodeState/nodeError, session count, node count). Returns array of menu items.",
         ["app.search"] =
             "Search the command palette and return matching commands. Args: query (string, required). Returns array of { Title, Subtitle, Icon }.",
         ["app.dashboard.url"] =
             "Build the same gateway dashboard URL the tray opens. Args: path (string, optional). Returns { url, credentialSource, usesSharedGatewayToken, hasTokenQuery }.",
+        ["app.chat.snapshot"] =
+            "READ-ALL: Return the current native chat snapshot for local automation. Args: threadId/sessionKey (string, optional). Returns connection state, compose target, thread summaries, queued outgoing messages, and recent timeline entries including chat text.",
+        ["app.chat.send"] =
+            "Send a message through the native chat provider. Args: message (string, required), threadId/sessionKey (string, optional; defaults to the current compose/default thread). Returns { sent, threadId, entryCount, turnActive, error? }.",
+        ["app.chat.reset"] =
+            "Reset a chat session through the gateway sessions.reset path. Args: threadId/sessionKey (string, optional; defaults to the current compose/default thread, so no-arg reset clears the active chat). Returns { reset, threadId, error? }.",
+        ["app.chat.queue.list"] =
+            "READ-ALL: List native chat outgoing queue entries. Args: threadId/sessionKey (string, optional; omit to return all queued threads). Returns { defaultThreadId, requestedThreadId, totalCount, selectedThread, threads: [{ threadId, count, messages: [{ id, text, createdAt, sendState, errorText, canCancel }] }] }.",
+        ["app.chat.queue.cancel"] =
+            "Cancel/remove one native chat outgoing queue entry before it is sent. Args: queuedMessageId (string, required), threadId/sessionKey (string, required; use the threadId returned by app.chat.queue.list or app.chat.snapshot). Only Queued/Failed entries can be removed; Sending entries may already have reached the gateway. Returns { canceled, threadId, queuedMessageId, remainingCount, error? }.",
+        ["app.connection.status"] =
+            "READ-ONLY local MCP connection diagnostics. No args. Returns effective mode/state, installed Gateway package version, selected wire protocol and normalized compatibility details, active gateway metadata, operator/node credential resolution, MCP runtime state, browser proxy caveat, pending approval actions, retry hints, and recent diagnostic events.",
+        ["app.connection.gateways"] =
+            "READ-ONLY saved gateway diagnostics. No args. Returns { activeGatewayId, count, gateways[] } with per-gateway id/name/url, active flag, lastConnected, credential presence booleans, SSH/browser-proxy configuration, and no token values.",
+        ["app.connection.applySetupCode"] =
+            "Apply a setup/QR code to create or update the active gateway record and connect. Args: setupCode (string, required). Local MCP-only; not advertised to the gateway node transport. Returns { outcome, error, gatewayUrl, connected }.",
+        ["app.connection.connectSharedToken"] =
+            "Connect the tray to a gateway using a shared token. Args: gatewayUrl (string, required), token (string, required). Persists the gateway record and active gateway. Local MCP-only. Returns { outcome, error, gatewayUrl, connected }.",
+        ["app.connection.pendingApprovals"] =
+            "READ-ONLY pending pairing approval snapshot from the connected gateway. No args. Returns { connected, error, totalPending, devicePending[], nodePending[] }.",
+        ["app.connection.approveDevicePairing"] =
+            "Approve a pending device pairing request through the connected operator client. Args: requestId or id (string, required). Local MCP-only. Returns the refreshed pending approvals payload plus decision metadata.",
+        ["app.connection.rejectDevicePairing"] =
+            "Reject a pending device pairing request through the connected operator client. Args: requestId or id (string, required). Local MCP-only. Returns the refreshed pending approvals payload plus decision metadata.",
+        ["app.connection.approveNodePairing"] =
+            "Approve a pending Windows node pairing or command-trust request through the connected operator client. Args: requestId or id (string, required). Local MCP-only. Returns the refreshed pending approvals payload plus decision metadata.",
+        ["app.connection.rejectNodePairing"] =
+            "Reject a pending Windows node pairing or command-trust request through the connected operator client. Args: requestId or id (string, required). Local MCP-only. Returns the refreshed pending approvals payload plus decision metadata.",
+        ["app.connection.reconnect"] =
+            "Reconnect the active gateway through GatewayConnectionManager. No args. Local MCP-only. Returns { reconnected, error? }.",
+        ["app.connection.reconnectNode"] =
+            "Reconnect only the Windows node role for the active gateway through GatewayConnectionManager. No args. Local MCP-only. Returns { reconnected, error? }.",
 
         // location.*
         ["location.get"] =
@@ -288,24 +423,54 @@ public class McpToolBridge
             "Proxy an HTTP request to the local OpenClaw browser control host (CDP server) running on gateway port + 2. Args: path (string, required — a local control path like '/json/list' or '/json/activate/<id>'), method ('GET'|'POST'|'DELETE', default 'GET'), body (JSON object, POST/DELETE only), query (object, appended as query params), profile (string, optional browser profile), timeoutMs (int, default 20000, max 120000). Returns { result, files? } where files is present if the response included local file paths. Requires the gateway URL to have an explicit port and the browser control host to be running.",
     };
 
-    private async Task<object> HandleToolsCallAsync(JsonElement parameters, CancellationToken cancellationToken)
+    private object? HandleCancelledNotification(JsonElement parameters)
+    {
+        if (parameters.ValueKind != JsonValueKind.Object ||
+            !parameters.TryGetProperty("requestId", out var requestId) ||
+            requestId.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            _logger.Warn("[MCP] notifications/cancelled has no requestId");
+            return null;
+        }
+
+        var requestKey = GetRequestKey(requestId);
+        var result = _activeRequests.TryCancelOrRemember(requestKey);
+        _logger.Debug(result switch
+        {
+            InvocationCancellationResult.Cancelled => $"[MCP] Cancelled request {requestKey}",
+            InvocationCancellationResult.Pending => $"[MCP] Queued cancellation for request {requestKey}",
+            InvocationCancellationResult.Ambiguous => $"[MCP] Cancellation target is ambiguous: {requestKey}",
+            _ => $"[MCP] Cancellation target is not active: {requestKey}",
+        });
+        return null;
+    }
+
+    private async Task<McpToolCallResult> HandleToolsCallAsync(
+        JsonElement parameters,
+        string? requestKey,
+        CancellationToken cancellationToken,
+        NodeToolInvocation telemetry)
     {
         if (parameters.ValueKind != JsonValueKind.Object)
-            throw new McpToolException("Invalid params: expected object");
+            throw new McpToolException(
+                "Invalid params: expected object",
+                NodeToolErrorCategory.InvalidRequest);
 
         if (!parameters.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
-            throw new McpToolException("Missing 'name'");
+            throw new McpToolException("Missing 'name'", NodeToolErrorCategory.InvalidRequest);
 
         var name = nameProp.GetString()!;
         if (string.IsNullOrWhiteSpace(name))
-            throw new McpToolException("Empty tool name");
+            throw new McpToolException("Empty tool name", NodeToolErrorCategory.InvalidRequest);
 
         var args = parameters.TryGetProperty("arguments", out var argsProp) ? argsProp : default;
         if (args.ValueKind != JsonValueKind.Undefined
             && args.ValueKind != JsonValueKind.Null
             && args.ValueKind != JsonValueKind.Object)
         {
-            throw new McpToolException("'arguments' must be a JSON object if present");
+            throw new McpToolException(
+                "'arguments' must be a JSON object if present",
+                NodeToolErrorCategory.InvalidRequest);
         }
 
         var caps = _capabilityProvider();
@@ -317,13 +482,21 @@ public class McpToolBridge
             break;
         }
         if (capability == null)
-            throw new McpToolException($"Unknown tool: {name}");
+        {
+            throw new McpToolException(
+                $"Unknown tool: {name}",
+                NodeToolErrorCategory.UnsupportedCommand);
+        }
+        var canonicalName = capability.Commands.FirstOrDefault(
+            command => string.Equals(command, name, StringComparison.OrdinalIgnoreCase));
+        telemetry.SetCommand(canonicalName ?? "unknown");
 
         var request = new NodeInvokeRequest
         {
             Id = Guid.NewGuid().ToString(),
             Command = name,
             Args = args,
+            Telemetry = telemetry,
         };
 
         _logger.Debug($"[MCP] tools/call {name}");
@@ -332,32 +505,197 @@ public class McpToolBridge
         // their underlying pipeline on timeout; legacy capabilities fall back
         // to the no-CT signature and still benefit from WaitAsync freeing the
         // bridge's handler slot.
+        InvocationCancellationRegistry.InvocationCancellation? invocation = null;
+        if (requestKey != null &&
+            !_activeRequests.TryRegister(requestKey, cancellationToken, out invocation))
+        {
+            throw new McpToolException(
+                "duplicate active request id",
+                NodeToolErrorCategory.InvalidRequest);
+        }
+
+        var executionToken = invocation?.Token ?? cancellationToken;
+        var cancelledByCaller = false;
         NodeInvokeResponse response;
+        var executeActivity = telemetry.StartChild(NodeToolInvocation.ExecuteSpanName);
+        request.TelemetryParentContext = executeActivity?.Context ?? telemetry.Context;
         try
         {
-            response = await capability.ExecuteAsync(request, cancellationToken).WaitAsync(cancellationToken);
+            if (invocation?.CancelledByCaller == true)
+            {
+                NodeToolInvocation.CompleteChild(
+                    executeActivity,
+                    NodeToolOutcome.Canceled,
+                    NodeToolErrorCategory.Other);
+                throw new McpToolException(
+                    "cancelled",
+                    NodeToolErrorCategory.Other,
+                    outcome: NodeToolOutcome.Canceled);
+            }
+
+            response = await capability.ExecuteAsync(request, executionToken).WaitAsync(executionToken);
+            if (invocation != null && !invocation.TryComplete())
+            {
+                var callerCancelled = invocation.CancelledByCaller;
+                NodeToolInvocation.CompleteChild(
+                    executeActivity,
+                    NodeToolOutcome.Canceled,
+                    callerCancelled ? NodeToolErrorCategory.Other : NodeToolErrorCategory.Timeout);
+                throw new McpToolException(
+                    callerCancelled ? "cancelled" : "request timed out",
+                    callerCancelled ? NodeToolErrorCategory.Other : NodeToolErrorCategory.Timeout,
+                    outcome: NodeToolOutcome.Canceled);
+            }
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (invocation?.CancelledByCaller == true)
         {
+            NodeToolInvocation.CompleteChild(
+                executeActivity,
+                NodeToolOutcome.Canceled,
+                NodeToolErrorCategory.Other);
+            _logger.Info($"[MCP] tools/call {name} cancelled");
+            throw new McpToolException(
+                "cancelled",
+                NodeToolErrorCategory.Other,
+                outcome: NodeToolOutcome.Canceled);
+        }
+        catch (OperationCanceledException) when (executionToken.IsCancellationRequested)
+        {
+            NodeToolInvocation.CompleteChild(
+                executeActivity,
+                NodeToolOutcome.Canceled,
+                NodeToolErrorCategory.Timeout);
             _logger.Warn($"[MCP] tools/call {name} timed out");
-            throw new McpToolException("request timed out");
+            throw new McpToolException(
+                "request timed out",
+                NodeToolErrorCategory.Timeout,
+                outcome: NodeToolOutcome.Canceled);
+        }
+        catch (McpToolException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            NodeToolInvocation.CompleteChild(
+                executeActivity,
+                NodeToolOutcome.Failure,
+                NodeToolErrorCategory.CapabilityFailure,
+                errorType: ex.GetType());
+            throw new McpCapabilityException(ex);
+        }
+        finally
+        {
+            cancelledByCaller = invocation?.CancelledByCaller == true;
+            invocation?.Dispose();
         }
 
         if (!response.Ok)
-            throw new McpToolException(response.Error ?? "tool execution failed");
+        {
+            var diagnostic = response.Diagnostic ??
+                new NodeToolDiagnostic(NodeToolErrorCategory.CapabilityFailure);
+            var error = response.Error ?? "tool execution failed";
+            var outcome = NodeToolOutcome.Failure;
+            if (error == "cancelled" &&
+                executionToken.IsCancellationRequested &&
+                !cancelledByCaller)
+            {
+                error = "request timed out";
+                outcome = NodeToolOutcome.Canceled;
+                diagnostic = new NodeToolDiagnostic(
+                    NodeToolErrorCategory.Timeout,
+                    diagnostic.ExecutionMode,
+                    diagnostic.SandboxDenialReason);
+            }
+
+            NodeToolInvocation.CompleteChild(
+                executeActivity,
+                outcome,
+                diagnostic.ErrorCategory,
+                diagnostic.ExecutionMode,
+                sandboxDenialReason: diagnostic.SandboxDenialReason);
+            throw new McpToolException(
+                error,
+                diagnostic.ErrorCategory,
+                diagnostic.ExecutionMode,
+                outcome);
+        }
+
+        var responseOutcome = response.Diagnostic == null
+            ? NodeToolOutcome.Success
+            : NodeToolOutcome.Failure;
+        NodeToolInvocation.CompleteChild(
+            executeActivity,
+            responseOutcome,
+            response.Diagnostic?.ErrorCategory ?? NodeToolErrorCategory.None,
+            response.Diagnostic?.ExecutionMode,
+            sandboxDenialReason: response.Diagnostic?.SandboxDenialReason);
 
         var payloadJson = response.Payload is null
             ? "null"
             : JsonSerializer.Serialize(response.Payload, PayloadJsonOptions);
 
-        return new
-        {
-            content = new[]
+        return new McpToolCallResult(
+            new
             {
-                new { type = "text", text = payloadJson },
+                content = new[]
+                {
+                    new { type = "text", text = payloadJson },
+                },
+                isError = false,
             },
-            isError = false,
+            response.Diagnostic);
+    }
+
+    private static string GetRequestKey(JsonElement requestId) =>
+        requestId.ValueKind switch
+        {
+            JsonValueKind.String => $"string:{requestId.GetString()}",
+            JsonValueKind.Number => $"number:{NormalizeJsonNumber(requestId.GetRawText())}",
+            _ => $"{requestId.ValueKind}:{requestId.GetRawText()}",
         };
+
+    private static string NormalizeJsonNumber(string rawNumber)
+    {
+        var exponentIndex = rawNumber.IndexOfAny('e', 'E');
+        var mantissa = exponentIndex >= 0 ? rawNumber[..exponentIndex] : rawNumber;
+        var exponent = exponentIndex >= 0
+            ? BigInteger.Parse(
+                rawNumber.AsSpan(exponentIndex + 1),
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture)
+            : BigInteger.Zero;
+
+        var negative = mantissa[0] == '-';
+        if (negative)
+        {
+            mantissa = mantissa[1..];
+        }
+
+        var decimalIndex = mantissa.IndexOf('.');
+        var fractionalDigits = decimalIndex >= 0 ? mantissa.Length - decimalIndex - 1 : 0;
+        var digits = decimalIndex >= 0 ? mantissa.Remove(decimalIndex, 1) : mantissa;
+        exponent -= fractionalDigits;
+
+        digits = digits.TrimStart('0');
+        if (digits.Length == 0)
+        {
+            return "0";
+        }
+
+        var trailingZeros = 0;
+        while (digits.Length - trailingZeros > 1 && digits[^(trailingZeros + 1)] == '0')
+        {
+            trailingZeros++;
+        }
+
+        if (trailingZeros > 0)
+        {
+            digits = digits[..^trailingZeros];
+            exponent += trailingZeros;
+        }
+
+        return $"{(negative ? "-" : string.Empty)}{digits}e{exponent}";
     }
 
     private static string WriteResult(JsonElement? id, object result)
@@ -447,6 +785,96 @@ public class McpToolBridge
 
     private sealed class McpToolException : Exception
     {
-        public McpToolException(string message) : base(message) { }
+        public McpToolException(
+            string message,
+            NodeToolErrorCategory errorCategory,
+            NodeToolExecutionMode? executionMode = null,
+            NodeToolOutcome outcome = NodeToolOutcome.Failure,
+            Type? errorType = null)
+            : base(message)
+        {
+            ErrorCategory = errorCategory;
+            ExecutionMode = executionMode;
+            Outcome = outcome;
+            ErrorType = errorType;
+        }
+
+        public NodeToolErrorCategory ErrorCategory { get; }
+        public NodeToolExecutionMode? ExecutionMode { get; }
+        public NodeToolOutcome Outcome { get; }
+        public Type? ErrorType { get; }
+    }
+
+    private sealed class McpCapabilityException : Exception
+    {
+        public McpCapabilityException(Exception innerException)
+            : base("Capability execution failed.", innerException)
+        {
+        }
+    }
+
+    private sealed record McpToolCallResult(object Result, NodeToolDiagnostic? Diagnostic);
+
+    private void CompleteToolTelemetry(
+        NodeToolInvocation telemetry,
+        NodeToolOutcome outcome,
+        NodeToolErrorCategory category,
+        NodeToolExecutionMode? executionMode,
+        Type? errorType)
+    {
+        var completion = telemetry.Complete(outcome, category, executionMode, errorType);
+        if (completion == null)
+            return;
+
+        try
+        {
+            ToolTelemetryCompleted?.Invoke(this, completion);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"[MCP] Tool telemetry completion handler failed: {ex.GetType().Name}");
+        }
+    }
+
+    internal sealed class McpPendingToolTelemetry
+    {
+        private readonly McpToolBridge _owner;
+        private readonly NodeToolInvocation _telemetry;
+        private readonly NodeToolOutcome _outcome;
+        private readonly NodeToolErrorCategory _category;
+        private readonly NodeToolExecutionMode? _executionMode;
+        private readonly Type? _errorType;
+
+        public McpPendingToolTelemetry(
+            McpToolBridge owner,
+            NodeToolInvocation telemetry,
+            NodeToolOutcome outcome,
+            NodeToolErrorCategory category,
+            NodeToolExecutionMode? executionMode,
+            Type? errorType)
+        {
+            _owner = owner;
+            _telemetry = telemetry;
+            _outcome = outcome;
+            _category = category;
+            _executionMode = executionMode;
+            _errorType = errorType;
+        }
+
+        public void CompleteDelivery(Type? deliveryError = null) =>
+            _owner.CompleteToolTelemetry(
+                _telemetry,
+                deliveryError == null ? _outcome : NodeToolOutcome.Failure,
+                deliveryError == null ? _category : NodeToolErrorCategory.TransportFailure,
+                _executionMode,
+                deliveryError ?? _errorType);
+    }
+
+    internal sealed record McpTransportResponse(
+        string? Body,
+        McpPendingToolTelemetry? PendingTelemetry)
+    {
+        public void CompleteDelivery(Type? deliveryError = null) =>
+            PendingTelemetry?.CompleteDelivery(deliveryError);
     }
 }

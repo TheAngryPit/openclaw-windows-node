@@ -49,8 +49,7 @@ public sealed partial class CanvasWindow : WindowEx
     private TaskCompletionSource<bool>? _navigationTcs;
 
     private readonly string _canvasDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "OpenClawTray", "canvas");
+        AppIdentity.ResolveLocalDataDirectory(), "canvas");
     private FileSystemWatcher? _canvasWatcher;
     private long _lastReloadTicks = 0;
 
@@ -105,6 +104,16 @@ public sealed partial class CanvasWindow : WindowEx
         {
             return true;
         }
+        // Host-normalizing private/loopback guard. The DangerousUrlPattern regex only blocks the
+        // literal dotted-decimal spelling, so encoded IPv4 (2130706433 / 0x7f000001 / 0177.0.0.1),
+        // IPv6 (::1, ::ffff:127.0.0.1, fd00::/fe80::), 0.0.0.0, and CGNAT/Tailscale (100.64/10)
+        // slip through — this is the load-bearing SSRF check for canvas.present, which reaches the
+        // WebView through IsUrlSafe without the navigate command's HttpUrlRiskEvaluator.
+        if (Uri.TryCreate(url, UriKind.Absolute, out var parsedUri) &&
+            OpenClaw.Shared.CanvasUrlSafety.IsPrivateOrLoopbackHost(parsedUri.Host))
+        {
+            return false;
+        }
         return !DangerousUrlPattern.IsMatch(url);
     }
     
@@ -133,6 +142,7 @@ public sealed partial class CanvasWindow : WindowEx
     
     public bool IsClosed { get; private set; }
     private string? _trustedGatewayOrigin;
+    private string? _configuredGatewayOrigin;
     private string? _gatewayOriginForRewrite;
     private string? _gatewayToken;
 
@@ -142,17 +152,27 @@ public sealed partial class CanvasWindow : WindowEx
     /// Also rewrites gateway URLs to use the node's effective connection
     /// (e.g., localhost when connected via SSH tunnel).
     /// </summary>
-    public void SetTrustedGatewayOrigin(string? gatewayUrl, string? token = null)
+    public void SetTrustedGatewayOrigin(string? gatewayUrl, string? token = null, string? configuredGatewayUrl = null)
     {
-        if (string.IsNullOrEmpty(gatewayUrl)) return;
+        if (string.IsNullOrEmpty(gatewayUrl))
+        {
+            _gatewayToken = null;
+            _trustedGatewayOrigin = null;
+            _configuredGatewayOrigin = null;
+            _gatewayOriginForRewrite = null;
+            if (CanvasWebView.CoreWebView2 != null)
+                RemoveGatewayAuthHeaderInjection(CanvasWebView.CoreWebView2);
+            return;
+        }
         _gatewayToken = token;
         try
         {
-            var uri = new Uri(GatewayUrlHelper.NormalizeForWebSocket(gatewayUrl));
-            var httpScheme = uri.Scheme == "wss" ? "https" : "http";
-            _trustedGatewayOrigin = $"{httpScheme}://{uri.Host}:{uri.Port}";
+            _trustedGatewayOrigin = CanvasGatewayUrlRewriter.ToHttpOrigin(gatewayUrl);
+            _configuredGatewayOrigin = string.IsNullOrWhiteSpace(configuredGatewayUrl)
+                ? _trustedGatewayOrigin
+                : CanvasGatewayUrlRewriter.ToHttpOrigin(configuredGatewayUrl);
             _gatewayOriginForRewrite = _trustedGatewayOrigin;
-            Logger.Info($"[Canvas] Trusted gateway origin: {_trustedGatewayOrigin}");
+            Logger.Info($"[Canvas] Trusted gateway origin: {_trustedGatewayOrigin}; configured gateway origin: {_configuredGatewayOrigin}");
             ConfigureGatewayAuthHeaderInjection();
         }
         catch (Exception ex)
@@ -172,24 +192,13 @@ public sealed partial class CanvasWindow : WindowEx
         try
         {
             // Handle relative paths — prepend the gateway origin
-            if (url.StartsWith("/"))
+            var rewritten = CanvasGatewayUrlRewriter.Rewrite(url, _gatewayOriginForRewrite, _configuredGatewayOrigin);
+            if (!string.Equals(url, rewritten, StringComparison.Ordinal))
             {
-                var rewritten = _gatewayOriginForRewrite + url;
                 rewritten = AppendGatewayToken(rewritten);
-                Logger.Info($"[Canvas] Resolved relative URL to gateway origin");
-                return rewritten;
-            }
-
-            var uri = new Uri(url);
-            var httpScheme = uri.Scheme;
-            var urlOrigin = $"{httpScheme}://{uri.Host}:{uri.Port}";
-
-            // If the URL's origin differs from our effective gateway origin, rewrite it
-            if (!urlOrigin.Equals(_gatewayOriginForRewrite, StringComparison.OrdinalIgnoreCase))
-            {
-                var rewritten = _gatewayOriginForRewrite + uri.PathAndQuery;
-                rewritten = AppendGatewayToken(rewritten);
-                Logger.Info($"[Canvas] Rewrote URL to effective gateway origin");
+                Logger.Info(url.StartsWith("/", StringComparison.Ordinal)
+                    ? "[Canvas] Resolved relative URL to gateway origin"
+                    : "[Canvas] Rewrote URL to effective gateway origin");
                 return rewritten;
             }
 
@@ -231,6 +240,7 @@ public sealed partial class CanvasWindow : WindowEx
     public CanvasWindow()
     {
         this.InitializeComponent();
+        Title = AppIdentity.DecorateWindowTitle("OpenClaw Canvas");
         AutomationProperties.SetName(
             CanvasTitlebarReloadButton,
             LocalizationHelper.GetString("CanvasReloadButton_AutomationName"));
@@ -430,7 +440,7 @@ public sealed partial class CanvasWindow : WindowEx
         {
             LoadingRing.IsActive = false;
             ErrorPanel.Visibility = Visibility.Visible;
-            ErrorText.Text = $"Failed to initialize WebView2: {ex.Message}";
+            ErrorText.Text = LocalizationHelper.Format("CanvasWindow_WebViewInitFailedFormat", ex.Message);
             _webViewReadyTcs.TrySetException(ex);
         }
     }
@@ -502,7 +512,7 @@ public sealed partial class CanvasWindow : WindowEx
             // Show error for failed navigation
             ErrorPanel.Visibility = Visibility.Visible;
             CanvasWebView.Visibility = Visibility.Collapsed;
-            ErrorText.Text = $"Navigation failed: {args.WebErrorStatus}";
+            ErrorText.Text = LocalizationHelper.Format("CanvasWindow_NavigationFailedFormat", args.WebErrorStatus);
         }
         else
         {
@@ -548,6 +558,7 @@ public sealed partial class CanvasWindow : WindowEx
         _canvasWatcher?.Dispose();
         _canvasWatcher = null;
         _trustedGatewayOrigin = null;
+        _configuredGatewayOrigin = null;
         _gatewayOriginForRewrite = null;
     }
     

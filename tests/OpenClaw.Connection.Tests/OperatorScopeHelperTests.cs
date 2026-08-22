@@ -170,10 +170,19 @@ public class ChatNavigationReadinessTests
         public Task ConnectAsync(string? gatewayId = null) => Task.CompletedTask;
         public Task ConnectNodeOnlyAsync(string? gatewayId = null) => Task.CompletedTask;
         public Task DisconnectAsync() => Task.CompletedTask;
+        public Task DisconnectByUserAsync() => Task.CompletedTask;
         public Task ReconnectAsync() => Task.CompletedTask;
+        public Task<bool> ReconnectIfCurrentAsync(string gatewayId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+        public Task<bool> RecoverSshTunnelAsync(SshTunnelExit tunnelExit) => Task.FromResult(false);
         public Task SwitchGatewayAsync(string gatewayId) => Task.CompletedTask;
+        public void SetGatewayConnectionIntent(string gatewayId, bool shouldBeConnected) { }
+        public bool IsAutomaticReconnectAllowed(string gatewayId) => true;
+        public bool IsManualGatewayLifecycleInProgress => false;
+        public Task<IDisposable> BeginManualGatewayLifecycleOperationAsync(CancellationToken cancellationToken = default) => Task.FromResult<IDisposable>(new NoopScope());
+        private sealed class NoopScope : IDisposable { public void Dispose() { } }
         public Task EnsureNodeConnectedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<SetupCodeResult> ApplySetupCodeAsync(string setupCode) => Task.FromResult(new SetupCodeResult(SetupCodeOutcome.InvalidCode));
+        public Task<SetupCodeResult> ApplySetupCodeAsync(string setupCode, SshTunnelConfig? sshTunnel = null) => Task.FromResult(new SetupCodeResult(SetupCodeOutcome.InvalidCode));
         public Task<SetupCodeResult> ConnectWithSharedTokenAsync(string gatewayUrl, string token, SshTunnelConfig? sshTunnel = null) => Task.FromResult(new SetupCodeResult(SetupCodeOutcome.InvalidCode));
         public void Dispose() { }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

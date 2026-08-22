@@ -49,6 +49,7 @@ public static class FluentIconCatalog
     public const string Settings = "\uE713";       // Settings
     public const string Setup = "\uE825";          // Bank — Reconfigure / Setup wizard launcher
     public const string About = "\uE946";          // Info
+    public const string Notifications = "\uE7E7";   // Ringer — title-bar notifications bell
     public const string Exit = "\uE711";           // Cancel (X) — used for "Close" menu item
     public const string Add = "\uE710";            // Add — "+ Add gateway" header button
     public const string Back = "\uE72B";           // Back — leading chevron on Back hyperlink
@@ -72,9 +73,6 @@ public static class FluentIconCatalog
     public const string ChevronR = "\uE76C";       // ChevronRight
     public const string Check = "\uE73E";          // CheckMark
 
-    // ── Brand placeholder (lobster emoji currently retained) ───────
-    public const string Brand = "🦞";
-
     // ── Diagnostics page glyphs ────────────────────────────────────
     // Added 2026-05 for the Diagnostics surface
     // (src/OpenClaw.Tray.WinUI/Pages/DebugPage.xaml). Keep these here
@@ -92,6 +90,7 @@ public static class FluentIconCatalog
     public const string Reset = "\uE72C";          // Refresh (alias) — Reconfigure / start over
     public const string Clear = "\uE74D";          // Delete — clear/reset a buffer
     public const string Develop = "\uE943";        // Code — engineering / explorations action
+    public const string Telemetry = "\uE9F5";      // Processing — ongoing telemetry endpoint/stream
     public const string AgentEvents = "\uE81C";    // History — agent events feed
     public const string Doctor = "\uE95E";         // Health — "Run gateway doctor" health-check action
 
@@ -102,6 +101,9 @@ public static class FluentIconCatalog
     // See reference/concepts/states/workspace.md.
     public const string Workspace = "\uE8DA";      // OpenLocal (alias of Folder)
     public const string Cron = "\uE787";           // Calendar — Cron / scheduled jobs (matches HubWindow search mapping)
+
+    public static FontFamily SymbolThemeFontFamily =>
+        (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"];
 
     /// <summary>
     /// Builds a <see cref="FontIcon"/> for the given PUA glyph using the
@@ -114,7 +116,7 @@ public static class FluentIconCatalog
         return new FontIcon
         {
             Glyph = glyph,
-            FontFamily = (FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+            FontFamily = SymbolThemeFontFamily,
             FontSize = size,
         };
     }

@@ -26,10 +26,27 @@ internal static class NodeCapabilityGating
     public static bool ShouldRegisterCamera(SettingsManager? s)       => s?.NodeCameraEnabled       != false;
     public static bool ShouldRegisterLocation(SettingsManager? s)     => s?.NodeLocationEnabled     != false;
     public static bool ShouldRegisterBrowserProxy(SettingsManager? s) => s?.NodeBrowserProxyEnabled != false;
-    public static bool ShouldRegisterBrowserProxy(SettingsManager? s, string? sharedGatewayToken, bool hasGatewayClient) =>
-        hasGatewayClient &&
-        !string.IsNullOrWhiteSpace(sharedGatewayToken) &&
-        ShouldRegisterBrowserProxy(s);
+    public static bool ShouldRegisterBrowserProxy(
+        SettingsManager? s,
+        string? sharedGatewayToken,
+        bool hasGatewayClient,
+        bool browserEndpointVerified = true) =>
+        BrowserProxyActivation.ShouldRegister(
+            toggleEnabled: ShouldRegisterBrowserProxy(s),
+            sharedGatewayToken,
+            hasGatewayClient,
+            browserEndpointVerified);
+
+    public static BrowserProxyActivation.RegistrationBlock ResolveBrowserProxyRegistrationBlock(
+        SettingsManager? s,
+        string? sharedGatewayToken,
+        bool hasGatewayClient,
+        bool browserEndpointVerified = true)
+        => BrowserProxyActivation.ResolveRegistrationBlock(
+            toggleEnabled: ShouldRegisterBrowserProxy(s),
+            sharedGatewayToken,
+            hasGatewayClient,
+            browserEndpointVerified);
     public static bool ShouldRegisterTts(SettingsManager? s)          => s?.NodeTtsEnabled          == true;
     public static bool ShouldRegisterStt(SettingsManager? s)          => s?.NodeSttEnabled          == true;
 
@@ -61,4 +78,17 @@ internal static class NodeCapabilityGating
     }
 
     public static bool ShouldRegisterSystemRun(SettingsManager? s)    => s?.NodeSystemRunEnabled    != false;
+
+    /// <summary>Counts node capability categories served by local MCP without a gateway node client.</summary>
+    public static int CountMcpServedCapabilities(SettingsManager? s)
+    {
+        int n = 2; // system + device are always registered
+        if (ShouldRegisterCanvas(s)) n++;
+        if (ShouldRegisterScreen(s)) n++;
+        if (ShouldRegisterCamera(s)) n++;
+        if (ShouldRegisterLocation(s)) n++;
+        if (ShouldRegisterTts(s)) n++;
+        if (ShouldRegisterStt(s)) n++;
+        return n;
+    }
 }

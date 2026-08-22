@@ -56,6 +56,15 @@ public class SettingsRoundTripTests
             SkippedUpdateTag = "v1.2.3",
             NotifyChatResponses = false,
             PreferStructuredCategories = true,
+            AppTheme = "Dark",
+            ShowDiagnostics = true,
+            OpenTelemetryEndpoint = "http://localhost:4317",
+            OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.HttpProtobuf,
+            ShowCompletedSessions = true,
+            SystemRunSandboxEnabled = true,
+            SystemRunBlockHostFallbackWhenMxcUnavailable = true,
+            SystemRunAllowOutbound = true,
+            SystemRunAllowWindowsUi = true,
             UserRules = new List<UserNotificationRule>
             {
                 new() { Pattern = "build.*fail", IsRegex = true, Category = "urgent", Enabled = true }
@@ -66,6 +75,7 @@ public class SettingsRoundTripTests
         var restored = SettingsData.FromJson(json);
 
         Assert.NotNull(restored);
+        Assert.Equal(original.SettingsSchemaVersion, restored.SettingsSchemaVersion);
         Assert.Equal(original.GatewayUrl, restored.GatewayUrl);
         Assert.Equal(original.UseSshTunnel, restored.UseSshTunnel);
         Assert.Equal(original.SshTunnelUser, restored.SshTunnelUser);
@@ -111,6 +121,15 @@ public class SettingsRoundTripTests
         Assert.Equal(original.SkippedUpdateTag, restored.SkippedUpdateTag);
         Assert.Equal(original.NotifyChatResponses, restored.NotifyChatResponses);
         Assert.Equal(original.PreferStructuredCategories, restored.PreferStructuredCategories);
+        Assert.Equal(original.AppTheme, restored.AppTheme);
+        Assert.Equal(original.ShowDiagnostics, restored.ShowDiagnostics);
+        Assert.Equal(original.OpenTelemetryEndpoint, restored.OpenTelemetryEndpoint);
+        Assert.Equal(original.OpenTelemetryProtocol, restored.OpenTelemetryProtocol);
+        Assert.Equal(original.ShowCompletedSessions, restored.ShowCompletedSessions);
+        Assert.Equal(original.SystemRunSandboxEnabled, restored.SystemRunSandboxEnabled);
+        Assert.Equal(original.SystemRunBlockHostFallbackWhenMxcUnavailable, restored.SystemRunBlockHostFallbackWhenMxcUnavailable);
+        Assert.Equal(original.SystemRunAllowOutbound, restored.SystemRunAllowOutbound);
+        Assert.Equal(original.SystemRunAllowWindowsUi, restored.SystemRunAllowWindowsUi);
         Assert.NotNull(restored.UserRules);
         Assert.Single(restored.UserRules);
         Assert.Equal("build.*fail", restored.UserRules[0].Pattern);
@@ -176,10 +195,70 @@ public class SettingsRoundTripTests
         Assert.Null(settings.SkippedUpdateTag);
         Assert.True(settings.NotifyChatResponses);
         Assert.True(settings.PreferStructuredCategories);
+        Assert.Equal("System", settings.AppTheme);
+        Assert.Null(settings.ShowDiagnostics);
+        Assert.Null(settings.OpenTelemetryEndpoint);
+        Assert.Equal(OpenTelemetryEndpointProtocol.Grpc, settings.OpenTelemetryProtocol);
+        Assert.False(settings.ShowCompletedSessions);
+        Assert.True(settings.SystemRunSandboxEnabled);
+        Assert.False(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
+        Assert.False(settings.SystemRunAllowOutbound);
+        Assert.False(settings.SystemRunAllowWindowsUi);
         // HubNavPaneOpen defaults to true (NavView starts expanded for new
         // installs and for any settings file that predates the field).
         Assert.True(settings.HubNavPaneOpen);
         Assert.Null(settings.UserRules);
+    }
+
+    [Fact]
+    public void SettingsManager_OpenTelemetryEndpoint_TrimsAndClearsEmptyValues()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var settings = new SettingsManager(dir)
+            {
+                OpenTelemetryEndpoint = "  http://localhost:4317  ",
+                OpenTelemetryProtocol = "otlp/http"
+            };
+
+            Assert.Equal("http://localhost:4317", settings.OpenTelemetryEndpoint);
+            Assert.Equal(OpenTelemetryEndpointProtocol.HttpProtobuf, settings.OpenTelemetryProtocol);
+
+            settings.OpenTelemetryEndpoint = "   ";
+            settings.OpenTelemetryProtocol = "not-a-protocol";
+            Assert.Equal(string.Empty, settings.OpenTelemetryEndpoint);
+            Assert.Equal(OpenTelemetryEndpointProtocol.Grpc, settings.OpenTelemetryProtocol);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SettingsManager_MissingShowDiagnostics_DefaultsVisible_ForUpgradeCompatibility()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), "{}");
+
+            var settings = new SettingsManager(dir);
+
+            Assert.Null(settings.ShowDiagnosticsOverride);
+            Assert.True(settings.ShowDiagnosticsEffective);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]
@@ -192,6 +271,119 @@ public class SettingsRoundTripTests
         var settings = SettingsData.FromJson("{}");
         Assert.NotNull(settings);
         Assert.True(settings!.HubNavPaneOpen);
+    }
+
+    [Fact]
+    public void ManagedLocalAutoRepair_DefaultsOn_ForExistingSettingsWithoutField()
+    {
+        var settings = SettingsData.FromJson(
+            """{"SettingsSchemaVersion":1,"EnableNodeMode":true}""");
+
+        Assert.NotNull(settings);
+        Assert.True(settings!.EnableManagedLocalGatewayAutoRepair);
+    }
+
+    [Fact]
+    public void ManagedLocalAutoRepair_ExplicitFalse_RoundTrips()
+    {
+        var original = new SettingsData
+        {
+            EnableManagedLocalGatewayAutoRepair = false,
+        };
+
+        var restored = SettingsData.FromJson(original.ToJson());
+
+        Assert.NotNull(restored);
+        Assert.False(restored!.EnableManagedLocalGatewayAutoRepair);
+    }
+
+    [Fact]
+    public void SettingsManager_PreservesLegacySandboxFallbackDefault()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """
+            {
+                "SystemRunSandboxEnabled": true,
+                "SystemRunBlockHostFallbackWhenMxcUnavailable": false
+            }
+            """);
+
+            var settings = new SettingsManager(dir);
+
+            Assert.True(settings.SystemRunSandboxEnabled);
+            Assert.False(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
+
+            settings.Save();
+
+            using var saved = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "settings.json")));
+            Assert.Equal(1, saved.RootElement.GetProperty(nameof(SettingsData.SettingsSchemaVersion)).GetInt32());
+            Assert.False(saved.RootElement.GetProperty(nameof(SettingsData.SystemRunBlockHostFallbackWhenMxcUnavailable)).GetBoolean());
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SettingsManager_PreservesVersionedSandboxFallbackCompatibility()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """
+            {
+                "SettingsSchemaVersion": 1,
+                "SystemRunSandboxEnabled": true,
+                "SystemRunBlockHostFallbackWhenMxcUnavailable": false
+            }
+            """);
+
+            var settings = new SettingsManager(dir);
+
+            Assert.True(settings.SystemRunSandboxEnabled);
+            Assert.False(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SettingsManager_PreservesVersionedStrictFallbackBlockingOptIn()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """
+            {
+                "SettingsSchemaVersion": 1,
+                "SystemRunSandboxEnabled": true,
+                "SystemRunBlockHostFallbackWhenMxcUnavailable": true
+            }
+            """);
+
+            var settings = new SettingsManager(dir);
+
+            Assert.True(settings.SystemRunSandboxEnabled);
+            Assert.True(settings.SystemRunBlockHostFallbackWhenMxcUnavailable);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
     }
 
     [Fact]
@@ -247,6 +439,8 @@ public class SettingsRoundTripTests
         Assert.False(settings.HasSeenActivityStreamTip);
         Assert.Null(settings.SkippedUpdateTag);
         Assert.True(settings.GlobalHotkeyEnabled);
+        Assert.Equal("System", settings.AppTheme);
+        Assert.Null(settings.ShowDiagnostics);
         // HubNavPaneOpen wasn't in this older JSON shape; default true.
         Assert.True(settings.HubNavPaneOpen);
         Assert.Null(settings.UserRules);
@@ -301,6 +495,34 @@ public class SettingsRoundTripTests
             var reloaded = new SettingsManager(dir);
             Assert.True(reloaded.ScreenRecordingConsentGiven);
             Assert.True(reloaded.CameraRecordingConsentGiven);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+                Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SettingsManager_NormalizesInvalidAppTheme()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "OpenClaw.Tray.Tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(Path.Combine(dir, "settings.json"), """
+            {
+              "AppTheme": "Neon"
+            }
+            """);
+
+            var settings = new SettingsManager(dir);
+
+            Assert.Equal("System", settings.AppTheme);
+
+            settings.AppTheme = "dark";
+            Assert.Equal("Dark", settings.AppTheme);
         }
         finally
         {

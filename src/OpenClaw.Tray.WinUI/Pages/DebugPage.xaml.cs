@@ -42,6 +42,7 @@ public sealed partial class DebugPage : Page
 
     private AppState? _appState;
     private bool _suppressOverrideChange;
+    private bool _suppressOpenTelemetryEndpointChange;
 
     private IGatewayTerminalLauncher? _terminalLauncher;
     private GatewayHostAccessPlan _doctorAccessPlan = GatewayHostAccessPlan.None();
@@ -49,8 +50,7 @@ public sealed partial class DebugPage : Page
     private IGatewayTerminalLauncher TerminalLauncher =>
         _terminalLauncher ??= new GatewayTerminalLauncher(new OpenClawTray.AppLogger());
 
-    private static readonly string LocalAppData = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenClawTray");
+    private static readonly string LocalAppData = AppIdentity.ResolveLocalDataDirectory();
     private static readonly string LogPath = Path.Combine(LocalAppData, "openclaw-tray.log");
     private static readonly string DeviceKeyPath = Path.Combine(LocalAppData, "device-key-ed25519.json");
 
@@ -85,6 +85,7 @@ public sealed partial class DebugPage : Page
     // Plain-text mirror of log rows for the Copy toolbar action.
     // Capped to MaxLogRows in O(1) via Queue.
     private readonly Queue<string> _detailPlainLines = new();
+    private bool _bundlePreviewOpen;
 
     public DebugPage()
     {
@@ -115,6 +116,7 @@ public sealed partial class DebugPage : Page
         UpdateStatusInfoBar();
         UpdateGatewayDoctorCard();
         LoadDeviceIdentity();
+        LoadOpenTelemetryEndpoint();
         LoadChatSurfaceOverrides();
     }
 
@@ -134,6 +136,7 @@ public sealed partial class DebugPage : Page
     {
         UpdateStatusInfoBar();
         UpdateGatewayDoctorCard();
+        LoadOpenTelemetryEndpoint();
     }
 
     /// <summary>
@@ -155,7 +158,9 @@ public sealed partial class DebugPage : Page
     private void UpdateStatusInfoBar()
     {
         var gatewayUrl = CurrentApp.Settings?.GetEffectiveGatewayUrl();
-        var gatewayDisplay = string.IsNullOrWhiteSpace(gatewayUrl) ? "no gateway configured" : gatewayUrl;
+        var gatewayDisplay = string.IsNullOrWhiteSpace(gatewayUrl)
+            ? LocalizationHelper.GetString("DebugPage_NoGatewayConfigured")
+            : gatewayUrl;
         var status = _appState?.Status ?? ConnectionStatus.Disconnected;
 
         switch (status)
@@ -163,27 +168,27 @@ public sealed partial class DebugPage : Page
             case ConnectionStatus.Connected:
                 StatusInfoBar.Severity = InfoBarSeverity.Success;
                 StatusInfoBar.Title = LocalizationHelper.GetConnectionStatusText(status);
-                StatusInfoBar.Message = $"OpenClaw is connected to {gatewayDisplay}.";
+                StatusInfoBar.Message = LocalizationHelper.Format("DebugPage_StatusConnectedFormat", gatewayDisplay);
                 break;
             case ConnectionStatus.Connecting:
                 StatusInfoBar.Severity = InfoBarSeverity.Informational;
                 StatusInfoBar.Title = LocalizationHelper.GetConnectionStatusText(status);
-                StatusInfoBar.Message = $"Connecting to {gatewayDisplay}…";
+                StatusInfoBar.Message = LocalizationHelper.Format("DebugPage_StatusConnectingFormat", gatewayDisplay);
                 break;
             case ConnectionStatus.Disconnected:
                 StatusInfoBar.Severity = InfoBarSeverity.Warning;
                 StatusInfoBar.Title = LocalizationHelper.GetConnectionStatusText(status);
-                StatusInfoBar.Message = $"Not connected. Gateway: {gatewayDisplay}.";
+                StatusInfoBar.Message = LocalizationHelper.Format("DebugPage_StatusDisconnectedFormat", gatewayDisplay);
                 break;
             case ConnectionStatus.Error:
                 StatusInfoBar.Severity = InfoBarSeverity.Error;
                 StatusInfoBar.Title = LocalizationHelper.GetConnectionStatusText(status);
-                StatusInfoBar.Message = $"Last gateway: {gatewayDisplay}. See the event timeline.";
+                StatusInfoBar.Message = LocalizationHelper.Format("DebugPage_StatusErrorFormat", gatewayDisplay);
                 break;
             default:
                 StatusInfoBar.Severity = InfoBarSeverity.Informational;
                 StatusInfoBar.Title = LocalizationHelper.GetConnectionStatusText(status);
-                StatusInfoBar.Message = $"Gateway: {gatewayDisplay}.";
+                StatusInfoBar.Message = LocalizationHelper.Format("DebugPage_StatusGatewayFormat", gatewayDisplay);
                 break;
         }
     }
@@ -248,8 +253,8 @@ public sealed partial class DebugPage : Page
 
         if (mode == DetailMode.Log)
         {
-            DetailTitle.Text = "Recent log";
-            DetailCaption.Text = $"Last 200 lines of {LogPath}. Severity is parsed from [info]/[warn]/[error] tags.";
+            DetailTitle.Text = LocalizationHelper.GetString("DebugPage_RecentLogTitle");
+            DetailCaption.Text = LocalizationHelper.Format("DebugPage_RecentLogCaptionFormat", LogPath);
             DetailOpenFileButton.Visibility = Visibility.Visible;
             DetailRefreshButton.Visibility = Visibility.Visible;
             _ = LoadLogFileAsync(_detailGeneration);
@@ -284,7 +289,7 @@ public sealed partial class DebugPage : Page
 
     private void OnDetailCopy(object sender, RoutedEventArgs e)
     {
-        ClipboardHelper.CopyText(string.Concat(_detailPlainLines));
+        ClipboardHelper.CopyText(DiagnosticsExportSanitizer.SanitizeTextBlock(string.Concat(_detailPlainLines)));
     }
 
     private void OnDetailOpenFile(object sender, RoutedEventArgs e)
@@ -336,17 +341,9 @@ public sealed partial class DebugPage : Page
         string[] lines;
         try
         {
-            // Hanselman v1 review findings #2 and #4:
-            //   #2 — Logger holds the log open with FileAccess.Write +
-            //        FileShare.Read (Logger.cs:109). Default File.ReadLines
-            //        opens with FileShare.Read which excludes Write — so
-            //        every read attempt failed with IOException as long
-            //        as Logger was active (essentially always). The
-            //        explicit FileShare.ReadWrite below is required for
-            //        concurrent read while Logger holds the writer.
-            //   #4 — Read tail on a background thread so a 5 MB log
-            //        rotation does not stall the UI.
-            lines = await Task.Run(() => ReadLogTail(LogPath, 200));
+            lines = await Task.Run(() => DiagnosticsLogTailReader.ReadSanitizedTail(
+                LogPath,
+                new DiagnosticsTailOptions(MaxLines: 200, MaxLineChars: 8_000, MaxSectionChars: 128_000, MaxReadBytes: 512_000)).ToArray());
         }
         catch (Exception ex)
         {
@@ -371,23 +368,6 @@ public sealed partial class DebugPage : Page
             AppendPlain(line + "\n");
         }
         ScrollDetailToEnd();
-    }
-
-    private static string[] ReadLogTail(string path, int tailCount)
-    {
-        // FileShare.ReadWrite lets us coexist with the Logger writer.
-        // Rolling Queue<string> keeps memory at O(tailCount) instead of
-        // O(file size).
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var sr = new StreamReader(fs);
-        var queue = new Queue<string>(tailCount);
-        string? line;
-        while ((line = sr.ReadLine()) != null)
-        {
-            if (queue.Count == tailCount) queue.Dequeue();
-            queue.Enqueue(line);
-        }
-        return queue.ToArray();
     }
 
     private static Paragraph CreateLogParagraph(string line)
@@ -454,13 +434,30 @@ public sealed partial class DebugPage : Page
 
     private void OnCreateDiagnosticsBundle(object sender, RoutedEventArgs e) =>
         AsyncEventHandlerGuard.Run(
-            () => ShowBundlePreviewAsync(
-                title: "Diagnostics bundle",
-                buildText: CommandCenterTextHelper.BuildDebugBundle,
-                suggestedFileName: $"openclaw-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
-                headerCaption: "This is the complete bundle that would be copied or saved."),
+            ShowDiagnosticsBundlePreviewAsync,
             new OpenClawTray.AppLogger(),
             nameof(OnCreateDiagnosticsBundle));
+
+    private async Task ShowDiagnosticsBundlePreviewAsync()
+    {
+        if (_bundlePreviewOpen)
+            return;
+
+        _bundlePreviewOpen = true;
+        try
+        {
+            var connectionEvents = CurrentApp.GetConnectionDiagnosticEvents().ToArray();
+            await ShowBundlePreviewAsync(
+                title: "Diagnostics bundle",
+                buildText: state => DiagnosticsBundleBuilder.BuildCached(state, connectionEvents),
+                suggestedFileName: $"openclaw-diagnostics-{DateTime.Now:yyyyMMdd-HHmmss}.txt",
+                headerCaption: "This is the complete sanitized bundle that would be copied or saved. Review before sharing.");
+        }
+        finally
+        {
+            _bundlePreviewOpen = false;
+        }
+    }
 
     private async Task ShowBundlePreviewAsync(
         string title,
@@ -472,23 +469,42 @@ public sealed partial class DebugPage : Page
         var state = CurrentApp.BuildCommandCenterState();
         if (state == null) return;
 
-        string text;
-        try
+        var buildTask = Task.Run(() =>
         {
-            text = buildText(state) ?? string.Empty;
-        }
-        catch (Exception ex)
-        {
-            text = $"Failed to build diagnostics bundle: {ex.Message}";
-        }
+            try
+            {
+                return buildText(state) ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error($"Diagnostics bundle build failed: {ex}");
+                return $"Failed to build diagnostics bundle: {ex.Message}";
+            }
+        });
 
         var dialog = new DiagnosticsBundleDialog { XamlRoot = XamlRoot, Title = title };
         // Just-in-time HWND resolution so a Hub-window close that happens
         // between dialog open and Save click can't land a stale handle in
         // the file picker (Hanselman v2 #4).
-        dialog.Configure(text, headerCaption, suggestedFileName,
+        dialog.Configure("Preparing diagnostics bundle…", headerCaption, suggestedFileName,
             hwndProvider: () => CurrentApp.GetHubWindowHandle());
-        await dialog.ShowAsync();
+        dialog.SetBundleText("Preparing diagnostics bundle…", isReady: false);
+        var updateTask = UpdateBundleDialogWhenReadyAsync(dialog, buildTask);
+        await Task.Yield();
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            await updateTask;
+        }
+    }
+
+    private async Task UpdateBundleDialogWhenReadyAsync(DiagnosticsBundleDialog dialog, Task<string> buildTask)
+    {
+        var text = await buildTask;
+        dialog.SetBundleText(text, isReady: true);
     }
 
     private void OnOpenDiagnosticsFolder(object sender, RoutedEventArgs e)
@@ -509,7 +525,9 @@ public sealed partial class DebugPage : Page
         => CopyDiagnosticText("Support context", CommandCenterTextHelper.BuildSupportContext);
 
     private void OnCopyDebugBundle(object sender, RoutedEventArgs e)
-        => CopyDiagnosticText("Debug bundle", CommandCenterTextHelper.BuildDebugBundle);
+        => CopyDiagnosticText(
+            "Summary debug bundle",
+            CommandCenterTextHelper.BuildDebugBundle);
 
     private void OnCopyBrowserSetup(object sender, RoutedEventArgs e)
         => CopyDiagnosticText("Browser setup guidance", CommandCenterTextHelper.BuildBrowserSetupGuidance);
@@ -526,7 +544,7 @@ public sealed partial class DebugPage : Page
         if (state == null) return;
         try
         {
-            ClipboardHelper.CopyText(build(state) ?? string.Empty);
+            ClipboardHelper.CopyText(DiagnosticsExportSanitizer.SanitizeTextBlock(build(state) ?? string.Empty));
             ShowCopyFeedback(label);
         }
         catch (Exception ex)
@@ -552,7 +570,7 @@ public sealed partial class DebugPage : Page
 
     private void ShowCopyFeedback(string label)
     {
-        CopyFeedbackInfoBar.Message = $"{label} copied to clipboard.";
+        CopyFeedbackInfoBar.Message = LocalizationHelper.Format("DebugPage_CopyFeedbackFormat", label);
         CopyFeedbackInfoBar.IsOpen = true;
 
         if (_copyFeedbackTimer == null)
@@ -651,6 +669,187 @@ public sealed partial class DebugPage : Page
 
     // ── Section 3: Developer tools ───────────────────────────────────
 
+    private void LoadOpenTelemetryEndpoint()
+    {
+        _suppressOpenTelemetryEndpointChange = true;
+        try
+        {
+            OpenTelemetryEndpointBox.Text = CurrentApp.Settings?.OpenTelemetryEndpoint ?? string.Empty;
+            SelectOpenTelemetryProtocol(CurrentApp.Settings?.OpenTelemetryProtocol);
+            UpdateOpenTelemetryEndpointStatus();
+        }
+        finally
+        {
+            _suppressOpenTelemetryEndpointChange = false;
+        }
+    }
+
+    private void OnOpenTelemetryEndpointTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_suppressOpenTelemetryEndpointChange)
+            return;
+
+        UpdateOpenTelemetryEndpointStatus();
+    }
+
+    private void OnOpenTelemetryProtocolChanged(object sender, RoutedEventArgs e)
+    {
+        if (_suppressOpenTelemetryEndpointChange)
+            return;
+
+        UpdateOpenTelemetryEndpointStatus();
+    }
+
+    private void OnSaveOpenTelemetryEndpoint(object sender, RoutedEventArgs e)
+    {
+        if (CurrentApp.Settings == null)
+            return;
+
+        if (!TryNormalizeOpenTelemetryEndpoint(OpenTelemetryEndpointBox.Text, out var endpoint, out _))
+        {
+            UpdateOpenTelemetryEndpointStatus();
+            return;
+        }
+
+        CurrentApp.Settings.OpenTelemetryEndpoint = endpoint ?? string.Empty;
+        CurrentApp.Settings.OpenTelemetryProtocol = GetSelectedOpenTelemetryProtocol();
+        CurrentApp.Settings.Save();
+        ((IAppCommands)CurrentApp).NotifySettingsSaved();
+        UpdateOpenTelemetryEndpointStatus(saved: true);
+    }
+
+    private void OnClearOpenTelemetryEndpoint(object sender, RoutedEventArgs e)
+    {
+        if (CurrentApp.Settings == null)
+            return;
+
+        _suppressOpenTelemetryEndpointChange = true;
+        try
+        {
+            OpenTelemetryEndpointBox.Text = string.Empty;
+            SelectOpenTelemetryProtocol(OpenTelemetryEndpointProtocol.Grpc);
+        }
+        finally
+        {
+            _suppressOpenTelemetryEndpointChange = false;
+        }
+
+        CurrentApp.Settings.OpenTelemetryEndpoint = string.Empty;
+        CurrentApp.Settings.OpenTelemetryProtocol = OpenTelemetryEndpointProtocol.Grpc;
+        CurrentApp.Settings.Save();
+        ((IAppCommands)CurrentApp).NotifySettingsSaved();
+        UpdateOpenTelemetryEndpointStatus(cleared: true);
+    }
+
+    private void OnResendOpenTelemetryProbe(object sender, RoutedEventArgs e) =>
+        AsyncEventHandlerGuard.Run(
+            ResendOpenTelemetryProbeAsync,
+            new OpenClawTray.AppLogger(),
+            nameof(OnResendOpenTelemetryProbe));
+
+    private async Task ResendOpenTelemetryProbeAsync()
+    {
+        ResendOpenTelemetryProbeButton.IsEnabled = false;
+        bool? probeFlushed = null;
+        try
+        {
+            probeFlushed = await ((IAppCommands)CurrentApp).ResendOpenTelemetryProbeAsync();
+        }
+        finally
+        {
+            UpdateOpenTelemetryEndpointStatus(probeFlushed: probeFlushed);
+        }
+    }
+
+    private void UpdateOpenTelemetryEndpointStatus(
+        bool saved = false,
+        bool cleared = false,
+        bool? probeFlushed = null)
+    {
+        var current = CurrentApp.Settings?.OpenTelemetryEndpoint ?? string.Empty;
+        var currentProtocol = OpenTelemetryEndpointProtocol.Normalize(CurrentApp.Settings?.OpenTelemetryProtocol);
+        var selectedProtocol = GetSelectedOpenTelemetryProtocol();
+        var raw = OpenTelemetryEndpointBox.Text;
+        var valid = TryNormalizeOpenTelemetryEndpoint(raw, out var endpoint, out var error);
+        var endpointText = endpoint ?? string.Empty;
+        var hasEndpoint = !string.IsNullOrWhiteSpace(endpointText);
+        var dirty =
+            !string.Equals(current, endpointText, StringComparison.Ordinal) ||
+            !string.Equals(currentProtocol, selectedProtocol, StringComparison.Ordinal);
+
+        SaveOpenTelemetryEndpointButton.IsEnabled = valid && dirty;
+        ResendOpenTelemetryProbeButton.IsEnabled = valid && hasEndpoint && !dirty;
+        ClearOpenTelemetryEndpointButton.IsEnabled = hasEndpoint || !string.IsNullOrWhiteSpace(current);
+        OpenTelemetryEndpointSummary.Text = string.IsNullOrWhiteSpace(current)
+            ? LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetrySummary_NotConfigured")
+            : LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetrySummary_Configured");
+
+        if (!valid)
+        {
+            OpenTelemetryEndpointStatusText.Foreground = WarnTextBrush;
+            OpenTelemetryEndpointStatusText.Text = error ?? LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetryEndpointStatus_InvalidMessage");
+            return;
+        }
+
+        OpenTelemetryEndpointStatusText.Foreground = DimTextBrush;
+
+        if (cleared)
+        {
+            OpenTelemetryEndpointStatusText.Text = LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetryEndpointStatus_ClearedTitle");
+            return;
+        }
+
+        if (saved && hasEndpoint)
+        {
+            OpenTelemetryEndpointStatusText.Text = LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetryEndpointStatus_SavedTitle");
+            return;
+        }
+
+        if (probeFlushed.HasValue)
+        {
+            OpenTelemetryEndpointStatusText.Foreground =
+                probeFlushed.Value ? DimTextBrush : WarnTextBrush;
+            OpenTelemetryEndpointStatusText.Text = LocalizationHelper.GetString(
+                probeFlushed.Value
+                    ? "DiagnosticsPage_OpenTelemetryEndpointStatus_ProbeFlushedMessage"
+                    : "DiagnosticsPage_OpenTelemetryEndpointStatus_ProbeFailedMessage");
+            return;
+        }
+
+        OpenTelemetryEndpointStatusText.Text = dirty
+            ? LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetryEndpointStatus_UnsavedMessage")
+            : string.Empty;
+    }
+
+    private void SelectOpenTelemetryProtocol(string? protocol)
+    {
+        var normalized = OpenTelemetryEndpointProtocol.Normalize(protocol);
+        OpenTelemetryProtocolGrpcButton.IsChecked = normalized == OpenTelemetryEndpointProtocol.Grpc;
+        OpenTelemetryProtocolHttpButton.IsChecked = normalized == OpenTelemetryEndpointProtocol.HttpProtobuf;
+    }
+
+    private string GetSelectedOpenTelemetryProtocol() =>
+        OpenTelemetryProtocolHttpButton.IsChecked == true
+            ? OpenTelemetryEndpointProtocol.HttpProtobuf
+            : OpenTelemetryEndpointProtocol.Grpc;
+
+    private static bool TryNormalizeOpenTelemetryEndpoint(string? raw, out string? endpoint, out string? error)
+    {
+        endpoint = string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
+        error = null;
+
+        if (endpoint == null)
+            return true;
+
+        if (!OpenTelemetryEndpointOptions.TryCreateEndpointUri(endpoint, out _))
+        {
+            error = LocalizationHelper.GetString("DiagnosticsPage_OpenTelemetryEndpointStatus_InvalidMessage");
+            return false;
+        }
+
+        return true;
+    }
+
     private void LoadChatSurfaceOverrides()
     {
         _suppressOverrideChange = true;
@@ -699,29 +898,4 @@ public sealed partial class DebugPage : Page
         DebugChatSurfaceOverrides.TrayChat = ParseOverride(TrayChatOverrideCombo);
     }
 
-    private void OnRelaunchOnboarding(object sender, RoutedEventArgs e) =>
-        AsyncEventHandlerGuard.Run(
-            OnRelaunchOnboardingAsync,
-            new OpenClawTray.AppLogger(),
-            nameof(OnRelaunchOnboarding));
-
-    private async Task OnRelaunchOnboardingAsync()
-    {
-        if (XamlRoot == null) return;
-
-        var confirm = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "Relaunch first-run setup?",
-            Content = "This will reopen the OpenClaw onboarding wizard. The current view will close.",
-            PrimaryButtonText = "Relaunch",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Close
-        };
-        var result = await confirm.ShowAsync();
-        if (result == ContentDialogResult.Primary)
-        {
-            ((IAppCommands)CurrentApp).ShowOnboarding();
-        }
-    }
 }

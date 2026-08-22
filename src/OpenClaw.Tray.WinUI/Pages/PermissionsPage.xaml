@@ -12,6 +12,7 @@
 
             <!-- ───────── Page header ───────── -->
             <TextBlock x:Uid="PermissionsPage_Permissions" Text="Permissions"
+                       AutomationProperties.AutomationId="PermissionsPageMarker"
                        Style="{StaticResource TitleTextBlockStyle}"
                        Margin="0,0,0,2"/>
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
@@ -98,61 +99,35 @@
                 </ItemsRepeater.Layout>
             </ItemsRepeater>
 
-            <!-- ═════════ Speech-to-text engine details (only when STT capability is on) ═════════ -->
-            <Border x:Name="SttCard" Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+            <!-- ═════════ Voice settings link (only when STT or TTS capability is on) ═════════ -->
+            <Border x:Name="VoiceSettingsCard" Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1" CornerRadius="8" Padding="16,10,16,12" Margin="0,-4,0,0"
-                    Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <FontIcon Glyph="&#xE946;" FontSize="14" VerticalAlignment="Top" Margin="0,3,0,0"
-                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    <StackPanel Spacing="4">
-                        <TextBlock x:Name="SttEngineHint"
+                    Visibility="Collapsed"
+                    AutomationProperties.AutomationId="PermissionsVoiceSettingsCard">
+                <StackPanel Spacing="6">
+                    <StackPanel x:Name="VoiceSettingsHelpPanel"
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                Visibility="Collapsed">
+                        <FontIcon x:Name="VoiceSettingsWarningIcon"
+                                  Glyph="&#xE7BA;"
+                                  FontSize="14"
+                                  Margin="0,1,0,0"
+                                  VerticalAlignment="Top"
+                                  Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                  AutomationProperties.AccessibilityView="Raw"/>
+                        <TextBlock x:Name="VoiceSettingsHelpText"
+                                   Text=""
                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
-                        <HyperlinkButton x:Name="SttMoreSettingsLink"
-                                         x:Uid="PermissionsPage_SttMoreSettingsLink"
-                                         Content="More voice settings…"
-                                         Click="OnSttMoreSettingsClick"
-                                         Padding="0"/>
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"/>
                     </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- ═════════ Text-to-speech engine details (only when TTS capability is on) ═════════ -->
-            <Border x:Name="TtsCard" Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="8" Padding="16,10,16,12" Margin="0,-4,0,0"
-                    Visibility="Collapsed">
-                <StackPanel Spacing="8">
-                    <ComboBox x:Name="TtsProviderComboBox" x:Uid="PermissionsPage_TtsProviderComboBox" Header="Provider"
-                              SelectionChanged="OnTtsProviderSelectionChanged">
-                        <ComboBoxItem x:Uid="PermissionsPage_TtsProviderPiper" Content="Piper (local ML, recommended)" Tag="piper"/>
-                        <ComboBoxItem x:Uid="PermissionsPage_TtsProviderWindows" Content="Windows built-in speech" Tag="windows"/>
-                        <ComboBoxItem x:Uid="PermissionsPage_TtsProviderElevenLabs" Content="ElevenLabs" Tag="elevenlabs"/>
-                    </ComboBox>
-                    <StackPanel x:Name="TtsElevenLabsPanel" Spacing="6" Visibility="Collapsed">
-                        <PasswordBox x:Name="TtsElevenLabsApiKeyBox"
-                                     x:Uid="PermissionsPage_TtsElevenLabsApiKey"
-                                     Header="ElevenLabs API key"
-                                     LostFocus="OnTtsElevenLabsCommitted"/>
-                        <TextBox x:Name="TtsElevenLabsVoiceIdBox"
-                                 x:Uid="PermissionsPage_TtsElevenLabsVoiceId"
-                                 Header="ElevenLabs voice ID"
-                                 LostFocus="OnTtsElevenLabsCommitted"/>
-                        <TextBox x:Name="TtsElevenLabsModelBox"
-                                 x:Uid="PermissionsPage_TtsElevenLabsModel"
-                                 Header="ElevenLabs model"
-                                 PlaceholderText="eleven_multilingual_v2"
-                                 LostFocus="OnTtsElevenLabsCommitted"/>
-                        <TextBlock x:Uid="PermissionsPage_TtsElevenLabsHelp"
-                                   Text="API key is encrypted at rest with Windows DPAPI. Leave blank to keep the previously saved value when you change other fields."
-                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <TextBlock x:Name="TtsStatusText"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <HyperlinkButton x:Name="VoiceSettingsLink"
+                                     x:Uid="PermissionsPage_VoiceSettingsLink"
+                                     Content="Voice &amp; Audio settings"
+                                     Click="OnVoiceSettingsClick"
+                                     Padding="0"/>
                 </StackPanel>
             </Border>
 
@@ -175,7 +150,7 @@
                             <TextBlock x:Uid="PermissionsPage_McpHeader" Text="Local MCP Server"
                                        Style="{StaticResource BodyStrongTextBlockStyle}"/>
                             <TextBlock x:Uid="PermissionsPage_McpDescription"
-                                       Text="Expose capabilities over HTTP for CLI tools and local integrations."
+                                       Text="Serves capabilities to local MCP clients (CLI tools, integrations) on this PC over HTTP."
                                        Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap"/>
@@ -212,7 +187,7 @@
             <TextBlock x:Uid="PermissionsPage_TextBlock_14" Text="Exec policy" Style="{StaticResource BodyStrongTextBlockStyle}"
                        Margin="{StaticResource PermSectionHeaderMargin}"/>
             <TextBlock x:Uid="PermissionsPage_TextBlock_17"
-                       Text="Controls which shell commands agents can execute on this node. Rules match against the full command line."
+                       Text="Controls which executables the agent can launch on this node. The executable-path allowlist starts empty."
                        Style="{StaticResource CaptionTextBlockStyle}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                        Margin="4,0,4,4"/>
@@ -228,7 +203,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="2">
                         <TextBlock x:Uid="PermissionsPage_DefaultAction" Text="Default action" Style="{StaticResource BodyTextBlockStyle}"/>
-                        <TextBlock x:Uid="PermissionsPage_WhatHappensWhenA" Text="What happens when a command doesn't match any rule below."
+                        <TextBlock x:Uid="PermissionsPage_WhatHappensWhenA" Text="What happens when a command doesn't match the executable-path allowlist below."
                                    Style="{StaticResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    TextWrapping="Wrap"/>
@@ -243,12 +218,12 @@
                 </Grid>
             </Border>
 
-            <!-- Rules card -->
+            <!-- Executable-path allowlist card -->
             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1" CornerRadius="8">
                 <StackPanel>
-                    <!-- Card header: title + rule count badge + auto-save hint -->
+                    <!-- Card header: title + entry count badge + auto-save hint -->
                     <Grid Padding="16,12,16,12" ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -256,8 +231,8 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Spacing="2">
-                            <TextBlock x:Uid="PermissionsPage_TextBlock_28" Text="Rules" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                            <TextBlock x:Uid="PermissionsPage_PatternsAreMatchedLeft" Text="Patterns are matched left-to-right against the full command line. Use * as a wildcard. Changes save automatically."
+                            <TextBlock x:Uid="PermissionsPage_TextBlock_28" Text="Executable-path allowlist" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                            <TextBlock x:Uid="PermissionsPage_PatternsAreMatchedLeft" Text="Allow Always creates an argument-bound entry for an eligible native .exe command. Entries added here are path-only and can allow matching executables with any arguments. Deny and Ask remain controlled by Default action. Changes save automatically."
                                        Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                        TextWrapping="Wrap"/>
@@ -273,7 +248,7 @@
                                 Background="{ThemeResource ControlAltFillColorSecondaryBrush}"
                                 CornerRadius="10" Padding="10,2"
                                 VerticalAlignment="Center">
-                            <TextBlock x:Uid="PermissionsPage_0Rules" x:Name="RulesCountBadge" Text="0 rules"
+                            <TextBlock x:Uid="PermissionsPage_0Rules" x:Name="RulesCountBadge" Text="0 entries"
                                        Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                         </Border>
@@ -281,16 +256,17 @@
 
                     <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}"/>
 
-                    <!-- Empty state — visible when there are no rules -->
+                    <!-- Empty state — visible when there are no allowlist entries -->
                     <TextBlock x:Uid="PermissionsPage_NoRulesYetAdd" x:Name="RulesEmptyState"
-                               Text="No rules yet. Add a pattern below to allow or deny specific commands."
+                              Text="No executable-path allowlist entries. Approve an eligible native .exe command with Allow Always, or add a path-only pattern such as **/hostname.exe."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                               TextWrapping="Wrap"
                                HorizontalAlignment="Center"
                                Margin="16,20,16,20"
                                Visibility="Collapsed"/>
 
-                    <!-- Rules list -->
+                    <!-- Allowlist entries -->
                     <ListView x:Name="PolicyRulesList" SelectionMode="None"
                               MaxHeight="320"
                               ItemContainerTransitions="{x:Null}">
@@ -325,10 +301,12 @@
                                                    HorizontalAlignment="Center"/>
                                     </Border>
                                     <Button Grid.Column="2"
-                                            Click="OnRemoveRule" Tag="{Binding Index}"
+                                            Click="OnRemoveRule" Tag="{Binding Rule}"
                                             Background="Transparent" BorderThickness="0"
                                             Padding="6" MinWidth="0"
-                                            ToolTipService.ToolTip="Remove rule">
+                                            AutomationProperties.Name="{Binding RemoveRuleAutomationName}"
+                                            AutomationProperties.AutomationId="{Binding RemoveRuleAutomationId}"
+                                            ToolTipService.ToolTip="Remove allowlist entry">
                                         <FontIcon Glyph="&#xE74D;" FontSize="14"
                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
                                     </Button>
@@ -339,21 +317,30 @@
 
                     <Border Height="1" Background="{ThemeResource CardStrokeColorDefaultBrush}"/>
 
-                    <!-- Add rule row -->
+                    <!-- Add allowlist entry row -->
                     <Grid Padding="16,12,16,12" ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0" x:Uid="NewRulePattern" x:Name="NewRulePattern"
-                                 PlaceholderText="Command pattern (e.g. echo *)"
-                                 FontFamily="Consolas"/>
-                        <ComboBox Grid.Column="1" x:Name="NewRuleAction" MinWidth="100" SelectedIndex="0">
-                            <ComboBoxItem x:Uid="PermissionsPage_ComboBoxItem_54" Content="allow" Tag="allow"/>
-                            <ComboBoxItem x:Uid="PermissionsPage_ComboBoxItem_55" Content="deny" Tag="deny"/>
-                        </ComboBox>
-                        <Button Grid.Column="2" x:Uid="PermissionsPage_Button_57" Content="Add" Click="OnAddRule"/>
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBox x:Uid="NewRulePattern" x:Name="NewRulePattern"
+                                     PlaceholderText="Executable-path pattern (e.g. **/hostname.exe)"
+                                     FontFamily="Consolas"
+                                     AutomationProperties.AutomationId="NewExecAllowlistPatternTextBox"/>
+                            <TextBlock x:Uid="PermissionsPage_ExecAllowlistPatternValidation"
+                                       x:Name="ExecAllowlistPatternValidation"
+                                       Text="Enter an executable-path pattern such as **/hostname.exe. Basename or command-text patterns such as hostname are invalid."
+                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                       TextWrapping="Wrap"
+                                       Visibility="Collapsed"
+                                       AutomationProperties.AutomationId="ExecAllowlistPatternValidation"
+                                       AutomationProperties.LiveSetting="Assertive"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" x:Uid="PermissionsPage_Button_57" Content="Add entry"
+                                Click="OnAddRule"
+                                AutomationProperties.AutomationId="AddExecAllowlistPatternButton"/>
                     </Grid>
                 </StackPanel>
             </Border>
@@ -362,7 +349,7 @@
             <TextBlock x:Uid="PermissionsPage_TextBlock_69" Text="Node allowlist" Style="{StaticResource BodyStrongTextBlockStyle}"
                        Margin="{StaticResource PermSectionHeaderMargin}"/>
             <TextBlock x:Uid="PermissionsPage_TextBlock_72"
-                       Text="Commands the gateway will accept from connected nodes. Read-only — edit via the Config page."
+                       Text="Commands the gateway will accept from connected nodes. Read-only: edit via the Config page."
                        Style="{StaticResource CaptionTextBlockStyle}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                        Margin="4,0,4,4"/>

@@ -98,6 +98,7 @@ public class OpenClawNotification
 {
     public string Title { get; set; } = "";
     public string Message { get; set; } = "";
+    public string? FullMessage { get; set; }
     public string Type { get; set; } = "";
     public bool IsChat { get; set; } = false; // True if from chat response
 
@@ -106,6 +107,13 @@ public class OpenClawNotification
     public string? Agent { get; set; }     // agent name/identifier
     public string? Intent { get; set; }    // normalized intent (reminder, build, alert)
     public string[]? Tags { get; set; }    // free-form routing tags
+
+    /// <summary>
+    /// The session key associated with this notification (e.g. the chat session
+    /// that produced an assistant response). Used by toast activation to open
+    /// the specific session instead of the default/main session.
+    /// </summary>
+    public string? SessionKey { get; set; }
 }
 
 /// <summary>
@@ -243,23 +251,62 @@ public static class ChannelHealthParser
     }
 }
 
+public sealed class SessionWorktreeInfo
+{
+    public string? Id { get; set; }
+    public string? Branch { get; set; }
+    public string? RepoRoot { get; set; }
+}
+
 public class SessionInfo
 {
+    /// <summary>Defensive copy so a snapshot handed to a SessionsUpdated subscriber does not
+    /// alias the live tracked instance (whose fields are mutated in place under _sessionsLock).</summary>
+    public SessionInfo Clone()
+    {
+        var copy = (SessionInfo)MemberwiseClone();
+        if (copy.Worktree is { } w)
+            copy.Worktree = new SessionWorktreeInfo
+            {
+                Id = w.Id, Branch = w.Branch, RepoRoot = w.RepoRoot,
+            };
+        return copy;
+    }
+
     public string Key { get; set; } = "";
     public bool IsMain { get; set; }
+    internal bool IsMainResolved { get; set; }
+    public string? Label { get; set; }
     public string Status { get; set; } = "unknown";
     public string? Model { get; set; }
     public string? Channel { get; set; }
     public string? DisplayName { get; set; }
+    public string? DerivedTitle { get; set; }
     public string? Provider { get; set; }
     public string? Subject { get; set; }
     public string? Room { get; set; }
     public string? Space { get; set; }
+    public string? ChatType { get; set; }
+    public string? Classification { get; set; }
+    public string? AgentId { get; set; }
+    public string? AccountId { get; set; }
+    public string? PeerKind { get; set; }
+    public bool? IsBackground { get; set; }
+    public string? OriginLabel { get; set; }
+    public SessionWorktreeInfo? Worktree { get; set; }
+    public string? ExecNode { get; set; }
+    public string? ParentSessionKey { get; set; }
+    public int? SpawnDepth { get; set; }
     public string? SessionId { get; set; }
     public string? ThinkingLevel { get; set; }
     public string? VerboseLevel { get; set; }
     public bool SystemSent { get; set; }
     public bool AbortedLastRun { get; set; }
+    /// <summary>
+    /// Gateway-provided liveness for the session's current run. Null means an
+    /// older Gateway did not provide the field, so callers may use legacy status.
+    /// </summary>
+    public bool? HasActiveRun { get; set; }
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
     public long TotalTokens { get; set; }
@@ -292,9 +339,7 @@ public class SessionInfo
     {
         get
         {
-            var title = !string.IsNullOrWhiteSpace(DisplayName)
-                ? DisplayName!
-                : (IsMain ? "Main session" : "Session");
+            var title = SessionDisplayResolver.Resolve(this).Title;
 
             // Fixed-size array avoids List<string> allocation; at most 9 detail slots.
             var details = new string?[9];
@@ -337,26 +382,7 @@ public class SessionInfo
     /// <summary>Gets a shortened, user-friendly version of the session key.</summary>
     public string ShortKey
     {
-        get
-        {
-            if (string.IsNullOrEmpty(Key)) return "unknown";
-            
-            // Extract meaningful part from session keys like "agent:main:subagent:uuid"
-            var parts = Key.Split(':');
-            if (parts.Length >= 3)
-            {
-                // Return something like "subagent" or "cron" 
-                return parts[^2]; // Second to last part
-            }
-            
-            // For file paths, just return filename
-            if (Key.Contains('/') || Key.Contains('\\'))
-            {
-                return Path.GetFileName(Key);
-            }
-            
-            return Key.Length > 20 ? Key[..17] + "..." : Key;
-        }
+        get => SessionDisplayResolver.Resolve(this).Title;
     }
 
 }
@@ -1153,6 +1179,7 @@ public static class CommandCenterCommandGroups
     public static readonly string[] DangerousCommands =
     [
         .. CommonDangerousCommands,
+        "tts.status",
         "stt.transcribe",
         "stt.listen",
         "stt.status"
@@ -1759,6 +1786,12 @@ public static class ModelFormatting
 /// </summary>
 public class ChatMessageInfo
 {
+    public const string SilentAssistantDirective = "NO_REPLY";
+
+    public static bool IsSilentAssistantDirective(string? role, string? text) =>
+        string.Equals(role, "assistant", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(text?.Trim(), SilentAssistantDirective, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Session this message belongs to (e.g. "main").</summary>
     public string SessionKey { get; set; } = "";
 
@@ -1767,6 +1800,21 @@ public class ChatMessageInfo
 
     /// <summary>Full text content of the message.</summary>
     public string Text { get; set; } = "";
+
+    /// <summary>
+    /// Structured tool call/result blocks retained from array-valued message
+    /// content so native clients can correlate inputs with outputs.
+    /// </summary>
+    public IReadOnlyList<ChatToolContentInfo> ToolContent { get; set; } =
+        Array.Empty<ChatToolContentInfo>();
+
+    /// <summary>
+    /// Ordered text, tool, and media blocks retained from message content.
+    /// Flat <see cref="Text"/> and <see cref="ToolContent"/> remain populated for
+    /// compatibility with consumers that do not need block-level chronology.
+    /// </summary>
+    public IReadOnlyList<ChatMessageContentPartInfo> ContentParts { get; set; } =
+        Array.Empty<ChatMessageContentPartInfo>();
 
     /// <summary>
     /// Optional gateway-assigned message state. "final" indicates a complete
@@ -1809,11 +1857,99 @@ public class ChatMessageInfo
     /// <summary>Monotonic sequence number within the session from <c>__openclaw.seq</c>.</summary>
     public int? OpenClawSeq { get; set; }
 
+    /// <summary>Structured gateway message kind from <c>__openclaw.kind</c>.</summary>
+    public string? OpenClawKind { get; set; }
+
+    /// <summary>Context token count before a structured compaction boundary.</summary>
+    public long? CompactionTokensBefore { get; set; }
+
+    /// <summary>Context token count after a structured compaction boundary.</summary>
+    public long? CompactionTokensAfter { get; set; }
+
     /// <summary>
     /// Stop reason for assistant messages (e.g. "stop", "toolUse", possibly "abort").
     /// Only present on assistant messages in <c>chat.history</c>.
     /// </summary>
     public string? StopReason { get; set; }
+}
+
+public enum ChatToolContentKind
+{
+    Call,
+    Result,
+}
+
+public class ChatToolContentInfo
+{
+    public ChatToolContentKind Kind { get; set; }
+    public string? CallId { get; set; }
+    public string ToolName { get; set; } = "tool";
+    public JsonElement? Args { get; set; }
+    public string? Text { get; set; }
+    public bool IsError { get; set; }
+}
+
+public enum ChatMessageContentPartKind
+{
+    Text,
+    Tool,
+    Media,
+}
+
+public class ChatMessageContentPartInfo
+{
+    public ChatMessageContentPartKind Kind { get; set; }
+    public string? Text { get; set; }
+    public ChatToolContentInfo? Tool { get; set; }
+    public ChatMediaContentInfo? Media { get; set; }
+}
+
+public enum ChatMediaContentKind
+{
+    Image,
+    Audio,
+    Video,
+    File,
+    Unknown,
+}
+
+public enum ChatMediaPlaybackMode
+{
+    Native,
+    Transcode,
+}
+
+public enum ChatMediaContentSource
+{
+    Structured,
+    LegacyDirective,
+    Unavailable,
+}
+
+/// <summary>
+/// Typed assistant media metadata retained from the Gateway protocol. Legacy
+/// Gateway sources are transient transport references and must never be
+/// displayed, logged, persisted, or passed to local file APIs.
+/// </summary>
+public sealed class ChatMediaContentInfo
+{
+    public ChatMediaContentKind Kind { get; set; }
+    public ChatMediaContentSource Source { get; set; }
+    public string? Type { get; set; }
+    public string? MimeType { get; set; }
+    public string? FileName { get; set; }
+    public string? ArtifactId { get; set; }
+    public string? AgentId { get; set; }
+    public string? Url { get; set; }
+    public string? OpenUrl { get; set; }
+    public string? Alt { get; set; }
+    public int? Width { get; set; }
+    public int? Height { get; set; }
+    public long? SizeBytes { get; set; }
+    public double? DurationSeconds { get; set; }
+    public ChatMediaPlaybackMode? Playback { get; set; }
+
+    internal string? GatewaySource { get; set; }
 }
 
 /// <summary>
@@ -1983,7 +2119,27 @@ public sealed class ChatSendResult
 {
     public string? RunId { get; init; }
     public string? SessionKey { get; init; }
+    public string? Status { get; init; }
+    public string? Error { get; init; }
     public bool Cached { get; init; }
+
+    public bool IsTerminalFailure => IsFailureStatus(Status) || !string.IsNullOrWhiteSpace(Error);
+
+    public static bool IsFailureStatus(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+            return false;
+
+        return status.Equals("failed", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("failure", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("error", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("rejected", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("denied", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("aborted", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("timeout", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("cancelled", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("canceled", StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 // ── Node/Device Pairing ──
@@ -2067,8 +2223,28 @@ public class ModelInfo
     public string? Name { get; set; }
     public string? Provider { get; set; }
     public int? ContextWindow { get; set; }
+    public int? ContextTokens { get; set; }
+
+    /// <summary>True when the model's provider is configured on the gateway.</summary>
     public bool IsConfigured { get; set; }
     public bool HasConfiguredFlag { get; set; }
+
+    /// <summary>True when the gateway marks this model as the default choice.</summary>
+    public bool IsDefault { get; set; }
+
+    /// <summary>
+    /// True when the model can be selected/used right now. Defaults to
+    /// <c>true</c> so models lists from gateways that don't report availability
+    /// are treated as usable. The gateway may report <c>available:false</c> or
+    /// <c>unavailable:true</c> to mark a model as not selectable.
+    /// </summary>
+    public bool IsAvailable { get; set; } = true;
+
+    /// <summary>
+    /// True when the model's provider needs authentication/credentials before
+    /// it can be used (e.g. an API key has not been configured yet).
+    /// </summary>
+    public bool RequiresAuth { get; set; }
 
     public string DisplayName => Name ?? Id;
 }

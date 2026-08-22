@@ -43,23 +43,74 @@ public sealed record AppNotificationSnapshot(
     public bool HasMultipleActiveNotifications => ActiveNotifications.Count > 1;
 }
 
+internal static class AppNotificationActionRoutes
+{
+    private const string ChatPrefix = "chat:";
+
+    public static string Chat(string sessionKey) =>
+        ChatPrefix + Uri.EscapeDataString(sessionKey);
+
+    public static bool TryGetChatSessionKey(string? route, out string? sessionKey)
+    {
+        sessionKey = null;
+        if (string.IsNullOrWhiteSpace(route) ||
+            !route.StartsWith(ChatPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var encoded = route[ChatPrefix.Length..];
+        if (string.IsNullOrWhiteSpace(encoded))
+            return false;
+
+        sessionKey = Uri.UnescapeDataString(encoded);
+        return !string.IsNullOrWhiteSpace(sessionKey);
+    }
+}
+
 internal sealed class AppNotificationBannerState
 {
+    private const string ConnectionSource = "connection";
     private readonly HashSet<string> _hiddenNotificationIds = new(StringComparer.Ordinal);
 
     public AppNotification? SelectVisibleNotification(AppNotificationSnapshot snapshot, bool revealHiddenIfNeeded = false)
     {
         PruneRemovedNotifications(snapshot);
-        var visible = snapshot.ActiveNotifications.FirstOrDefault(notification =>
-            !_hiddenNotificationIds.Contains(notification.Id));
+
+        var visibleCandidates = snapshot.ActiveNotifications
+            .Where(notification => !_hiddenNotificationIds.Contains(notification.Id))
+            .ToList();
+
+        // Connection issues are the most actionable banner (they route the user
+        // to the Connection page), so surface them ahead of any earlier,
+        // unrelated notification that happens to be current. Without this, a
+        // connection failure arriving while another notification is showing
+        // would be queued behind it and the user couldn't reach Connection.
+        // Among connection-source notifications, prefer one that actually has an
+        // action: an action-less connection notification (e.g. a transient
+        // gateway-host failure) must not mask a real connection error and
+        // degrade the banner to "Show more".
+        var visible = visibleCandidates.FirstOrDefault(IsActionableConnectionPriority)
+            ?? visibleCandidates.FirstOrDefault(IsConnectionPriority)
+            ?? visibleCandidates.FirstOrDefault();
         if (visible is not null || !revealHiddenIfNeeded)
             return visible;
 
-        var fallback = snapshot.ActiveNotifications.FirstOrDefault();
+        var fallback = snapshot.ActiveNotifications.FirstOrDefault(IsActionableConnectionPriority)
+            ?? snapshot.ActiveNotifications.FirstOrDefault(IsConnectionPriority)
+            ?? snapshot.ActiveNotifications.FirstOrDefault();
         if (fallback is not null)
             _hiddenNotificationIds.Remove(fallback.Id);
         return fallback;
     }
+
+    private static bool IsConnectionPriority(AppNotification notification) =>
+        string.Equals(notification.Source, ConnectionSource, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsActionableConnectionPriority(AppNotification notification) =>
+        IsConnectionPriority(notification)
+        && !string.IsNullOrWhiteSpace(notification.ActionLabel)
+        && !string.IsNullOrWhiteSpace(notification.ActionRoute);
 
     public void HideActiveNotifications(AppNotificationSnapshot snapshot)
     {
@@ -84,6 +135,7 @@ public sealed class AppNotificationChangedEventArgs(AppNotificationSnapshot snap
 
 internal sealed class AppNotificationService
 {
+    private const int MaxActiveNotifications = 100;
     private readonly object _gate = new();
     private readonly List<AppNotification> _queue = new();
     private AppNotification? _current;
@@ -119,6 +171,7 @@ internal sealed class AppNotificationService
             else
             {
                 _queue.Add(normalized);
+                PruneQueueLocked();
                 snapshot = CreateSnapshotLocked();
             }
         }
@@ -160,6 +213,37 @@ internal sealed class AppNotificationService
                     changed = true;
                     break;
                 }
+            }
+
+            snapshot = CreateSnapshotLocked();
+        }
+
+        if (changed)
+            RaiseChanged(snapshot);
+    }
+
+    public void DismissByDedupeKey(string dedupeKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dedupeKey);
+
+        AppNotificationSnapshot snapshot;
+        var changed = false;
+        lock (_gate)
+        {
+            if (_current is not null &&
+                string.Equals(_current.DedupeKey, dedupeKey, StringComparison.OrdinalIgnoreCase))
+            {
+                _current = _queue.Count > 0 ? DequeueLocked() : null;
+                changed = true;
+            }
+
+            for (var i = _queue.Count - 1; i >= 0; i--)
+            {
+                if (!string.Equals(_queue[i].DedupeKey, dedupeKey, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                _queue.RemoveAt(i);
+                changed = true;
             }
 
             snapshot = CreateSnapshotLocked();
@@ -294,6 +378,13 @@ internal sealed class AppNotificationService
         var next = _queue[0];
         _queue.RemoveAt(0);
         return next;
+    }
+
+    private void PruneQueueLocked()
+    {
+        var maxQueued = _current is null ? MaxActiveNotifications : MaxActiveNotifications - 1;
+        while (_queue.Count > maxQueued)
+            _queue.RemoveAt(0);
     }
 
     private AppNotificationSnapshot CreateSnapshotLocked()

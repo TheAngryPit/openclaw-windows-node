@@ -5,6 +5,41 @@ using OpenClaw.Shared;
 
 namespace OpenClaw.Shared.Tests;
 
+public class ChatSendResultTests
+{
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("failure")]
+    [InlineData("error")]
+    [InlineData("rejected")]
+    [InlineData("denied")]
+    [InlineData("aborted")]
+    [InlineData("timeout")]
+    [InlineData("cancelled")]
+    [InlineData("canceled")]
+    public void IsTerminalFailure_ReturnsTrue_ForTerminalStatus(string status)
+    {
+        var result = new ChatSendResult { Status = status };
+
+        Assert.True(result.IsTerminalFailure);
+        Assert.True(ChatSendResult.IsFailureStatus(status));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("started")]
+    [InlineData("in_flight")]
+    [InlineData("ok")]
+    public void IsTerminalFailure_ReturnsFalse_ForNonTerminalStatus(string? status)
+    {
+        var result = new ChatSendResult { Status = status };
+
+        Assert.False(result.IsTerminalFailure);
+        Assert.False(ChatSendResult.IsFailureStatus(status));
+    }
+}
+
 public class AgentActivityTests
 {
     [Fact]
@@ -241,7 +276,7 @@ public class GatewaySelfInfoTests
         using var doc = JsonDocument.Parse("""
         {
           "type": "hello-ok",
-          "protocol": 1,
+          "protocol": 4,
           "server": { "version": "0.7.0", "connId": "abc123" },
           "snapshot": {
             "presence": [{ "host": "mac", "ts": 123 }],
@@ -263,7 +298,7 @@ public class GatewaySelfInfoTests
         Assert.True(info.HasAnyDetails);
         Assert.Equal("0.7.0", info.ServerVersion);
         Assert.Equal("abc123", info.ConnectionId);
-        Assert.Equal(1, info.Protocol);
+        Assert.Equal(4, info.Protocol);
         Assert.Equal(125000, info.UptimeMs);
         Assert.Equal("token", info.AuthMode);
         Assert.Equal(4, info.StateVersionPresence);
@@ -569,14 +604,14 @@ public class SessionInfoTests
     public void ShortKey_ReturnsUnknown_ForEmptyKey()
     {
         var session = new SessionInfo { Key = "" };
-        Assert.Equal("unknown", session.ShortKey);
+        Assert.Equal("Session", session.ShortKey);
     }
 
     [Fact]
     public void ShortKey_ReturnsSecondToLast_ForColonSeparatedKey()
     {
         var session = new SessionInfo { Key = "agent:main:subagent:uuid" };
-        Assert.Equal("subagent", session.ShortKey);
+        Assert.Equal("Subagent", session.ShortKey);
     }
 
     [Fact]
@@ -590,27 +625,14 @@ public class SessionInfoTests
     public void ShortKey_ReturnsFilename_ForPathWithBackslashes()
     {
         var session = new SessionInfo { Key = @"C:\path\to\file.txt" };
-        var result = session.ShortKey;
-        // ShortKey uses Path.GetFileName which handles backslashes on Windows.
-        // On non-Windows, Path.GetFileName may not split on backslash, returning the full key
-        // which then gets truncated. Either way, the result must not be empty.
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Equal("file.txt", result);
-        }
-        else
-        {
-            // On Linux Path.GetFileName won't split on '\', so it falls through to truncation
-            Assert.NotEmpty(result);
-            Assert.DoesNotContain("unknown", result);
-        }
+        Assert.Equal("file.txt", session.ShortKey);
     }
 
     [Fact]
     public void ShortKey_TruncatesLongKeys()
     {
         var session = new SessionInfo { Key = "this-is-a-very-long-key-that-should-be-truncated" };
-        Assert.Equal("this-is-a-very-lo...", session.ShortKey);
+        Assert.Equal("this-is-a-very-long-key-that-sh…", session.ShortKey);
     }
 
     [Fact]
@@ -654,6 +676,42 @@ public class SessionInfoTests
         var status = string.IsNullOrEmpty(session.Status) ? "Unknown"
             : char.ToUpperInvariant(session.Status[0]) + session.Status[1..];
         Assert.Equal("Unknown", status);
+    }
+
+    [Fact]
+    public void Clone_PreservesFlatSessionFacts()
+    {
+        var original = new SessionInfo
+        {
+            Key = "agent:main:test",
+            Classification = "custom", AgentId = "main", IsBackground = false,
+        };
+        var clone = original.Clone();
+        Assert.Equal("custom", clone.Classification);
+        Assert.Equal("main", clone.AgentId);
+        Assert.False(clone.IsBackground);
+    }
+
+    [Fact]
+    public void Clone_DeepCopies_Worktree()
+    {
+        var original = new SessionInfo
+        {
+            Key = "agent:main:dashboard:abc",
+            Worktree = new SessionWorktreeInfo
+            {
+                Id = "wt-1", Branch = "main", RepoRoot = "/home/user/repo",
+            },
+        };
+        var clone = original.Clone();
+
+        // Mutate clone's Worktree
+        clone.Worktree!.Branch = "feature-x";
+        clone.Worktree.RepoRoot = "/other/path";
+
+        // Original must be unchanged
+        Assert.Equal("main", original.Worktree.Branch);
+        Assert.Equal("/home/user/repo", original.Worktree.RepoRoot);
     }
 }
 
@@ -2000,6 +2058,16 @@ public class SessionInfoContextSummaryTests
         // Mac has no equivalent yet; ensure parity diagnostic does not flag
         // Windows nodes for "missing" stt.transcribe.
         Assert.DoesNotContain("stt.transcribe", CommandCenterCommandGroups.MacNodeParityCommands);
+    }
+
+    [Fact]
+    public void DangerousCommands_IncludesTtsStatus()
+    {
+        // tts.status is gated behind NodeTtsEnabled alongside tts.speak so the
+        // readiness probe isn't advertised until TTS is explicitly enabled.
+        Assert.Contains("tts.speak", CommandCenterCommandGroups.DangerousCommands);
+        Assert.Contains("tts.status", CommandCenterCommandGroups.DangerousCommands);
+        Assert.Contains("tts.status", (IReadOnlySet<string>)CommandCenterCommandGroups.DangerousCommandSet);
     }
 
     [Fact]

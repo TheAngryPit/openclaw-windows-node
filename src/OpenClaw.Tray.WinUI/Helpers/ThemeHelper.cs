@@ -30,12 +30,25 @@ public static class ThemeHelper
         return IsDarkMode() ? ElementTheme.Dark : ElementTheme.Light;
     }
 
+    public static ElementTheme GetRequestedTheme(string? preference) =>
+        SettingsManager.NormalizeAppTheme(preference) switch
+        {
+            SettingsManager.AppThemeLight => ElementTheme.Light,
+            SettingsManager.AppThemeDark => ElementTheme.Dark,
+            _ => ElementTheme.Default
+        };
+
+    public static void ApplyTheme(Window? window, string? preference)
+    {
+        if (window?.Content is FrameworkElement rootElement)
+            rootElement.RequestedTheme = GetRequestedTheme(preference);
+    }
+
     public static Color GetAccentColor()
     {
-        // Returns the user's Windows accent color (previously hard-coded to
-        // lobster red). Reads HKCU\Software\Microsoft\Windows\DWM\AccentColor
-        // which is stored as ABGR DWORD, falls back to the WinUI default
-        // blue if the registry key is missing.
+        // Returns the user's Windows accent color. Reads
+        // HKCU\Software\Microsoft\Windows\DWM\AccentColor, which is stored as
+        // ABGR DWORD, and falls back to the WinUI default blue if missing.
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\DWM");

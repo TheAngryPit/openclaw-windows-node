@@ -53,7 +53,8 @@ public static class SshTunnelCommandLine
             ValidateBrowserProxyPort(localPort, nameof(localPort));
         }
 
-        var sb = new StringBuilder(BaseOptions);
+        var sb = new StringBuilder();
+        sb.Append(BaseOptions);
         AppendLocalForward(sb, localPort, remotePort);
         if (includeBrowserProxyForward)
             AppendLocalForward(sb, localPort + 2, remotePort + 2);

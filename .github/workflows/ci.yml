@@ -14,7 +14,7 @@ jobs:
   repo-hygiene:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Ensure .squad stays untracked
       shell: bash
@@ -38,60 +38,18 @@ jobs:
         Write-Error "repo-hygiene failed; see the repo-hygiene job output."
         exit 1
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
-    - name: Detect gateway LKG drift from npm latest
-      id: gateway_lkg_drift
-      continue-on-error: true
-      shell: pwsh
-      run: |
-        $sourcePath = "src/OpenClaw.SetupEngine/GatewayLkgVersion.cs"
-        $source = Get-Content -LiteralPath $sourcePath -Raw
-        $match = [regex]::Match($source, 'LkgVersion\s*=\s*"([^"]+)"')
-        if (-not $match.Success) {
-          throw "Unable to parse LKG version from $sourcePath"
-        }
-
-        $pinned = $match.Groups[1].Value
-        $latest = (Invoke-RestMethod -Uri "https://registry.npmjs.org/openclaw/latest" -TimeoutSec 30).version
-        if ([string]::IsNullOrWhiteSpace($latest)) {
-          throw "Unable to resolve npm latest version for openclaw."
-        }
-        if ($latest -notmatch '^[0-9]+\.[0-9]+\.[0-9]+([.\-+][A-Za-z0-9.\-]+)*$') {
-          throw "Resolved npm latest version has unexpected format: $latest"
-        }
-
-        "pinned=$pinned" >> $env:GITHUB_OUTPUT
-        "latest=$latest" >> $env:GITHUB_OUTPUT
-
-        if ($pinned -ne $latest) {
-          "drifted=true" >> $env:GITHUB_OUTPUT
-          Write-Host "::warning::Gateway LKG drift detected: pinned $pinned, npm latest $latest. Run gateway-lkg-update workflow to refresh the standing draft PR."
-          Write-Error "Gateway LKG drift detected (pinned $pinned, npm latest $latest)."
-          "### :warning: Gateway LKG drift detected" >> $env:GITHUB_STEP_SUMMARY
-          "" >> $env:GITHUB_STEP_SUMMARY
-          "- Pinned LKG: $pinned" >> $env:GITHUB_STEP_SUMMARY
-          "- npm latest: $latest" >> $env:GITHUB_STEP_SUMMARY
-          "- Action: run `gateway-lkg-update` to refresh the standing draft PR." >> $env:GITHUB_STEP_SUMMARY
-          exit 1
-        } else {
-          "drifted=false" >> $env:GITHUB_OUTPUT
-          Write-Host "Gateway LKG is current ($pinned)."
-          "### Gateway LKG is current" >> $env:GITHUB_STEP_SUMMARY
-          "" >> $env:GITHUB_STEP_SUMMARY
-          "- Pinned LKG: $pinned" >> $env:GITHUB_STEP_SUMMARY
-        }
-
     - name: Setup .NET 10
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
 
     - name: Cache NuGet packages
       continue-on-error: true
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.nuget/packages
         key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
@@ -115,6 +73,10 @@ jobs:
         if ($actual -ne $expected) {
           throw "GitVersion SemVer '$actual' did not match tag '$expected'."
         }
+
+    - name: Validate documentation
+      shell: pwsh
+      run: ./scripts/validate-docs.ps1
 
     - name: Restore dependencies
       run: dotnet restore
@@ -275,7 +237,55 @@ jobs:
         -r win-x64
         --verbosity normal
         --results-directory TestResults\TrayUI
-        --logger trx;LogFileName=OpenClaw.Tray.UITests.trx"
+        --logger trx;LogFileName=OpenClaw.Tray.UITests.trx
+        --filter Category!=Accessibility"
+
+    # Accessibility Insights CI pass: scans each page in the real app process.
+    - name: Run Accessibility Tests (Axe.Windows)
+      id: a11y
+      run: >
+        dotnet test tests/OpenClaw.Tray.UITests
+        --no-build
+        -c Debug
+        -r win-x64
+        --verbosity normal
+        --results-directory TestResults\Accessibility
+        --logger "trx;LogFileName=Accessibility.trx"
+        --filter Category=Accessibility
+
+    - name: Accessibility test summary
+      if: always() && steps.a11y.outcome != 'skipped'
+      shell: pwsh
+      run: |
+        if ("${{ steps.a11y.outcome }}" -eq "failure") {
+          "### :x: Accessibility violations detected" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "Axe.Windows scans found WCAG violations in one or more pages." >> $env:GITHUB_STEP_SUMMARY
+          "See the `Accessibility.trx` artifact for details." >> $env:GITHUB_STEP_SUMMARY
+        } else {
+          "### :white_check_mark: Accessibility scans passed" >> $env:GITHUB_STEP_SUMMARY
+          "" >> $env:GITHUB_STEP_SUMMARY
+          "All pages passed Axe.Windows accessibility validation." >> $env:GITHUB_STEP_SUMMARY
+        }
+
+    - name: Verify DevBuild identity marker
+      shell: pwsh
+      run: |
+        dotnet build src/OpenClaw.Tray.WinUI -c Debug -r win-x64 -p:DevBuild=true --no-restore
+        $marker = Get-ChildItem -Path src\OpenClaw.Tray.WinUI\bin\Debug -Recurse -Filter app-identity.txt |
+          Where-Object { $_.FullName -like '*\win-x64\app-identity.txt' } |
+          Sort-Object LastWriteTimeUtc -Descending |
+          Select-Object -First 1
+        if ($null -eq $marker) {
+          throw "Dev identity marker was not produced by the DevBuild."
+        }
+
+        $identity = (Get-Content -LiteralPath $marker.FullName -Raw).Trim()
+        if ($identity -ne "dev") {
+          throw "Expected DevBuild identity marker 'dev' but found '$identity' at $($marker.FullName)."
+        }
+
+        Write-Host "DevBuild identity marker verified at $($marker.FullName): $identity"
 
     - name: Upload Test Results
       if: always()
@@ -293,16 +303,19 @@ jobs:
     needs: repo-hygiene
     if: ${{ !cancelled() }}
     runs-on: windows-latest
-    timeout-minutes: 25
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: setup-connect
-            filter: FullyQualifiedName~OpenClaw.E2ETests.Setup.SetupAndConnectTests
+            timeout_minutes: 45
+            filter: "FullyQualifiedName~OpenClaw.E2ETests.Setup.SetupAndConnectTests|FullyQualifiedName~OpenClaw.E2ETests.Setup.MxcSetupAndConnectTests|FullyQualifiedName~OpenClaw.E2ETests.Setup.MirroredWslPortLeaseTests|FullyQualifiedName~OpenClaw.E2ETests.Setup.SshOwnershipAdversarialProofTests|FullyQualifiedName~OpenClaw.E2ETests.Setup.TrayExecutableResolutionTests"
           - name: revocation-recovery
+            timeout_minutes: 25
             filter: FullyQualifiedName~OpenClaw.E2ETests.Setup.RevocationAndRecoveryTests
           - name: network-recovery
+            timeout_minutes: 25
             filter: FullyQualifiedName~OpenClaw.E2ETests.Setup.NetworkRecoveryTests
     steps:
     - name: Fail if repo hygiene failed
@@ -312,18 +325,18 @@ jobs:
         Write-Error "repo-hygiene failed; see the repo-hygiene job output."
         exit 1
 
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Setup .NET 10
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
 
     - name: Cache NuGet packages
       continue-on-error: true
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.nuget/packages
         key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
@@ -366,6 +379,59 @@ jobs:
           Write-Error "E2E shard '${{ matrix.name }}' executed zero tests. Check OPENCLAW_RUN_E2E gating/filter before merging."
           exit 1
         }
+        if ("${{ matrix.name }}" -eq "setup-connect") {
+          $mxcProofNames = @(
+            "RealGateway_SystemRun_ExecutesThroughWindowsNodeMxcSandbox",
+            "RealGateway_SystemRun_BlocksWritesToTrayDataDirectoryInMxcSandbox"
+          )
+
+          foreach ($mxcProofName in $mxcProofNames) {
+            $mxcProof = @($trx.TestRun.Results.UnitTestResult | Where-Object { $_.testName -like "*$mxcProofName*" }) | Select-Object -First 1
+            if ($null -eq $mxcProof) {
+              Write-Error "E2E shard '${{ matrix.name }}' did not report the MXC proof test '$mxcProofName'. Check the setup-connect filter before merging."
+              exit 1
+            }
+
+            $mxcOutcome = [string]$mxcProof.outcome
+            if ($mxcOutcome -eq "Passed") {
+              Write-Host "MXC E2E proof passed: $mxcProofName"
+            } elseif ($mxcOutcome -eq "NotExecuted" -or $mxcOutcome -eq "Skipped") {
+              $mxcSkipReason = @($mxcProof.Output.ErrorInfo.Message, $mxcProof.Output.StdOut) |
+                Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                Select-Object -First 1
+              if ([string]::IsNullOrWhiteSpace($mxcSkipReason)) {
+                $mxcSkipReason = "skip reason was not present in the trx output"
+              }
+              Write-Warning "MXC E2E proof skipped: $mxcProofName; $mxcSkipReason"
+            } else {
+              Write-Error "MXC E2E proof '$mxcProofName' had unexpected outcome '$mxcOutcome'."
+              exit 1
+            }
+          }
+
+          $sshOwnershipProofNames = @(
+            "UnownedListenerIsRejectedThenOwnedTunnelRecoversWithoutRepairing",
+            "InitialHandshakeListenerReplacementWithholdsCredentialFrame",
+            "InitialNodeHandshakeListenerReplacementWithholdsCredentialFrame"
+          )
+          foreach ($sshOwnershipProofName in $sshOwnershipProofNames) {
+            $sshOwnershipProof = @(
+              $trx.TestRun.Results.UnitTestResult |
+                Where-Object { $_.testName -like "*$sshOwnershipProofName*" }
+            ) | Select-Object -First 1
+            if ($null -eq $sshOwnershipProof) {
+              Write-Error "E2E shard '${{ matrix.name }}' did not report the SSH ownership proof test '$sshOwnershipProofName'. Check the setup-connect filter before merging."
+              exit 1
+            }
+
+            $sshOwnershipOutcome = [string]$sshOwnershipProof.outcome
+            if ($sshOwnershipOutcome -ne "Passed") {
+              Write-Error "SSH ownership E2E proof '$sshOwnershipProofName' had outcome '$sshOwnershipOutcome'; this proof must pass and may not skip."
+              exit 1
+            }
+            Write-Host "SSH ownership E2E proof passed: $sshOwnershipProofName"
+          }
+        }
 
     - name: Upload E2E Test Results & Logs
       if: always()
@@ -384,18 +450,18 @@ jobs:
         rid: [win-x64, win-arm64]
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Setup .NET 10
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
 
     - name: Cache NuGet packages
       continue-on-error: true
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.nuget/packages
         key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
@@ -419,9 +485,9 @@ jobs:
       if: matrix.rid == 'win-arm64'
       shell: pwsh
       # -SkipNativeLoadProbe: an ARM64 runner CAN LoadLibrary ARM64 DLLs, but
-      # libsodium pulls in a long native dependency chain that may not all be
-      # in the payload here (WindowsAppSDK pieces, etc.). The probe is for x64
-      # parity; signature + presence is what we actually care about.
+      # the full tray native dependency chain may include components that are
+      # not in this payload here (WindowsAppSDK pieces, etc.). The probe is for
+      # x64 parity; signature + presence is what we actually care about.
       run: .\scripts\Test-ReleaseNativeDependencies.ps1 -PayloadPath publish -RequireAppLocalVCRuntime -SkipNativeLoadProbe
 
     - name: Verify GitVersion assembly metadata
@@ -446,7 +512,7 @@ jobs:
 
   build-msix:
     needs: [test, e2etests]
-    if: false # Paused for alpha.4; ship Inno setup and portable ZIP artifacts only.
+    if: false # MSIX distribution is paused; ship Inno setup and portable ZIP artifacts only.
     runs-on: ${{ matrix.rid == 'win-arm64' && 'windows-11-arm' || 'windows-latest' }}
     continue-on-error: true
     strategy:
@@ -460,12 +526,12 @@ jobs:
             platform: ARM64
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Setup .NET 10 for VS MSBuild
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.100
 
@@ -479,7 +545,7 @@ jobs:
 
     - name: Cache NuGet packages
       continue-on-error: true
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.nuget/packages
         key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props') }}
@@ -550,7 +616,7 @@ jobs:
       id-token: write
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
 
     - name: Download win-x64 tray artifact
       uses: actions/download-artifact@v8
@@ -579,49 +645,73 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-    - name: Stage x64 OpenClaw Executables for Signing
+    - name: Stage x64 OpenClaw Binaries for Signing
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Path signing-input-x64 -Force | Out-Null
-        New-Item -ItemType HardLink -Path signing-input-x64\OpenClaw.Tray.WinUI.exe -Target artifacts\tray-win-x64\OpenClaw.Tray.WinUI.exe | Out-Null
+        $openClawBinaries = @(
+          "OpenClaw.Tray.WinUI.exe",
+          "OpenClaw.Tray.WinUI.dll",
+          "OpenClaw.Chat.dll",
+          "OpenClaw.Connection.dll",
+          "OpenClaw.SetupEngine.UI.dll",
+          "OpenClaw.SetupEngine.dll",
+          "OpenClaw.Shared.dll",
+          "OpenClawTray.FunctionalUI.dll"
+        )
+        foreach ($binary in $openClawBinaries) {
+          New-Item -ItemType HardLink -Path "signing-input-x64\$binary" -Target "artifacts\tray-win-x64\$binary" | Out-Null
+        }
 
-    - name: Stage ARM64 OpenClaw Executables for Signing
+    - name: Stage ARM64 OpenClaw Binaries for Signing
       shell: pwsh
       run: |
         New-Item -ItemType Directory -Path signing-input-arm64 -Force | Out-Null
-        New-Item -ItemType HardLink -Path signing-input-arm64\OpenClaw.Tray.WinUI.exe -Target artifacts\tray-win-arm64\OpenClaw.Tray.WinUI.exe | Out-Null
+        $openClawBinaries = @(
+          "OpenClaw.Tray.WinUI.exe",
+          "OpenClaw.Tray.WinUI.dll",
+          "OpenClaw.Chat.dll",
+          "OpenClaw.Connection.dll",
+          "OpenClaw.SetupEngine.UI.dll",
+          "OpenClaw.SetupEngine.dll",
+          "OpenClaw.Shared.dll",
+          "OpenClawTray.FunctionalUI.dll"
+        )
+        foreach ($binary in $openClawBinaries) {
+          New-Item -ItemType HardLink -Path "signing-input-arm64\$binary" -Target "artifacts\tray-win-arm64\$binary" | Out-Null
+        }
 
-    - name: Sign x64 OpenClaw Executables
+    - name: Sign x64 OpenClaw Binaries
       uses: azure/artifact-signing-action@v2
       with:
         endpoint: https://eus.codesigning.azure.net/
         signing-account-name: openclaw
         certificate-profile-name: openclaw
         files-folder: signing-input-x64
-        files-folder-filter: exe
+        files-folder-filter: exe,dll
         files-folder-depth: 1
         file-digest: SHA256
         timestamp-rfc3161: http://timestamp.acs.microsoft.com
         timestamp-digest: SHA256
 
-    - name: Sign ARM64 OpenClaw Executables
+    - name: Sign ARM64 OpenClaw Binaries
       uses: azure/artifact-signing-action@v2
       with:
         endpoint: https://eus.codesigning.azure.net/
         signing-account-name: openclaw
         certificate-profile-name: openclaw
         files-folder: signing-input-arm64
-        files-folder-filter: exe
+        files-folder-filter: exe,dll
         files-folder-depth: 1
         file-digest: SHA256
         timestamp-rfc3161: http://timestamp.acs.microsoft.com
         timestamp-digest: SHA256
 
-    - name: Verify x64 Release Executable Signing Policy
+    - name: Verify x64 Release Binary Signing Policy
       shell: pwsh
       run: .\scripts\Test-ReleaseExecutableSignatures.ps1 -PayloadPath artifacts/tray-win-x64 -RequireSignedOpenClaw
 
-    - name: Verify ARM64 Release Executable Signing Policy
+    - name: Verify ARM64 Release Binary Signing Policy
       shell: pwsh
       run: .\scripts\Test-ReleaseExecutableSignatures.ps1 -PayloadPath artifacts/tray-win-arm64 -RequireSignedOpenClaw
 
@@ -657,8 +747,8 @@ jobs:
         }
 
     # Create ZIP files for Updatum auto-update (asset name must contain the RID).
-    # We ship both x64 and arm64 portables now that the build job produces a
-    # libsodium-compatible app-local VC runtime for both architectures (the
+    # We ship both x64 and arm64 portables now that the build job produces an
+    # app-local VC runtime for both architectures (the
     # arm64 leg sources its loose Microsoft.VC*.CRT DLLs from the VS install
     # on the windows-11-arm runner; see src/Directory.Build.targets).
     - name: Create x64 Release ZIP

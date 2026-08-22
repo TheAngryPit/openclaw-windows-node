@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace OpenClaw.Shared.ExecApprovals;
 
 /// <summary>
-/// Phase 1 of the V2 exec approval pipeline: structural input validation (rail 18, step 1).
+/// Phase 1 of the V2 exec approval pipeline: structural input validation.
 /// Parses a raw NodeInvokeRequest into a ValidatedRunRequest or returns validation-failed.
 /// Does not resolve executables, detect shell wrappers, or evaluate policy.
 /// </summary>
@@ -14,6 +14,13 @@ public static class ExecApprovalV2InputValidator
 
     public static ExecApprovalV2ValidationOutcome Validate(NodeInvokeRequest request)
     {
+        if (request.Args.ValueKind == JsonValueKind.Object
+            && request.Args.TryGetProperty("command", out var commandElement)
+            && commandElement.ValueKind == JsonValueKind.String)
+        {
+            return Deny("command-array-required");
+        }
+
         var argv = TryParseArgv(request.Args, out bool malformedCommand);
         if (malformedCommand)
             return Deny("malformed-command");
@@ -49,7 +56,8 @@ public static class ExecApprovalV2InputValidator
                     return Deny("malformed-env");
                 dict[prop.Name] = prop.Value.GetString() ?? "";
             }
-            env = dict;
+            if (dict.Count > 0)
+                return Deny("custom-env-not-supported");
         }
 
         // timeoutMs / timeout — positive integer; defaults to 30 000.
@@ -71,14 +79,30 @@ public static class ExecApprovalV2InputValidator
             }
         }
 
+        // rawCommand — optional display text. When present it must agree with argv, so
+        // the text shown to an operator can never describe a different command than the
+        // one that will run. The gateway enforces this too (RAW_COMMAND_MISMATCH); the
+        // node repeats it so a request that reaches the node by another path is still
+        // checked.
+        string? rawCommand = null;
+        if (request.Args.ValueKind == JsonValueKind.Object &&
+            request.Args.TryGetProperty("rawCommand", out var rawEl))
+        {
+            if (rawEl.ValueKind != JsonValueKind.String)
+                return Deny("malformed-raw-command");
+            rawCommand = rawEl.GetString();
+            if (!ExecRawCommandConsistency.IsConsistent(rawCommand, argv))
+                return Deny("raw-command-mismatch");
+        }
+
         return ExecApprovalV2ValidationOutcome.Ok(new ValidatedRunRequest(
             argv,
-            TryGetString(request.Args, "shell"),
             cwd,
             timeoutMs,
             env,
             TryGetString(request.Args, "agentId"),
-            TryGetString(request.Args, "sessionKey")));
+            request.SessionKey,
+            rawCommand));
     }
 
     private static ExecApprovalV2ValidationOutcome Deny(string reason)
@@ -91,39 +115,19 @@ public static class ExecApprovalV2InputValidator
             !args.TryGetProperty("command", out var cmdEl))
             return null;
 
-        if (cmdEl.ValueKind == JsonValueKind.Array)
+        if (cmdEl.ValueKind != JsonValueKind.Array)
         {
-            var list = new List<string>();
-            foreach (var item in cmdEl.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.String) { malformed = true; return null; }
-                list.Add(item.GetString() ?? "");
-            }
-            return list.Count > 0 ? [.. list] : null;
+            malformed = true;
+            return null;
         }
 
-        if (cmdEl.ValueKind == JsonValueKind.String)
+        var list = new List<string>();
+        foreach (var item in cmdEl.EnumerateArray())
         {
-            var cmd = cmdEl.GetString();
-            if (string.IsNullOrWhiteSpace(cmd)) return null;
-
-            // Also merge a separate "args" array when command is a bare string.
-            // A non-array "args" value is a protocol violation.
-            if (args.TryGetProperty("args", out var argsEl))
-            {
-                if (argsEl.ValueKind != JsonValueKind.Array) { malformed = true; return null; }
-                var list = new List<string> { cmd };
-                foreach (var item in argsEl.EnumerateArray())
-                {
-                    if (item.ValueKind != JsonValueKind.String) { malformed = true; return null; }
-                    list.Add(item.GetString() ?? "");
-                }
-                return [.. list];
-            }
-            return [cmd];
+            if (item.ValueKind != JsonValueKind.String) { malformed = true; return null; }
+            list.Add(item.GetString() ?? "");
         }
-
-        return null;
+        return list.Count > 0 ? [.. list] : null;
     }
 
     private static string? TryGetString(JsonElement args, string key)

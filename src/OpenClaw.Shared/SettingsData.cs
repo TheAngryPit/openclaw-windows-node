@@ -8,6 +8,12 @@ namespace OpenClaw.Shared;
 /// </summary>
 public record class SettingsData
 {
+    /// <summary>
+    /// Version for settings-file migrations that need to distinguish legacy
+    /// serialized defaults from explicit operator choices.
+    /// </summary>
+    public int SettingsSchemaVersion { get; set; } = 1;
+
     public string? GatewayUrl { get; set; }
     public bool UseSshTunnel { get; set; } = false;
     public string? SshTunnelUser { get; set; }
@@ -33,6 +39,12 @@ public record class SettingsData
     public bool NotifyBuild { get; set; } = true;
     public bool NotifyStock { get; set; } = true;
     public bool NotifyInfo { get; set; } = true;
+    /// <summary>
+    /// When true (default), inbound device/node pairing requests are surfaced as a focused
+    /// approval dialog plus an awareness toast. When false they appear only in the Connections
+    /// page "Pending approvals" banner (passive). Auto-approval of the local node is unaffected.
+    /// </summary>
+    public bool ShowPairingApprovalDialog { get; set; } = true;
     public bool EnableNodeMode { get; set; } = false;
     public bool NodeCanvasEnabled { get; set; } = true;
     public bool NodeScreenEnabled { get; set; } = true;
@@ -41,6 +53,17 @@ public record class SettingsData
     public bool CameraRecordingConsentGiven { get; set; } = false;
     public bool NodeLocationEnabled { get; set; } = true;
     public bool NodeBrowserProxyEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Optional override for the browser-control host port the node-side
+    /// <c>browser.proxy</c> capability connects to. When null (default) the port is
+    /// derived as gateway port + 2 on 127.0.0.1, matching a co-located gateway.
+    /// <para><b>Superseded:</b> prefer <c>GatewayRecord.BrowserControlPort</c> (per-gateway),
+    /// which is resolved from the active gateway and cannot misroute across a gateway switch.
+    /// This global field is preserved for settings-file backward compatibility only.</para>
+    /// </summary>
+    public int? BrowserControlPort { get; set; }
+
     /// <summary>
     /// Master switch for the <c>system.run</c> + <c>system.run.prepare</c>
     /// commands. When <c>false</c>, those commands are dropped from the
@@ -60,6 +83,8 @@ public record class SettingsData
     public float SttSilenceTimeout { get; set; } = 2.5f;
     /// <summary>Enable TTS playback of responses during voice sessions.</summary>
     public bool VoiceTtsEnabled { get; set; } = true;
+    /// <summary>Show tool-call and usage chips inline in the chat timeline.</summary>
+    public bool ShowChatToolCalls { get; set; } = true;
     /// <summary>Play audio feedback chimes on listen start/stop.</summary>
     public bool VoiceAudioFeedback { get; set; } = true;
     public bool NodeTtsEnabled { get; set; } = false;
@@ -80,6 +105,13 @@ public record class SettingsData
     public string TtsPiperVoiceId { get; set; } = "en_US-amy-low";
     /// <summary>Run the local MCP HTTP server. Independent of EnableNodeMode.</summary>
     public bool EnableMcpServer { get; set; } = false;
+    /// <summary>
+    /// Automatically self-repair an app-owned local WSL gateway when it becomes unreachable:
+    /// probe it and, if the gateway process is down, restart the managed WSL distro, re-arm the
+    /// keepalive, and reconnect — without user action. Strictly limited to setup-managed local
+    /// WSL gateways (never SSH/remote). Kill switch: set false to disable automatic repair.
+    /// </summary>
+    public bool EnableManagedLocalGatewayAutoRepair { get; set; } = true;
     /// <summary>
     /// Hostnames the A2UI image renderer is allowed to fetch over HTTPS.
     /// Empty by default — agents can still ship inline data: images. Add hosts
@@ -104,23 +136,57 @@ public record class SettingsData
     /// "User interface" section.
     /// </summary>
     public bool UseLegacyWebChat { get; set; } = false;
+    /// <summary>
+    /// When false, the tray Sessions page hides clean completed sessions
+    /// (currently status <c>done</c> / <c>completed</c>) while keeping failed,
+    /// killed, timeout, and aborted runs visible. Default false reduces
+    /// completed ACP/subagent clutter for upgraded installs.
+    /// </summary>
+    public bool ShowCompletedSessions { get; set; } = false;
+    public string AppTheme { get; set; } = "System";
+    public bool? ShowDiagnostics { get; set; }
+    /// <summary>
+    /// Optional OTLP collector endpoint for diagnostic telemetry.
+    /// Null or empty means telemetry is disabled.
+    /// </summary>
+    public string? OpenTelemetryEndpoint { get; set; }
+    /// <summary>
+    /// OTLP transport protocol for the configured OpenTelemetry endpoint.
+    /// </summary>
+    public string OpenTelemetryProtocol { get; set; } = "grpc";
     public List<UserNotificationRule>? UserRules { get; set; }
 
     // ── MXC sandbox ─────────────────────────────────────────────────────
     /// <summary>
     /// Master switch for system.run containment. When <c>true</c> (default),
-    /// system.run runs inside an MXC AppContainer; if MXC is unavailable on
-    /// this host the invocation is denied — there is no host fallback. When
-    /// <c>false</c>, system.run runs on the host as it did before MXC support
-    /// was added.
+    /// system.run uses MXC containment when available and uses the compatibility
+    /// host fallback when MXC is unavailable unless strict blocking is enabled. Unsupported
+    /// sandbox request features are rejected while sandboxing remains enabled.
+    /// When <c>false</c>, system.run always runs on the host as it did before
+    /// MXC support was added.
     /// </summary>
     public bool SystemRunSandboxEnabled { get; set; } = true;
+
+    /// <summary>
+    /// When sandboxing is enabled but MXC is unavailable, block system.run
+    /// instead of using the compatibility host fallback. Default <c>false</c>
+    /// preserves the pre-MXC host fallback unless the operator opts into strict
+    /// fail-closed behavior.
+    /// </summary>
+    public bool SystemRunBlockHostFallbackWhenMxcUnavailable { get; set; } = false;
 
     /// <summary>
     /// When sandboxed, allow system.run commands to reach the public internet.
     /// Default false — most shell commands are local-only.
     /// </summary>
     public bool SystemRunAllowOutbound { get; set; } = false;
+
+    /// <summary>
+    /// When sandboxed, allow system.run commands to use Windows UI system calls.
+    /// This is required by PowerShell and some console utilities on current MXC
+    /// processcontainer backends. Default false preserves Win32k syscall blocking.
+    /// </summary>
+    public bool SystemRunAllowWindowsUi { get; set; } = false;
 
     /// <summary>
     /// Clipboard access policy inside the sandbox. Default <c>None</c> — the

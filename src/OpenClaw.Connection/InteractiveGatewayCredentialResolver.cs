@@ -10,6 +10,22 @@ namespace OpenClaw.Connection;
 /// </summary>
 public static class InteractiveGatewayCredentialResolver
 {
+    internal static GatewayCredential? ResolveForAssistantMediaHttpSurface(
+        GatewayRecord record,
+        GatewayCredential? fallback) =>
+        !string.IsNullOrWhiteSpace(record.SharedGatewayToken)
+            ? new GatewayCredential(
+                record.SharedGatewayToken!,
+                IsBootstrapToken: false,
+                CredentialResolver.SourceSharedGatewayToken)
+            : fallback is
+                {
+                    IsBootstrapToken: false,
+                    Source: CredentialResolver.SourceDeviceToken,
+                }
+                ? fallback
+                : null;
+
     public static bool TryResolve(
         GatewayRegistry? registry,
         string settingsDirectory,
@@ -17,6 +33,25 @@ public static class InteractiveGatewayCredentialResolver
         string? effectiveGatewayUrl,
         string? legacyToken,
         string? legacyBootstrapToken,
+        out InteractiveGatewayCredential? credential) =>
+        TryResolve(
+            registry,
+            settingsDirectory,
+            identityReader,
+            effectiveGatewayUrl,
+            legacyToken,
+            legacyBootstrapToken,
+            authorizeCredential: null,
+            out credential);
+
+    public static bool TryResolve(
+        GatewayRegistry? registry,
+        string settingsDirectory,
+        IDeviceIdentityReader identityReader,
+        string? effectiveGatewayUrl,
+        string? legacyToken,
+        string? legacyBootstrapToken,
+        Func<GatewayRecord, GatewayCredential, bool>? authorizeCredential,
         out InteractiveGatewayCredential? credential)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(settingsDirectory);
@@ -30,6 +65,16 @@ public static class InteractiveGatewayCredentialResolver
             // is for HTTP ?token= auth which the chat/dashboard endpoints expect.
             if (!string.IsNullOrWhiteSpace(active.SharedGatewayToken))
             {
+                var sharedCredential = new GatewayCredential(
+                    active.SharedGatewayToken!,
+                    IsBootstrapToken: false,
+                    CredentialResolver.SourceSharedGatewayToken);
+                if (authorizeCredential is not null &&
+                    !authorizeCredential(active, sharedCredential))
+                {
+                    credential = null;
+                    return false;
+                }
                 credential = new InteractiveGatewayCredential(
                     active.Url,
                     active.SharedGatewayToken!,
@@ -43,6 +88,12 @@ public static class InteractiveGatewayCredentialResolver
             var resolved = resolver.ResolveOperator(active, registry!.GetIdentityDirectory(active.Id));
             if (resolved != null)
             {
+                if (authorizeCredential is not null &&
+                    !authorizeCredential(active, resolved))
+                {
+                    credential = null;
+                    return false;
+                }
                 credential = new InteractiveGatewayCredential(
                     active.Url,
                     resolved.Token,
@@ -69,12 +120,19 @@ public static class InteractiveGatewayCredentialResolver
         {
             Id = "legacy-settings",
             Url = gatewayUrl,
+            IsLocal = GatewayRecordEditing.IsLoopbackEndpoint(gatewayUrl),
             SharedGatewayToken = legacyToken,
             BootstrapToken = legacyBootstrapToken
         };
         var resolver2 = new CredentialResolver(identityReader);
         var legacyCredential = resolver2.ResolveOperator(legacyRecord, settingsDirectory);
         if (legacyCredential == null)
+        {
+            credential = null;
+            return false;
+        }
+        if (authorizeCredential is not null &&
+            !authorizeCredential(legacyRecord, legacyCredential))
         {
             credential = null;
             return false;

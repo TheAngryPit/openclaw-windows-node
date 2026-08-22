@@ -4,10 +4,10 @@ using OpenClaw.Shared;
 
 internal sealed class CliOptions
 {
-    public string SettingsPath { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "OpenClawTray",
-        "settings.json");
+    public string SettingsPath { get; set; } = "";
+    public bool SettingsPathExplicit { get; set; }
+    public string? Identity { get; set; }
+    public string IdentityDataPath { get; set; } = "";
 
     public string? GatewayUrlOverride { get; set; }
     public string? TokenOverride { get; set; }
@@ -17,6 +17,18 @@ internal sealed class CliOptions
     public int ConnectTimeoutMs { get; set; } = 10000;
     public bool ProbeReadApis { get; set; }
     public bool Verbose { get; set; }
+}
+
+internal sealed class DeferredLogger(IOpenClawLogger inner) : IOpenClawLogger
+{
+    private bool _enabled;
+
+    public void Enable() => _enabled = true;
+    public void Info(string message) { if (_enabled) inner.Info(message); }
+    public void Debug(string message) { if (_enabled) inner.Debug(message); }
+    public void Warn(string message) { if (_enabled) inner.Warn(message); }
+    public void Error(string message, Exception? ex = null) { if (_enabled) inner.Error(message, ex); }
+    public void Trace(string message) { if (_enabled) inner.Trace(message); }
 }
 
 internal static class Program
@@ -33,6 +45,7 @@ internal static class Program
         try
         {
             options = ParseArgs(args);
+            ApplyIdentityDefaults(options, Environment.GetEnvironmentVariable);
         }
         catch (Exception ex)
         {
@@ -54,6 +67,30 @@ internal static class Program
             return 2;
         }
 
+        var deferredLogger = options.Verbose
+            ? new DeferredLogger(new ConsoleLogger())
+            : null;
+        IOpenClawLogger logger = deferredLogger is null
+            ? NullLogger.Instance
+            : deferredLogger;
+        OpenClawGatewayClient client;
+        try
+        {
+            client = new OpenClawGatewayClient(
+                gatewayUrl,
+                token,
+                logger,
+                identityPath: options.IdentityDataPath);
+        }
+        catch (DeviceIdentityLoadException)
+        {
+            Console.Error.WriteLine(DeviceIdentityLoadException.RecoveryMessage);
+            return 1;
+        }
+
+        using var clientLifetime = client;
+        deferredLogger?.Enable();
+
         Console.WriteLine($"Settings file: {options.SettingsPath}");
         Console.WriteLine($"Gateway URL: {GatewayUrlHelper.SanitizeForDisplay(gatewayUrl)}");
         Console.WriteLine($"Token source: {(options.TokenOverride is null ? "settings" : "--token override")}");
@@ -62,9 +99,6 @@ internal static class Program
             Console.WriteLine($"Node mode in settings: {loaded.EnableNodeMode}");
             Console.WriteLine($"SSH tunnel in settings: {loaded.UseSshTunnel} (local port {loaded.SshTunnelLocalPort})");
         }
-
-        IOpenClawLogger logger = options.Verbose ? new ConsoleLogger() : NullLogger.Instance;
-        using var client = new OpenClawGatewayClient(gatewayUrl, token, logger);
 
         var lastStatus = ConnectionStatus.Disconnected;
         var connectedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -218,6 +252,10 @@ internal static class Program
             {
                 case "--settings":
                     options.SettingsPath = RequireValue(args, ref i, arg);
+                    options.SettingsPathExplicit = true;
+                    break;
+                case "--identity":
+                    options.Identity = OpenClawAppIdentity.NormalizeIdentity(RequireValue(args, ref i, arg));
                     break;
                 case "--url":
                     options.GatewayUrlOverride = RequireValue(args, ref i, arg);
@@ -251,6 +289,16 @@ internal static class Program
         return options;
     }
 
+    private static void ApplyIdentityDefaults(CliOptions options, Func<string, string?> envLookup)
+    {
+        options.Identity = OpenClawAppIdentity.ResolveIdentity(envLookup, options.Identity);
+        options.IdentityDataPath = OpenClawAppIdentity.ResolveRoamingDataDirectory(envLookup, options.Identity);
+        if (!options.SettingsPathExplicit)
+        {
+            options.SettingsPath = OpenClawAppIdentity.ResolveSettingsPath(envLookup, options.Identity);
+        }
+    }
+
     private static string RequireValue(string[] args, ref int index, string name)
     {
         if (index + 1 >= args.Length)
@@ -282,7 +330,8 @@ internal static class Program
         Console.WriteLine("  dotnet run --project src/OpenClaw.Cli -- [options]");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --settings <path>            Settings file (default: %APPDATA%\\OpenClawTray\\settings.json)");
+        Console.WriteLine("  --settings <path>            Settings file (default: selected identity profile)");
+        Console.WriteLine("  --identity <release|dev>     Select tray profile (default: %OPENCLAW_APP_IDENTITY% or release)");
         Console.WriteLine("  --url <ws://...>             Override gateway URL");
         Console.WriteLine("  --token <token>              Override token");
         Console.WriteLine("  --message <text>             Message to send");

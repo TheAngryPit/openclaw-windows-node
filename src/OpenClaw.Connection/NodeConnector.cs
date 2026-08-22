@@ -7,7 +7,7 @@ namespace OpenClaw.Connection;
 /// Capability setup (canvas, screen capture, etc.) is handled by NodeService,
 /// which has WinUI dependencies and remains in App.xaml.cs for now.
 /// </summary>
-public sealed class NodeConnector : INodeConnector
+public sealed class NodeConnector : INodeConnector, INodeConnectorTelemetryEvents, INodeConnectorReconnectPolicy
 {
     private readonly IOpenClawLogger _logger;
     private readonly ConnectionDiagnostics? _diagnostics;
@@ -16,11 +16,16 @@ public sealed class NodeConnector : INodeConnector
     private WindowsNodeClient? _client;
     private long _clientGeneration;
     private bool _disposed;
+    public Func<CancellationToken, Task<ReconnectAuthorizationResult>>? HandshakeAuthorizationAsync { get; set; }
+    public Func<CancellationToken, Task<ReconnectAuthorizationResult>>? ReconnectAuthorizationAsync { get; set; }
 
     public event EventHandler<ConnectionStatus>? StatusChanged;
     public event EventHandler<PairingStatusEventArgs>? PairingStatusChanged;
     public event EventHandler<DeviceTokenReceivedEventArgs>? DeviceTokenReceived;
     public event EventHandler<NodeClientCreatedEventArgs>? ClientCreated;
+    public event EventHandler? TransportConnected;
+    public event EventHandler<GatewayErrorKind>? ConnectionFailure;
+    public event EventHandler<GatewayProtocolCompatibility>? ProtocolCompatibilityChanged;
 
     public NodeConnector(IOpenClawLogger logger, ConnectionDiagnostics? diagnostics = null)
     {
@@ -99,6 +104,8 @@ public sealed class NodeConnector : INodeConnector
             identityPath,
             nodeLogger,
             bootstrapToken: credential.IsBootstrapToken ? credential.Token : null);
+        client.HandshakeAuthorizationAsync = HandshakeAuthorizationAsync;
+        client.ReconnectAuthorizationAsync = ReconnectAuthorizationAsync;
 
         // Share v2 signature flag from operator — avoid wasting a roundtrip on v3
         if (useV2Signature)
@@ -163,20 +170,17 @@ public sealed class NodeConnector : INodeConnector
         }
 
         client.StatusChanged += (s, e) =>
-        {
-            if (IsCurrentClient(s, generation))
-                StatusChanged?.Invoke(this, e);
-        };
+            ForwardIfCurrent(s, generation, e, StatusChanged);
+        client.TransportConnected += (s, _) =>
+            ForwardIfCurrent(s, generation, EventArgs.Empty, TransportConnected);
+        client.ConnectionFailure += (s, e) =>
+            ForwardIfCurrent(s, generation, e, ConnectionFailure);
+        client.ProtocolCompatibilityChanged += (s, e) =>
+            ForwardIfCurrent(s, generation, e, ProtocolCompatibilityChanged);
         client.PairingStatusChanged += (s, e) =>
-        {
-            if (IsCurrentClient(s, generation))
-                PairingStatusChanged?.Invoke(this, e);
-        };
+            ForwardIfCurrent(s, generation, e, PairingStatusChanged);
         client.DeviceTokenReceived += (s, e) =>
-        {
-            if (IsCurrentClient(s, generation))
-                DeviceTokenReceived?.Invoke(this, e);
-        };
+            ForwardIfCurrent(s, generation, e, DeviceTokenReceived);
 
         try
         {
@@ -218,6 +222,52 @@ public sealed class NodeConnector : INodeConnector
         {
             return Interlocked.Read(ref _clientGeneration) == generation &&
                 ReferenceEquals(sender, _client);
+        }
+    }
+
+    // Validation and dispatch stay atomic so a retired client cannot publish after its
+    // replacement. Subscribers must remain synchronous and must not block on connector
+    // lifecycle work while this lock is held.
+    //
+    // Lock ordering: _connectSemaphore (async, serialises connect/disconnect) may be
+    // held when _clientLifecycleLock is acquired, but subscribers never acquire
+    // _connectSemaphore. Among monitor locks, _clientLifecycleLock is the outermost
+    // in the connector's acquisition graph. Subscribers may acquire their own locks
+    // (NodeConnectionCoordinator's telemetry/operation locks, GatewayRegistry._lock,
+    // ConnectionDiagnostics._lock) but code holding those locks must not
+    // synchronously enter connector lifecycle operations, preserving a consistent
+    // acquisition order that prevents deadlock. Subscriber handlers must return
+    // promptly; current subscribers use fire-and-forget async dispatch for heavy
+    // work and perform only lightweight synchronous preambles.
+    private void ForwardIfCurrent<T>(
+        object? sender,
+        long generation,
+        T args,
+        EventHandler<T>? handler)
+    {
+        lock (_clientLifecycleLock)
+        {
+            if (Interlocked.Read(ref _clientGeneration) == generation &&
+                ReferenceEquals(sender, _client))
+            {
+                handler?.Invoke(this, args);
+            }
+        }
+    }
+
+    private void ForwardIfCurrent(
+        object? sender,
+        long generation,
+        EventArgs args,
+        EventHandler? handler)
+    {
+        lock (_clientLifecycleLock)
+        {
+            if (Interlocked.Read(ref _clientGeneration) == generation &&
+                ReferenceEquals(sender, _client))
+            {
+                handler?.Invoke(this, args);
+            }
         }
     }
 
