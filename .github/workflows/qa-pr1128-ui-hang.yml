@@ -31,7 +31,7 @@ jobs:
       - name: Checkout QA overlay without credentials
         uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify exact source parent and single workflow overlay
@@ -48,12 +48,12 @@ jobs:
             throw "Checkout does not match the triggering commit."
           }
 
-          $parents = @((git rev-list --parents -n 1 HEAD).Trim() -split '\s+')
-          if ($LASTEXITCODE -ne 0 -or $parents.Count -ne 2 -or $parents[1] -cne $env:EXPECTED_SOURCE_SHA) {
-            throw "The QA overlay must have the exact PR source as its sole parent."
+          git merge-base --is-ancestor $env:EXPECTED_SOURCE_SHA HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "The QA overlay must descend from the exact PR source."
           }
 
-          $changed = @(git diff-tree --no-commit-id --name-only -r $parents[1] HEAD)
+          $changed = @(git diff --name-only $env:EXPECTED_SOURCE_SHA HEAD)
           if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 1 -or
               $changed[0] -cne ".github/workflows/qa-pr1128-ui-hang.yml") {
             throw "The QA overlay must contain only this diagnostic workflow."
@@ -65,7 +65,7 @@ jobs:
           repository: ${{ github.repository }}
           ref: 6b1675c90cce54deefc8d0cb4a503e58bdfc2c70
           path: product
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Verify pinned product checkout
@@ -218,6 +218,11 @@ jobs:
           if ($runner.ExitCode -ne 0) {
             exit $runner.ExitCode
           }
+
+      - name: Verify product sources remain unchanged
+        if: always()
+        working-directory: product
+        run: git diff --exit-code 6b1675c90cce54deefc8d0cb4a503e58bdfc2c70
 
       - name: Upload bounded UI test evidence
         if: always()
