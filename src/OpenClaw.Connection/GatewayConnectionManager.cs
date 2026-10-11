@@ -227,19 +227,31 @@ public sealed class GatewayConnectionManager :
         await _transitionSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!string.Equals(_activeGatewayRecordId, gatewayId, StringComparison.Ordinal))
-                return new(GatewayTailscaleAuthUpgradeOutcome.NotActive);
-
+            GatewayTailscaleAuthUpgradeResult result;
             var client = OperatorClient;
-            if (client is null)
-                return new(GatewayTailscaleAuthUpgradeOutcome.NotConnected);
+            if (!string.Equals(_activeGatewayRecordId, gatewayId, StringComparison.Ordinal))
+            {
+                result = new(GatewayTailscaleAuthUpgradeOutcome.NotActive);
+            }
+            else if (client is null)
+            {
+                result = new(GatewayTailscaleAuthUpgradeOutcome.NotConnected);
+            }
+            else
+            {
+                var service = new GatewayTailscaleAuthUpgradeService(_registry);
+                result = await service.EnableAsync(
+                        gatewayId,
+                        new GatewayTailscaleAuthConfigClientAdapter(client),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-            var service = new GatewayTailscaleAuthUpgradeService(_registry);
-            return await service.EnableAsync(
-                    gatewayId,
-                    new GatewayTailscaleAuthConfigClientAdapter(client),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            _diagnostics.Record(
+                "tailscale-auth",
+                $"Dashboard auth upgrade: {result.Outcome}",
+                result.Error);
+            return result;
         }
         finally
         {
