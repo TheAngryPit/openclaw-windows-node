@@ -1,0 +1,233 @@
+name: PR 1128 hosted UI hang diagnostic
+
+on:
+  push:
+    branches:
+      - qa/pr1128-uihang-20261011
+    paths:
+      - .github/workflows/qa-pr1128-ui-hang.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr1128-ui-hang-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tray-ui:
+    name: Clean hosted Windows Tray UI lane
+    if: github.repository == 'TheAngryPit/openclaw-windows-node'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      OPENCLAW_CI_COLLECT_COVERAGE: "false"
+      OPENCLAW_REPO_ROOT: ${{ github.workspace }}\product
+      OPENCLAW_TRAY_DATA_DIR: ${{ github.workspace }}\product\TestData\OpenClawTrayUITests
+      OPENCLAW_TRAY_APPDATA_DIR: ${{ github.workspace }}\product\TestData\OpenClawTrayUITests-Roaming
+      OPENCLAW_TRAY_LOCALAPPDATA_DIR: ${{ github.workspace }}\product\TestData\OpenClawTrayUITests-Local
+    steps:
+      - name: Checkout QA overlay without credentials
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify exact source parent and single workflow overlay
+        shell: pwsh
+        env:
+          EXPECTED_SOURCE_SHA: 6b1675c90cce54deefc8d0cb4a503e58bdfc2c70
+        run: |
+          if ($env:GITHUB_REF -cne "refs/heads/qa/pr1128-uihang-20261011") {
+            throw "Unexpected QA ref: $env:GITHUB_REF"
+          }
+
+          $commit = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $commit -cne $env:GITHUB_SHA) {
+            throw "Checkout does not match the triggering commit."
+          }
+
+          $parents = @((git rev-list --parents -n 1 HEAD).Trim() -split '\s+')
+          if ($LASTEXITCODE -ne 0 -or $parents.Count -ne 2 -or $parents[1] -cne $env:EXPECTED_SOURCE_SHA) {
+            throw "The QA overlay must have the exact PR source as its sole parent."
+          }
+
+          $changed = @(git diff-tree --no-commit-id --name-only -r $parents[1] HEAD)
+          if ($LASTEXITCODE -ne 0 -or $changed.Count -ne 1 -or
+              $changed[0] -cne ".github/workflows/qa-pr1128-ui-hang.yml") {
+            throw "The QA overlay must contain only this diagnostic workflow."
+          }
+
+      - name: Checkout pinned product source without credentials
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: 6b1675c90cce54deefc8d0cb4a503e58bdfc2c70
+          path: product
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify pinned product checkout
+        shell: pwsh
+        working-directory: product
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne "6b1675c90cce54deefc8d0cb4a503e58bdfc2c70") {
+            throw "Product checkout is not the authorized PR source SHA."
+          }
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore Tray UI tests
+        working-directory: product
+        run: dotnet restore tests/OpenClaw.Tray.UITests -r win-x64
+
+      - name: Build Tray UI tests
+        working-directory: product
+        run: dotnet build tests/OpenClaw.Tray.UITests -c Debug -r win-x64 --no-restore
+
+      - name: Install WindowsAppRuntime
+        shell: pwsh
+        working-directory: product
+        run: |
+          [xml]$props = Get-Content (Join-Path $env:OPENCLAW_REPO_ROOT "Directory.Build.props")
+          $versionNode = $props.SelectSingleNode("/Project/PropertyGroup/MicrosoftWindowsAppSDKVersion")
+          if ($null -eq $versionNode -or [string]::IsNullOrWhiteSpace($versionNode.InnerText)) {
+            throw "MicrosoftWindowsAppSDKVersion was not found in Directory.Build.props"
+          }
+
+          $version = $versionNode.InnerText.Trim()
+          $channel = [regex]::Match($version, '^\d+\.\d+').Value
+          if ([string]::IsNullOrWhiteSpace($channel)) {
+            throw "Cannot derive WindowsAppRuntime channel from version '$version'"
+          }
+
+          $url = "https://aka.ms/windowsappsdk/$channel/$version/windowsappruntimeinstall-x64.exe"
+          $installer = Join-Path $env:RUNNER_TEMP "WindowsAppRuntimeInstall.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          & $installer --quiet
+          if ($LASTEXITCODE -ne 0) { throw "WindowsAppRuntimeInstall failed with exit code $LASTEXITCODE" }
+
+      - name: Install pinned managed stack reporter
+        shell: pwsh
+        run: |
+          $toolPath = Join-Path $env:RUNNER_TEMP "dotnet-tools"
+          New-Item -ItemType Directory -Force -Path $toolPath | Out-Null
+          dotnet tool install dotnet-stack `
+            --tool-path $toolPath `
+            --version 10.0.750501 `
+            --allow-roll-forward `
+            --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { throw "Pinned dotnet-stack installation failed." }
+
+      - name: Run the canonical filtered Tray UI lane and snapshot quiet testhost stacks
+        shell: pwsh
+        working-directory: product
+        timeout-minutes: 15
+        run: |
+          $results = Join-Path $env:OPENCLAW_REPO_ROOT "TestResults\TrayUI"
+          New-Item -ItemType Directory -Force -Path $results | Out-Null
+          $stdout = Join-Path $results "ci-console.stdout.log"
+          $stderr = Join-Path $results "ci-console.stderr.log"
+
+          $arguments = @(
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", "scripts/Invoke-CiTest.ps1",
+            "-Project", "tests/OpenClaw.Tray.UITests",
+            "-ResultsDirectory", "TestResults\TrayUI",
+            "-TrxFileName", "OpenClaw.Tray.UITests.trx",
+            "-Runtime", "win-x64",
+            "-Filter", '"Category!=Accessibility&Category!=NativeOnboardingProof"',
+            "-HangTimeoutSeconds", "300"
+          )
+
+          $runner = Start-Process -FilePath "pwsh" -ArgumentList $arguments `
+            -WorkingDirectory $env:OPENCLAW_REPO_ROOT `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden -PassThru
+          $lastWriteUtc = [DateTime]::UtcNow
+          $capturedForQuietInterval = $false
+          $stackReporter = Join-Path $env:RUNNER_TEMP "dotnet-tools\dotnet-stack.exe"
+
+          while (-not $runner.WaitForExit(5000)) {
+            $runner.Refresh()
+            $outputFiles = @($stdout, $stderr) | Where-Object { Test-Path -LiteralPath $_ }
+            if ($outputFiles.Count -gt 0) {
+              $latestWriteUtc = ($outputFiles | ForEach-Object { Get-Item -LiteralPath $_ } |
+                Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1).LastWriteTimeUtc
+              if ($latestWriteUtc -gt $lastWriteUtc) {
+                $lastWriteUtc = $latestWriteUtc
+                $capturedForQuietInterval = $false
+              }
+            }
+
+            if (-not $capturedForQuietInterval -and
+                ([DateTime]::UtcNow - $lastWriteUtc).TotalSeconds -ge 240) {
+              $processes = @(Get-CimInstance -ClassName Win32_Process)
+              $ownedIds = [System.Collections.Generic.HashSet[int]]::new()
+              [void]$ownedIds.Add($runner.Id)
+              do {
+                $addedDescendant = $false
+                foreach ($process in $processes) {
+                  if ($ownedIds.Contains([int]$process.ParentProcessId) -and
+                      $ownedIds.Add([int]$process.ProcessId)) {
+                    $addedDescendant = $true
+                  }
+                }
+              } while ($addedDescendant)
+
+              $testHosts = @($processes | Where-Object {
+                $_.Name -ieq "testhost.exe" -and $ownedIds.Contains([int]$_.ProcessId)
+              })
+              if ($testHosts.Count -eq 0) {
+                $noHostNote = Join-Path $results "managed-stacks-no-owned-testhost.txt"
+                if (-not (Test-Path -LiteralPath $noHostNote)) {
+                  "No testhost.exe owned by the test invocation was present at the quiet checkpoint; the watcher will retry." |
+                    Set-Content -LiteralPath $noHostNote
+                }
+              } else {
+                foreach ($testHost in $testHosts) {
+                  $snapshot = Join-Path $results "managed-stacks-testhost-$($testHost.ProcessId).txt"
+                  $reportErrors = Join-Path $results "managed-stacks-testhost-$($testHost.ProcessId)-stderr.txt"
+                  $reporter = Start-Process -FilePath $stackReporter `
+                    -ArgumentList @('report', '--process-id', $testHost.ProcessId) `
+                    -RedirectStandardOutput $snapshot -RedirectStandardError $reportErrors `
+                    -WindowStyle Hidden -PassThru
+                  if (-not $reporter.WaitForExit(30000)) {
+                    $reporter.Kill()
+                    $closed = $reporter.WaitForExit(5000)
+                    $status = Join-Path $results "managed-stacks-testhost-$($testHost.ProcessId)-status.txt"
+                    "dotnet-stack timed out after 30 seconds; reporter closed: $closed" |
+                      Set-Content -LiteralPath $status
+                  } elseif ($reporter.ExitCode -ne 0) {
+                    Add-Content -LiteralPath $reportErrors -Value "dotnet-stack exit code: $($reporter.ExitCode)"
+                  }
+                }
+
+                $capturedForQuietInterval = $true
+                Write-Host "Captured managed thread stacks after 240 seconds without test-runner output; the original test invocation continues."
+              }
+            }
+          }
+
+          $runner.WaitForExit()
+          Get-Content -LiteralPath $stdout -Tail 40
+          Get-Content -LiteralPath $stderr -Tail 40
+          if ($runner.ExitCode -ne 0) {
+            exit $runner.ExitCode
+          }
+
+      - name: Upload bounded UI test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr1128-hosted-tray-ui-diagnostics
+          path: |
+            product/TestResults/TrayUI/*.trx
+            product/TestResults/TrayUI/*Sequence*.xml
+            product/TestResults/TrayUI/managed-stacks-*.txt
+            product/TestResults/TrayUI/ci-console.*.log
+          if-no-files-found: warn
+          retention-days: 7
