@@ -5553,8 +5553,29 @@
   <data name="ConnectionPage_TailscaleDashboardAuthEnabled" xml:space="preserve">
     <value>已啟用儀表板的 Tailscale 身分驗證。</value>
   </data>
-  <data name="ConnectionPage_TailscaleDashboardAuthFailedFormat" xml:space="preserve">
-    <value>無法啟用儀表板的 Tailscale 身分驗證：{0}</value>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureIneligible" xml:space="preserve">
+    <value>此閘道已不再是受管理的 Tailscale 閘道。請重新整理閘道清單後再試一次。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureNotActive" xml:space="preserve">
+    <value>請將此閘道設為目前作用中的閘道，然後再試一次。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureNotConnected" xml:space="preserve">
+    <value>請先連線到此閘道，然後再試一次。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
+    <value>請使用具備 operator.read 與 operator.write 權限的連線重新連線。若無法取得這些權限，請聯絡閘道管理員。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
+    <value>無法讀取閘道設定。請重新連線至閘道後再試一次。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailurePatchRejected" xml:space="preserve">
+    <value>閘道未確認這項變更。請重新連線，並在重試前確認是否已啟用 Tailscale 身分驗證。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed" xml:space="preserve">
+    <value>無法在本機儲存 Tailscale 信任設定。請檢查 OpenClaw Tray 資料資料夾的存取權限後再試一次。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureGeneric" xml:space="preserve">
+    <value>無法啟用 Tailscale 儀表板身分驗證。請重新連線至閘道後再試一次。</value>
   </data>
   <data name="DashboardLink_NoBrowserCompatibleCredential" xml:space="preserve">
     <value>沒有可供瀏覽器使用的閘道認證</value>

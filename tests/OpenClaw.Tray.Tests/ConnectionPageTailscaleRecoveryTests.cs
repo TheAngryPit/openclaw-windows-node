@@ -6,6 +6,44 @@ namespace OpenClaw.Tray.Tests;
 public sealed class ConnectionPageTailscaleRecoveryTests
 {
     [Fact]
+    public void FailedDashboardAuth_UsesLocalizedRecoveryOutcomeInsteadOfRawDetails()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src",
+            "OpenClaw.Tray.WinUI",
+            "Pages",
+            "ConnectionPage.xaml.cs"));
+        var methodStart = source.IndexOf(
+            "private async Task OnEnableTailscaleDashboardAuthAsync(object sender)",
+            StringComparison.Ordinal);
+        var methodEnd = source.IndexOf(
+            "private void OnSavedRowEdit(object sender, RoutedEventArgs e)",
+            methodStart,
+            StringComparison.Ordinal);
+        Assert.True(methodStart >= 0 && methodEnd > methodStart);
+        var method = source[methodStart..methodEnd];
+
+        Assert.Contains("ConnectionPagePlan.TailscaleAuthFailureMessageResourceKey(result.Outcome)", method);
+        Assert.DoesNotContain("result.Error", method);
+        Assert.DoesNotContain("result.Outcome.ToString()", method);
+    }
+
+    [Theory]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.Ineligible, "ConnectionPage_TailscaleDashboardAuthFailureIneligible")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.NotActive, "ConnectionPage_TailscaleDashboardAuthFailureNotActive")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.NotConnected, "ConnectionPage_TailscaleDashboardAuthFailureNotConnected")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.MissingConfigScope, "ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.ConfigUnavailable, "ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, "ConnectionPage_TailscaleDashboardAuthFailurePatchRejected")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, "ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled, "ConnectionPage_TailscaleDashboardAuthFailureGeneric")]
+    public void TailscaleDashboardAuthFailure_MapsOutcomeToLocalizedRecoveryMessage(
+        GatewayTailscaleAuthUpgradeOutcome outcome,
+        string expectedResourceKey) =>
+        Assert.Equal(expectedResourceKey, ConnectionPagePlan.TailscaleAuthFailureMessageResourceKey(outcome));
+
+    [Fact]
     public void SavedDashboardLaunch_DelegatesToSharedDashboardLinkService()
     {
         var source = File.ReadAllText(Path.Combine(

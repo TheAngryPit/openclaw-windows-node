@@ -159,9 +159,16 @@ public class AppCapabilityTests
     [Fact]
     public async Task DashboardUrl_AwaitsAsyncHandler()
     {
+        const string expectedUrl = "https://gateway.test:8443/prefix/settings?view=compact#token=opaque";
+        var handlerStarted = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerResult = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var cap = new AppCapability(NullLogger.Instance)
         {
-            DashboardUrlHandler = path => Task.FromResult<object?>(new { url = $"https://gateway.test/{path}" })
+            DashboardUrlHandler = path =>
+            {
+                handlerStarted.TrySetResult(path);
+                return handlerResult.Task;
+            }
         };
         var req = new NodeInvokeRequest
         {
@@ -170,9 +177,17 @@ public class AppCapabilityTests
             Args = ParseArgs("{\"path\":\"settings\"}")
         };
 
-        var res = await cap.ExecuteAsync(req);
+        var responseTask = cap.ExecuteAsync(req);
+        Assert.Equal("settings", await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(responseTask.IsCompleted);
+
+        handlerResult.SetResult(new { url = expectedUrl });
+        var res = await responseTask;
 
         Assert.True(res.Ok);
+        Assert.Equal(
+            expectedUrl,
+            JsonSerializer.SerializeToElement(res.Payload).GetProperty("url").GetString());
     }
 
     [Fact]

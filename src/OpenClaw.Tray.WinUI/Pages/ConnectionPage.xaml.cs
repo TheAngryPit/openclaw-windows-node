@@ -2665,12 +2665,8 @@ public sealed partial class ConnectionPage : Page
             return;
         }
 
-        var detail = string.IsNullOrWhiteSpace(result.Error)
-            ? result.Outcome.ToString()
-            : result.Error;
-        SetGatewayHostActionStatus(
-            string.Format(LocalizationHelper.GetString("ConnectionPage_TailscaleDashboardAuthFailedFormat"), detail),
-            isError: true);
+        var messageKey = ConnectionPagePlan.TailscaleAuthFailureMessageResourceKey(result.Outcome);
+        SetGatewayHostActionStatus(LocalizationHelper.GetString(messageKey), isError: true);
     }
 
     private void OnSavedRowEdit(object sender, RoutedEventArgs e)
