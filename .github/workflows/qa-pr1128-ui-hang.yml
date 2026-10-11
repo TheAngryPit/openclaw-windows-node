@@ -1,0 +1,101 @@
+name: PR 1128 admin-scope regression proof
+on:
+  push:
+    branches: [qa/pr1128-admin-scope-20261011]
+    paths: [.github/workflows/qa-pr1128-ui-hang.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pr1128-admin-scope-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  scope-proof:
+    if: github.repository == 'TheAngryPit/openclaw-windows-node'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      OPENCLAW_CI_COLLECT_COVERAGE: 'false'
+      OPENCLAW_REPO_ROOT: ${{ github.workspace }}\product
+      OPENCLAW_TRAY_DATA_DIR: ${{ github.workspace }}\product\TestData\ScopeProof
+      OPENCLAW_TRAY_APPDATA_DIR: ${{ github.workspace }}\product\TestData\ScopeProof-Roaming
+      OPENCLAW_TRAY_LOCALAPPDATA_DIR: ${{ github.workspace }}\product\TestData\ScopeProof-Local
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source and workflow-only overlay
+        shell: pwsh
+        run: |
+          $source = '6484664e118fdec2e157c51183fc4797b03700c7'
+          if ($env:GITHUB_REF -cne 'refs/heads/qa/pr1128-admin-scope-20261011') { throw 'Unexpected QA ref' }
+          if ((git rev-parse HEAD).Trim() -cne $env:GITHUB_SHA) { throw 'Trigger/source mismatch' }
+          git merge-base --is-ancestor $source HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Product ancestry mismatch' }
+          $delta = @(git diff --name-only $source HEAD)
+          if ($LASTEXITCODE -ne 0 -or $delta.Count -ne 1 -or $delta[0] -cne '.github/workflows/qa-pr1128-ui-hang.yml') { throw 'Unexpected product edits' }
+      - uses: actions/checkout@v7
+        with:
+          ref: 6484664e118fdec2e157c51183fc4797b03700c7
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Prove regression on old scope owner, then restore exact candidate
+        shell: pwsh
+        working-directory: product
+        run: |
+          $source = '6484664e118fdec2e157c51183fc4797b03700c7'
+          $baseline = 'ff543be7dbfcf072f92800d4d2268abeb333eebb'
+          $owner = 'src/OpenClaw.Connection/OperatorScopeHelper.cs'
+          New-Item -ItemType Directory -Force TestResults/ScopeProof | Out-Null
+          $oldOwner = git show "${baseline}:$owner"
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline owner missing' }
+          try {
+            $oldOwner | Set-Content -LiteralPath $owner -Encoding utf8NoBOM
+            dotnet test tests/OpenClaw.Connection.Tests -c Debug -r win-x64 --filter 'FullyQualifiedName~EnableAsync_WithoutAdminScope_DoesNotRequestPatchOrPersistMarker' --logger 'trx;LogFileName=baseline.trx' --results-directory TestResults/ScopeProof
+            $baselineExit = $LASTEXITCODE
+            [xml]$trx = Get-Content TestResults/ScopeProof/baseline.trx -Raw
+            $counts = $trx.TestRun.ResultSummary.Counters
+            $failed = @($trx.TestRun.Results.UnitTestResult | Where-Object outcome -eq Failed)
+            if ($baselineExit -eq 0 -or [int]$counts.total -ne 2 -or [int]$counts.passed -ne 1 -or [int]$counts.failed -ne 1 -or [int]$counts.notExecuted -ne 0 -or $failed.Count -ne 1) { throw 'Baseline did not reproduce the scope regression' }
+            $message = [string]$failed[0].Output.ErrorInfo.Message
+            if ($message -notmatch 'MissingConfigScope' -or $message -notmatch 'Succeeded') { throw 'Baseline failure was unrelated' }
+          } finally {
+            git restore --source $source -- $owner
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate owner restore failed' }
+            git diff --exit-code $source -- $owner
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate owner differs after restore' }
+          }
+      - name: Prove candidate adoption, revalidation and verifier behavior
+        shell: pwsh
+        working-directory: product
+        run: |
+          dotnet test tests/OpenClaw.Connection.Tests -c Debug -r win-x64 --filter 'FullyQualifiedName~GatewayTailscaleAuthUpgradeTests|FullyQualifiedName~GatewayTailscaleAuthLiveVerifierTests' --logger 'trx;LogFileName=candidate-connection.trx' --results-directory TestResults/ScopeProof
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate connection tests failed' }
+          dotnet test tests/OpenClaw.Tray.Tests -c Debug -r win-x64 --filter 'FullyQualifiedName~OperatorScopeHelperTests' --logger 'trx;LogFileName=candidate-tray.trx' --results-directory TestResults/ScopeProof
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate shared policy tests failed' }
+          foreach ($name in @('candidate-connection.trx','candidate-tray.trx')) {
+            [xml]$trx = Get-Content (Join-Path TestResults/ScopeProof $name) -Raw
+            $counts = $trx.TestRun.ResultSummary.Counters
+            if ([int]$counts.total -le 0 -or [int]$counts.passed -ne [int]$counts.total -or [int]$counts.failed -ne 0 -or [int]$counts.notExecuted -ne 0) { throw "Incomplete proof: $name" }
+          }
+      - name: Verify exact product and cleanup
+        if: always()
+        shell: pwsh
+        working-directory: product
+        run: |
+          if ((git rev-parse HEAD).Trim() -cne '6484664e118fdec2e157c51183fc4797b03700c7') { throw 'Product pin drifted' }
+          git diff --exit-code HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Tracked product changes remain' }
+      - name: Upload focused public test receipts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr1128-admin-scope-proof-${{ github.run_id }}
+          path: product/TestResults/ScopeProof/*.trx
+          if-no-files-found: error
+          retention-days: 7
