@@ -5564,7 +5564,7 @@ Controleer of de gateway actief is.</value>
     <value>Maak verbinding met deze gateway en probeer het opnieuw.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
-    <value>Maak opnieuw verbinding met de machtigingen operator.read en operator.write. Vraag de gatewaybeheerder om deze toe te kennen als ze ontbreken.</value>
+    <value>Maak opnieuw verbinding met de machtiging operator.admin. Vraag de gatewaybeheerder om deze toe te kennen als deze ontbreekt.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
     <value>De gatewayconfiguratie kon niet worden gelezen. Maak opnieuw verbinding met de gateway en probeer het opnieuw.</value>

@@ -5563,7 +5563,7 @@
     <value>请先连接到此网关，然后重试。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
-    <value>请使用具有 operator.read 和 operator.write 权限的连接重新连接。若无法获得这些权限，请联系网关管理员。</value>
+    <value>请使用具有 operator.admin 权限的连接重新连接。若无法获得此权限，请联系网关管理员。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
     <value>无法读取网关配置。请重新连接网关后重试。</value>

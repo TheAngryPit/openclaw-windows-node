@@ -5567,7 +5567,7 @@ Make sure the gateway is running.</value>
     <value>Connect to this gateway, then try again.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
-    <value>Reconnect with operator.read and operator.write access. Ask the gateway administrator if those permissions are unavailable.</value>
+    <value>Reconnect with operator.admin access. Ask the gateway administrator if that permission is unavailable.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
     <value>The gateway configuration could not be read. Reconnect to the gateway and try again.</value>

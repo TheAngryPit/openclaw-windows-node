@@ -5563,7 +5563,7 @@
     <value>請先連線到此閘道，然後再試一次。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
-    <value>請使用具備 operator.read 與 operator.write 權限的連線重新連線。若無法取得這些權限，請聯絡閘道管理員。</value>
+    <value>請使用具備 operator.admin 權限的連線重新連線。若無法取得此權限，請聯絡閘道管理員。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
     <value>無法讀取閘道設定。請重新連線至閘道後再試一次。</value>

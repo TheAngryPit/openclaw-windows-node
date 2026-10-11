@@ -5541,7 +5541,7 @@ Certifique-se de que o Gateway está em execução.</value>
     <value>Conecte-se a este gateway e tente novamente.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
-    <value>Reconecte-se com as permissões operator.read e operator.write. Se elas não estiverem disponíveis, peça ao administrador do gateway que as conceda.</value>
+    <value>Reconecte-se com a permissão operator.admin. Se ela não estiver disponível, peça ao administrador do gateway que a conceda.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
     <value>Não foi possível ler a configuração do gateway. Reconecte-se ao gateway e tente novamente.</value>

@@ -152,13 +152,16 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         Assert.Equal("test-token-placeholder", registry.GetActive()!.SharedGatewayToken);
     }
 
-    [Fact]
-    public async Task EnableAsync_MissingScopes_DoesNotRequestOrMutateConfig()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EnableAsync_WithoutAdminScope_DoesNotRequestPatchOrPersistMarker(bool hasWriteScope)
     {
         var registry = CreateRegistry();
+        registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: false))
         {
-            Scopes = ["operator.read"],
+            Scopes = hasWriteScope ? ["operator.read", "operator.write"] : ["operator.read"],
         };
         var service = new GatewayTailscaleAuthUpgradeService(registry);
 
@@ -166,7 +169,12 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
 
         Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.MissingConfigScope, result.Outcome);
         Assert.Equal(0, client.ConfigRequests);
+        Assert.Equal(0, client.PatchCalls);
         Assert.False(registry.GetActive()!.TrustTailscaleAuth);
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.False(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal("test-token-placeholder", reloaded.GetActive()!.SharedGatewayToken);
     }
 
     [Fact]
@@ -636,7 +644,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
 
     private sealed class FakeConfigClient(JsonElement config) : IGatewayTailscaleAuthConfigClient
     {
-        public IReadOnlyList<string> Scopes { get; set; } = ["operator.read", "operator.write"];
+        public IReadOnlyList<string> Scopes { get; set; } = ["operator.admin"];
         public IReadOnlyList<string> GrantedOperatorScopes => Scopes;
         public bool IsConnectedToGateway { get; set; } = true;
         public int ConfigRequests { get; private set; }

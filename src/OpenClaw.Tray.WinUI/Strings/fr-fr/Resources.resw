@@ -5563,7 +5563,7 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
     <value>Connectez-vous à cette passerelle, puis réessayez.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureMissingConfigScope" xml:space="preserve">
-    <value>Reconnectez-vous avec les autorisations operator.read et operator.write. Demandez-les à l’administrateur de la passerelle si elles ne sont pas disponibles.</value>
+    <value>Reconnectez-vous avec l’autorisation operator.admin. Demandez-la à l’administrateur de la passerelle si elle n’est pas disponible.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable" xml:space="preserve">
     <value>Impossible de lire la configuration de la passerelle. Reconnectez-vous à la passerelle et réessayez.</value>

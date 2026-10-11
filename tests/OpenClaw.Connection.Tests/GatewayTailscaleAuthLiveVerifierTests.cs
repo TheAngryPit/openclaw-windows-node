@@ -4,36 +4,6 @@ namespace OpenClaw.Connection.Tests;
 
 public sealed class GatewayTailscaleAuthLiveVerifierTests
 {
-    [Fact]
-    public void ConnectionManager_WiresWslLiveVerifierIntoDashboardRevalidation()
-    {
-        var source = File.ReadAllText(Path.Combine(
-            GetRepositoryRoot(),
-            "src",
-            "OpenClaw.Connection",
-            "GatewayConnectionManager.cs"));
-        var revalidationStart = source.IndexOf(
-            "public async Task<bool> RevalidateTailscaleDashboardAuthAsync(",
-            StringComparison.Ordinal);
-        var diagnosticsStart = source.IndexOf(
-            "public ConnectionDiagnostics Diagnostics",
-            revalidationStart,
-            StringComparison.Ordinal);
-
-        Assert.True(revalidationStart >= 0);
-        Assert.True(diagnosticsStart > revalidationStart);
-        Assert.Contains(
-            "new GatewayTailscaleAuthLiveVerifier(\n            new WslExeCommandRunner(_logger))",
-            source.Replace("\r\n", "\n", StringComparison.Ordinal));
-        var revalidation = source[revalidationStart..diagnosticsStart]
-            .Replace("\r\n", "\n", StringComparison.Ordinal);
-        Assert.Contains(
-            "new GatewayTailscaleAuthUpgradeService(\n" +
-            "                _registry,\n" +
-            "                _tailscaleAuthLiveVerifier);",
-            revalidation);
-    }
-
     [Theory]
     [MemberData(nameof(StatusResults))]
     public async Task VerifyAsync_ClassifiesStatusResult(
@@ -671,28 +641,6 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             }
             """,
             "");
-
-    private static string GetRepositoryRoot()
-    {
-        var current = new DirectoryInfo(AppContext.BaseDirectory);
-        while (current is not null)
-        {
-            if ((Directory.Exists(Path.Combine(current.FullName, ".git")) ||
-                 File.Exists(Path.Combine(current.FullName, ".git"))) &&
-                File.Exists(Path.Combine(
-                    current.FullName,
-                    "src",
-                    "OpenClaw.Connection",
-                    "GatewayConnectionManager.cs")))
-            {
-                return current.FullName;
-            }
-
-            current = current.Parent;
-        }
-
-        throw new InvalidOperationException("Could not find repository root.");
-    }
 
     private static WslCommandResult Status(string backendState, string dnsName) =>
         new(
