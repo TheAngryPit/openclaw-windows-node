@@ -100,6 +100,25 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     }
 
     [Fact]
+    public async Task EnableAsync_PersistedButUnappliedGrant_DoesNotReportAlreadyEnabled()
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
+        registry.Save();
+        var client = new FakeConfigClient(Config(allowTailscale: true, appliedRevision: "revision-old"))
+        {
+            PatchResult = new ConfigPatchResult { Ok = false, Error = "application pending" },
+        };
+        var service = new GatewayTailscaleAuthUpgradeService(registry);
+
+        var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, result.Outcome);
+        Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal("test-token-placeholder", registry.GetActive()!.SharedGatewayToken);
+    }
+
+    [Fact]
     public async Task EnableAsync_MissingBaseHash_FailsClosedBeforePatch()
     {
         var registry = CreateRegistry();
@@ -226,6 +245,91 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
 
         Assert.True(trusted);
         Assert.Equal(18789, liveVerifier.LastGatewayPort);
+    }
+
+    [Theory]
+    [InlineData("parsed", "\"configRevisionHash\":\"revision-new\",\"appliedConfigHash\":\"revision-old\"")]
+    [InlineData("config", "\"configRevisionHash\":\"revision-new\",\"appliedConfigHash\":\"revision-old\"")]
+    [InlineData("parsed", "\"configRevisionHash\":\"revision-new\",\"appliedConfigHash\":null")]
+    [InlineData("parsed", "\"configRevisionHash\":null,\"appliedConfigHash\":null")]
+    [InlineData("parsed", "\"configRevisionHash\":\"revision-new\"")]
+    [InlineData("parsed", "\"appliedConfigHash\":\"revision-new\"")]
+    [InlineData("parsed", "\"configRevisionHash\":\"\",\"appliedConfigHash\":\"\"")]
+    [InlineData("parsed", "\"configRevisionHash\":true,\"appliedConfigHash\":true")]
+    [InlineData("parsed", "\"configRevisionHash\":\"revision-new\",\"appliedConfigHash\":\"REVISION-NEW\"")]
+    [InlineData("parsed", "\"hash\":\"revision-new\",\"appliedConfigHash\":\"revision-new\"")]
+    public async Task RevalidateAsync_UnprovenAppliedRevision_PreservesMarkerAndCredential(
+        string documentProperty,
+        string revisionProperties)
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
+        registry.Save();
+        using var response = JsonDocument.Parse($$"""
+            {
+              "{{documentProperty}}": { "gateway": { "auth": { "allowTailscale": true } } },
+              {{revisionProperties}}
+            }
+            """);
+        var client = new FakeConfigClient(response.RootElement.Clone());
+        var service = new GatewayTailscaleAuthUpgradeService(
+            registry, new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready));
+
+        var trusted = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.False(trusted);
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal("test-token-placeholder", reloaded.GetActive()!.SharedGatewayToken);
+    }
+
+    [Fact]
+    public async Task RevalidateAsync_AmbiguousAdoptionTrustsOnlyAfterAppliedRevisionConverges()
+    {
+        var registry = CreateRegistry();
+        var client = new FakeConfigClient(Config(allowTailscale: false))
+        {
+            PatchResult = new ConfigPatchResult { Ok = false, Error = "response lost" },
+        };
+        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, result.Outcome);
+
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        service = new GatewayTailscaleAuthUpgradeService(
+            reloaded, new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready));
+        client.ConfigResponse = Config(allowTailscale: true, appliedRevision: "revision-old");
+        var pending = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
+        client.ConfigResponse = Config(allowTailscale: true);
+        var applied = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.False(pending);
+        Assert.True(applied);
+        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal("test-token-placeholder", reloaded.GetActive()!.SharedGatewayToken);
+        Assert.Equal(1, client.PatchCalls);
+    }
+
+    [Fact]
+    public async Task RevalidateAsync_UnappliedDisableRetainsMarkerUntilApplied()
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
+        registry.Save();
+        var client = new FakeConfigClient(Config(allowTailscale: false, appliedRevision: "revision-old"));
+        var service = new GatewayTailscaleAuthUpgradeService(registry);
+
+        Assert.False(await service.RevalidateAsync("gateway-1", client, CancellationToken.None));
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
+        client.ConfigResponse = Config(allowTailscale: false);
+        Assert.False(await service.RevalidateAsync("gateway-1", client, CancellationToken.None));
+        reloaded.Load();
+        Assert.False(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal("test-token-placeholder", reloaded.GetActive()!.SharedGatewayToken);
     }
 
     [Theory]
@@ -595,7 +699,8 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     private static JsonElement Config(
         bool allowTailscale,
         bool includeBaseHash = true,
-        bool includeGatewayPort = true)
+        bool includeGatewayPort = true,
+        string appliedRevision = "revision-new")
     {
         using var document = JsonDocument.Parse($$"""
             {
@@ -605,7 +710,9 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                   "auth": { "allowTailscale": {{allowTailscale.ToString().ToLowerInvariant()}} }
                 },
                 "unrelated": "keep"
-              }{{(includeBaseHash ? ",\n  \"baseHash\": \"base-1\"" : "")}}
+              },
+              "configRevisionHash": "revision-new",
+              "appliedConfigHash": "{{appliedRevision}}"{{(includeBaseHash ? ",\n  \"baseHash\": \"base-1\"" : "")}}
             }
             """);
         return document.RootElement.Clone();
@@ -620,7 +727,9 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                   "port": {{gatewayPort}},
                   "auth": { "allowTailscale": true }
                 }
-              }
+              },
+              "configRevisionHash": "revision-new",
+              "appliedConfigHash": "revision-new"
             }
             """);
         return document.RootElement.Clone();
@@ -636,7 +745,9 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                   "tailscale": { "mode": "serve" }
                 }
               },
-              "baseHash": "base-1"
+              "baseHash": "base-1",
+              "configRevisionHash": "revision-new",
+              "appliedConfigHash": "revision-new"
             }
             """);
         return document.RootElement.Clone();
@@ -644,6 +755,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
 
     private sealed class FakeConfigClient(JsonElement config) : IGatewayTailscaleAuthConfigClient
     {
+        public JsonElement ConfigResponse { get; set; } = config;
         public IReadOnlyList<string> Scopes { get; set; } = ["operator.admin"];
         public IReadOnlyList<string> GrantedOperatorScopes => Scopes;
         public bool IsConnectedToGateway { get; set; } = true;
@@ -667,7 +779,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                 return Task.FromException<JsonElement>(ConfigError);
 
             var result = EmitConfig
-                ? Task.FromResult(config.Clone())
+                ? Task.FromResult(ConfigResponse.Clone())
                 : new TaskCompletionSource<JsonElement>().Task;
             AfterConfig?.Invoke();
             return result;
