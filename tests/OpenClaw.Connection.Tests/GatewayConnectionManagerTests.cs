@@ -3372,7 +3372,22 @@ public class GatewayConnectionManagerTests : IDisposable
             resolver, factory, registry, NullLogger.Instance);
 
         await manager.ConnectAsync(gatewayId);
-        await fixture.HandshakeCompleted.WaitAsync(TimeSpan.FromSeconds(5));
+        try
+        {
+            await fixture.HandshakeCompleted.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException ex)
+        {
+            var snapshot = manager.CurrentSnapshot;
+            var requests = string.Join(", ", fixture.Requests.Select(request => $"{request.Method}={request.Outcome}"));
+            var diagnostics = string.Join(" | ", manager.Diagnostics.GetAll().Select(entry => $"{entry.Category}: {entry.Message}; {entry.Detail}"));
+            throw new TimeoutException(
+                $"Fixture handshake failed. Operator={snapshot.OperatorState}; error={snapshot.OperatorError}; " +
+                $"errorKind={snapshot.OperatorErrorKind}; protocol={snapshot.OperatorProtocolCompatibility}; " +
+                $"clientCreated={factory.RequestedGatewayUrl is not null}; gatewayReady={manager.OperatorClient?.IsConnectedToGateway}; " +
+                $"connections={fixture.ConnectionCount}; sharedConnects={fixture.SharedCredentialConnects}; " +
+                $"deviceRejections={fixture.DeviceTokenRejections}; requests={requests}; diagnostics={diagnostics}", ex);
+        }
         await WaitUntilAsync(() => manager.OperatorClient is
             { IsConnectedToGateway: true, HasHandshakeSnapshot: true });
 
@@ -3386,8 +3401,10 @@ public class GatewayConnectionManagerTests : IDisposable
         Assert.Contains(fixture.Requests, request => request.Method == "config.get" && request.Outcome == "ok");
         Assert.Contains(fixture.Requests, request =>
             request.Method == "config.patch" && request.Outcome == "error:FIXTURE_READ_ONLY");
-        var diagnostic = Assert.Single(manager.Diagnostics.GetAll(),
-            entry => entry.Category == "tailscale-auth");
+        var upgradeEvents = manager.Diagnostics.GetAll()
+            .Where(entry => entry.Category == "tailscale-auth")
+            .ToArray();
+        var diagnostic = Assert.Single(upgradeEvents);
         Assert.Equal("Dashboard auth upgrade: PatchRejected", diagnostic.Message);
         Assert.Contains("Fixture Gateway is read-only", diagnostic.Detail ?? string.Empty);
     }
