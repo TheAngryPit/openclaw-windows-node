@@ -394,7 +394,7 @@ internal sealed class GatewayTailscaleAuthUpgradeService
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (record!.TrustTailscaleAuth && AllowsTailscaleAuth(snapshot.Root))
+        if (record!.TrustTailscaleAuth && snapshot.IsApplied && AllowsTailscaleAuth(snapshot.Root))
             return new(GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled);
 
         if (string.IsNullOrWhiteSpace(snapshot.BaseHash))
@@ -529,6 +529,9 @@ internal sealed class GatewayTailscaleAuthUpgradeService
             return false;
         }
 
+        if (!snapshot.IsApplied)
+            return false;
+
         if (AllowsTailscaleAuth(snapshot.Root))
         {
             if (_liveVerifier is null || !TryGetGatewayPort(snapshot.Root, out var gatewayPort))
@@ -594,7 +597,16 @@ internal sealed class GatewayTailscaleAuthUpgradeService
             baseHash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(raw)));
         }
 
-        return new(root.Clone(), baseHash);
+        var configRevisionHash = response.TryGetProperty("configRevisionHash", out var revisionElement) &&
+            revisionElement.ValueKind == JsonValueKind.String
+                ? revisionElement.GetString()
+                : null;
+        var appliedConfigHash = response.TryGetProperty("appliedConfigHash", out var appliedElement) &&
+            appliedElement.ValueKind == JsonValueKind.String
+                ? appliedElement.GetString()
+                : null;
+
+        return new(root.Clone(), baseHash, configRevisionHash, appliedConfigHash);
     }
 
     private static JsonElement CreateAllowTailscalePatch()
@@ -662,5 +674,15 @@ internal sealed class GatewayTailscaleAuthUpgradeService
             port is > 0 and <= 65535;
     }
 
-    private sealed record ConfigSnapshot(JsonElement Root, string? BaseHash);
+    private sealed record ConfigSnapshot(
+        JsonElement Root,
+        string? BaseHash,
+        string? ConfigRevisionHash,
+        string? AppliedConfigHash)
+    {
+        public bool IsApplied =>
+            !string.IsNullOrWhiteSpace(ConfigRevisionHash) &&
+            !string.IsNullOrWhiteSpace(AppliedConfigHash) &&
+            string.Equals(ConfigRevisionHash, AppliedConfigHash, StringComparison.Ordinal);
+    }
 }
