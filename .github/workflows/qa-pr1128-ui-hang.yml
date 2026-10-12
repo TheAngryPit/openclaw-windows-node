@@ -1,0 +1,292 @@
+name: PR1128 applied-state and diagnostics proof
+on:
+  push:
+    branches: [qa/pr1128-instrumented-proof-20261012]
+    paths: [.github/workflows/qa-pr1128-ui-hang.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pr1128-applied-diagnostics-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  proof:
+    if: github.repository == 'TheAngryPit/openclaw-windows-node'
+    runs-on: windows-latest
+    env:
+      PRODUCT_SHA: 7dc15646c6b1b895924224be6f635d3df0686fc8
+      BASELINE_SHA: 6484664e118fdec2e157c51183fc4797b03700c7
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      OPENCLAW_CI_COLLECT_COVERAGE: 'false'
+      OPENCLAW_REPO_ROOT: ${{ github.workspace }}\product
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify direct-child workflow-only overlay
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_EVENT_NAME -cne 'push' -or
+              $env:GITHUB_REPOSITORY -cne 'TheAngryPit/openclaw-windows-node' -or
+              $env:GITHUB_REF -cne 'refs/heads/qa/pr1128-instrumented-proof-20261012') {
+            throw 'Unexpected QA push context'
+          }
+          $head = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:GITHUB_SHA) { throw 'Trigger/source mismatch' }
+          $parents = @((git show -s --format=%P HEAD).Trim().Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+          if ($LASTEXITCODE -ne 0 -or $parents.Count -ne 1 -or $parents[0] -cne $env:PRODUCT_SHA) {
+            throw 'QA must be one direct child of the reviewed product'
+          }
+          $delta = @(git diff --name-only $env:PRODUCT_SHA HEAD)
+          if ($LASTEXITCODE -ne 0 -or $delta.Count -ne 1 -or $delta[0] -cne '.github/workflows/qa-pr1128-ui-hang.yml') {
+            throw 'Unexpected QA overlay files'
+          }
+          $initialStatus = @(git status --porcelain)
+          if ($LASTEXITCODE -ne 0 -or $initialStatus.Count -ne 0) { throw 'QA checkout status is not clean' }
+          New-Item -ItemType Directory -Path proof -Force | Out-Null
+          @{
+            product = $env:PRODUCT_SHA; baseline = $env:BASELINE_SHA; qa = $head
+            parent = $parents[0]; delta = $delta; event = $env:GITHUB_EVENT_NAME
+            runnerOS = $env:RUNNER_OS; runnerArch = $env:RUNNER_ARCH
+            imageOS = $env:ImageOS; imageVersion = $env:ImageVersion
+          } | ConvertTo-Json -Depth 4 | Set-Content proof/source.json -Encoding utf8
+      - uses: actions/checkout@v7
+        with:
+          ref: 7dc15646c6b1b895924224be6f635d3df0686fc8
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind test-only CLI, package and tray directories
+        shell: pwsh
+        run: |
+          $bindings = @{
+            DOTNET_CLI_HOME = 'pr1128-dotnet'; NUGET_PACKAGES = 'pr1128-nuget'
+            OPENCLAW_TRAY_DATA_DIR = 'pr1128-tray'; OPENCLAW_TRAY_APPDATA_DIR = 'pr1128-roaming'
+            OPENCLAW_TRAY_LOCALAPPDATA_DIR = 'pr1128-local'
+          }
+          foreach ($name in $bindings.Keys) {
+            $path = Join-Path $env:RUNNER_TEMP $bindings[$name]
+            New-Item -ItemType Directory -Path $path -Force | Out-Null
+            "$name=$path" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          }
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Capture toolchain and exact product owners
+        shell: pwsh
+        working-directory: product
+        run: |
+          if ((git rev-parse HEAD).Trim() -cne $env:PRODUCT_SHA) { throw 'Product source drift' }
+          git --version | Tee-Object ../proof/git-version.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Git version probe failed' }
+          dotnet --info | Tee-Object ../proof/dotnet-info.txt
+          if ($LASTEXITCODE -ne 0) { throw '.NET information probe failed' }
+          node --version | Tee-Object ../proof/node-version.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Node version probe failed' }
+          $paths = @(
+            'src/OpenClaw.Connection/GatewayTailscaleAuthUpgrade.cs',
+            'src/OpenClaw.Connection/GatewayConnectionManager.cs',
+            'tests/OpenClaw.Connection.Tests/GatewayTailscaleAuthUpgradeTests.cs',
+            'tests/OpenClaw.Connection.Tests/GatewayConnectionManagerTests.cs',
+            '.github/workflows/ci.yml', 'scripts/Invoke-CiTest.ps1'
+          )
+          $hashes = foreach ($path in $paths) {
+            @{ path = $path; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash }
+          }
+          $hashes | ConvertTo-Json -Depth 3 | Set-Content ../proof/source-hashes.json -Encoding utf8
+      - name: Reproduce fourteen intended baseline failures and restore exact owners
+        shell: pwsh
+        working-directory: product
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $owners = @('src/OpenClaw.Connection/GatewayTailscaleAuthUpgrade.cs', 'src/OpenClaw.Connection/GatewayConnectionManager.cs')
+          $filter = 'FullyQualifiedName~RevalidateAsync_UnprovenAppliedRevision_PreservesMarkerAndCredential|FullyQualifiedName~RevalidateAsync_AmbiguousAdoptionTrustsOnlyAfterAppliedRevisionConverges|FullyQualifiedName~RevalidateAsync_UnappliedDisableRetainsMarkerUntilApplied|FullyQualifiedName~EnableAsync_PersistedButUnappliedGrant_DoesNotReportAlreadyEnabled|FullyQualifiedName~TailscaleDashboardAuthFailure_RecordsOutcomeAndError'
+          try {
+            git restore --source $env:BASELINE_SHA --worktree -- $owners
+            if ($LASTEXITCODE -ne 0) { throw 'Baseline owner substitution failed' }
+            $substituted = @(git diff --name-only HEAD)
+            $diffExit = $LASTEXITCODE
+            $substitutedPaths = ($substituted | Sort-Object) -join '|'
+            $ownerPaths = ($owners | Sort-Object) -join '|'
+            if ($diffExit -ne 0 -or $substitutedPaths -cne $ownerPaths) {
+              throw 'Baseline changed an unexpected path'
+            }
+            dotnet test tests/OpenClaw.Connection.Tests -c Debug --filter $filter --logger 'trx;LogFileName=baseline.trx' --results-directory ../proof/baseline --verbosity normal 2>&1 | Tee-Object ../proof/baseline-stdout.txt
+            $baselineExit = $LASTEXITCODE
+            [xml]$trx = Get-Content -Raw -LiteralPath ../proof/baseline/baseline.trx
+            $counts = $trx.TestRun.ResultSummary.Counters
+            $failed = @($trx.TestRun.Results.UnitTestResult | Where-Object outcome -eq 'Failed')
+            if ($baselineExit -eq 0 -or [int]$counts.total -ne 14 -or [int]$counts.executed -ne 14 -or
+                [int]$counts.failed -ne 14 -or [int]$counts.passed -ne 0 -or [int]$counts.notExecuted -ne 0 -or
+                [int]$counts.error -ne 0 -or [int]$counts.aborted -ne 0 -or [int]$counts.timeout -ne 0 -or $failed.Count -ne 14) {
+              throw 'Baseline did not reproduce all fourteen regressions'
+            }
+            $classes = @{ unproven = 0; convergence = 0; disable = 0; enable = 0; diagnostic = 0 }
+            foreach ($row in $failed) {
+              $message = [string]$row.Output.ErrorInfo.Message
+              switch -Regex ([string]$row.testName) {
+                'RevalidateAsync_UnprovenAppliedRevision_PreservesMarkerAndCredential' {
+                  if ($message -notmatch 'Assert.False' -or $message -notmatch 'Expected:\s*False' -or $message -notmatch 'Actual:\s*True') { throw 'Unrelated unknown-revision failure' }
+                  $classes.unproven++; break
+                }
+                'RevalidateAsync_AmbiguousAdoptionTrustsOnlyAfterAppliedRevisionConverges' {
+                  if ($message -notmatch 'Assert.False' -or $message -notmatch 'Actual:\s*True') { throw 'Unrelated convergence failure' }
+                  $classes.convergence++; break
+                }
+                'RevalidateAsync_UnappliedDisableRetainsMarkerUntilApplied' {
+                  if ($message -notmatch 'Assert.True' -or $message -notmatch 'Actual:\s*False') { throw 'Unrelated marker failure' }
+                  $classes.disable++; break
+                }
+                'EnableAsync_PersistedButUnappliedGrant_DoesNotReportAlreadyEnabled' {
+                  if ($message -notmatch 'Expected:\s*PatchRejected' -or $message -notmatch 'Actual:\s*AlreadyEnabled') { throw 'Unrelated AlreadyEnabled failure' }
+                  $classes.enable++; break
+                }
+                'TailscaleDashboardAuthFailure_RecordsOutcomeAndError' {
+                  if ($message -notmatch 'Assert.Single' -or $message -notmatch 'empty') { throw 'Diagnostic failed before the missing event' }
+                  $classes.diagnostic++; break
+                }
+                default { throw 'Unexpected baseline test failure' }
+              }
+            }
+            if ($classes.unproven -ne 10 -or $classes.convergence -ne 1 -or $classes.disable -ne 1 -or $classes.enable -ne 1 -or $classes.diagnostic -ne 1) {
+              throw 'Baseline failure partition mismatch'
+            }
+            @{ exitCode = $baselineExit; counters = $counts; failures = $classes } | ConvertTo-Json -Depth 5 | Set-Content ../proof/baseline-qualification.json -Encoding utf8
+          } finally {
+            git restore --source $env:PRODUCT_SHA --worktree -- $owners
+            $restoreExit = $LASTEXITCODE
+            git diff --exit-code $env:PRODUCT_SHA -- $owners
+            $compareExit = $LASTEXITCODE
+            @{ restoreExit = $restoreExit; compareExit = $compareExit; owners = $owners } | ConvertTo-Json | Set-Content ../proof/baseline-cleanup.json -Encoding utf8
+            if ($restoreExit -ne 0 -or $compareExit -ne 0) { throw 'Exact candidate owner restoration failed' }
+            git diff --exit-code HEAD
+            if ($LASTEXITCODE -ne 0) { throw 'Product is dirty after baseline restoration' }
+          }
+      - name: Qualify candidate applied-state, ingress and real WebSocket diagnostics
+        shell: pwsh
+        working-directory: product
+        run: |
+          dotnet test tests/OpenClaw.Connection.Tests -c Debug --filter 'FullyQualifiedName~GatewayTailscaleAuthUpgradeTests|FullyQualifiedName~GatewayTailscaleAuthLiveVerifierTests|FullyQualifiedName~TailscaleDashboardAuthFailure_RecordsOutcomeAndError' --logger 'trx;LogFileName=candidate-focused.trx' --results-directory ../proof/focused --verbosity normal 2>&1 | Tee-Object ../proof/candidate-focused-stdout.txt
+          $testExit = $LASTEXITCODE
+          [xml]$trx = Get-Content -Raw -LiteralPath ../proof/focused/candidate-focused.trx
+          $counts = $trx.TestRun.ResultSummary.Counters
+          $rows = @($trx.TestRun.Results.UnitTestResult)
+          if ($testExit -ne 0 -or [int]$counts.total -ne 110 -or [int]$counts.executed -ne 110 -or
+              [int]$counts.passed -ne 110 -or [int]$counts.failed -ne 0 -or [int]$counts.notExecuted -ne 0 -or
+              [int]$counts.error -ne 0 -or [int]$counts.aborted -ne 0 -or [int]$counts.timeout -ne 0 -or
+              $rows.Count -ne 110 -or @($rows | Where-Object outcome -ne 'Passed').Count -ne 0) {
+            throw 'Candidate focused proof is incomplete'
+          }
+          $diagnostic = @($rows | Where-Object testName -match 'TailscaleDashboardAuthFailure_RecordsOutcomeAndError')
+          if ($diagnostic.Count -ne 1) { throw 'Real WebSocket diagnostic case is absent' }
+          @{ exitCode = $testExit; counters = $counts; diagnostic = $diagnostic[0].testName } | ConvertTo-Json -Depth 5 | Set-Content ../proof/focused-qualification.json -Encoding utf8
+      - name: Run full canonical Release build
+        shell: pwsh
+        working-directory: product
+        run: |
+          ./build.ps1 -Configuration Release -NoTrustRepository 2>&1 | Tee-Object ../proof/build-stdout.txt
+          $buildExit = $LASTEXITCODE
+          @{ exitCode = $buildExit; product = $env:PRODUCT_SHA } | ConvertTo-Json | Set-Content ../proof/build-result.json -Encoding utf8
+          if ($buildExit -ne 0) { throw 'Full Release build failed' }
+      - name: Restore and build canonical Shared, Connection and Tray test graphs sequentially
+        shell: pwsh
+        working-directory: product
+        run: |
+          $commands = @(
+            @('restore', 'tests/OpenClaw.Shared.Tests'),
+            @('restore', 'tests/OpenClaw.Connection.Tests'),
+            @('restore', 'src/OpenClaw.Tray.WinUI', '-r', 'win-x64'),
+            @('restore', 'tests/OpenClaw.Tray.Tests', '-r', 'win-x64'),
+            @('build', 'tests/OpenClaw.Shared.Tests', '-c', 'Debug', '--no-restore'),
+            @('build', 'tests/OpenClaw.Connection.Tests', '-c', 'Debug', '--no-restore'),
+            @('build', 'src/OpenClaw.Tray.WinUI', '-c', 'Debug', '-r', 'win-x64', '--no-restore'),
+            @('build', 'tests/OpenClaw.Tray.Tests', '-c', 'Debug', '-r', 'win-x64', '--no-restore')
+          )
+          foreach ($arguments in $commands) {
+            "dotnet $($arguments -join ' ')" | Tee-Object -Append ../proof/test-graph-stdout.txt
+            & dotnet @arguments 2>&1 | Tee-Object -Append ../proof/test-graph-stdout.txt
+            if ($LASTEXITCODE -ne 0) { throw 'Canonical test graph preparation failed' }
+          }
+      - name: Run mandatory full Shared suite with canonical integration flag
+        shell: pwsh
+        working-directory: product
+        env:
+          OPENCLAW_RUN_INTEGRATION: '1'
+        run: |
+          ./scripts/Invoke-CiTest.ps1 -Project tests/OpenClaw.Shared.Tests -ResultsDirectory ../proof/Shared -TrxFileName OpenClaw.Shared.Tests.trx 2>&1 | Tee-Object ../proof/shared-stdout.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Full Shared suite failed' }
+      - name: Run mandatory full Connection suite
+        shell: pwsh
+        working-directory: product
+        run: |
+          ./scripts/Invoke-CiTest.ps1 -Project tests/OpenClaw.Connection.Tests -ResultsDirectory ../proof/Connection -TrxFileName OpenClaw.Connection.Tests.trx 2>&1 | Tee-Object ../proof/connection-stdout.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Full Connection suite failed' }
+      - name: Run mandatory full Tray suite with canonical runtime
+        shell: pwsh
+        working-directory: product
+        run: |
+          ./scripts/Invoke-CiTest.ps1 -Project tests/OpenClaw.Tray.Tests -ResultsDirectory ../proof/Tray -TrxFileName OpenClaw.Tray.Tests.trx -Runtime win-x64 2>&1 | Tee-Object ../proof/tray-stdout.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Full Tray suite failed' }
+      - name: Qualify actual full-suite counters and skipped cases
+        shell: pwsh
+        working-directory: product
+        run: |
+          $symlinkReason = 'Creating symbolic links requires Windows Developer Mode or elevation.'
+          $expectedSkips = @{
+            'OpenClaw.Shared.Tests.LocalInferenceHardwareProbeTests.ProbeReportsCudaMemoryWithoutADedicatedMemoryCap' = @('NVIDIA hardware', 'No NVIDIA GPU detected. Set OPENCLAW_RUN_GPU_PROOF=1 to require this hardware proof.')
+            'OpenClaw.Shared.Tests.HuggingFaceHubCacheTests.SnapshotRead_AcceptsOnlySameRepositoryBlobSymlink' = @('Symbolic-link capability', $symlinkReason)
+            'OpenClaw.Shared.Tests.HuggingFaceHubCacheTests.TryOpenVerifiedCacheFileAsync_RejectsReparsePointAncestor' = @('Symbolic-link capability', $symlinkReason)
+            'OpenClaw.Connection.Tests.LocalAiManifestMigrationTests.Load_ReusesVerifiedStandardSnapshotSymlink' = @('Symbolic-link capability', $symlinkReason)
+            'OpenClaw.Connection.Tests.LocalAiManifestMigrationTests.Load_RejectsSnapshotSymlinkOutsideCacheAndPreservesLegacyReceipt' = @('Symbolic-link capability', $symlinkReason)
+            'OpenClaw.Connection.Tests.LocalAiManifestMigrationTests.Migration_RejectsLegacyModelSymlinkOutsideManagedModelRoot' = @('Symbolic-link capability', $symlinkReason)
+            'OpenClaw.Connection.Tests.LocalAiPortLifecycleTests.Runtime_BindsNativeModelPathToVerifiedBlobAfterSnapshotLinkReplacement' = @('Symbolic-link capability', $symlinkReason)
+            'OpenClaw.Connection.Tests.LocalAiManifestMigrationTests.Migration_CopiesAcrossConfiguredDistinctVolume' = @('Distinct-volume fixture', 'Set OPENCLAW_TEST_HF_CACHE_ROOT to a directory on a distinct volume.')
+          }
+          $summary = foreach ($suite in @('Shared', 'Connection', 'Tray')) {
+            $path = "../proof/$suite/OpenClaw.$suite.Tests.trx"
+            [xml]$trx = Get-Content -Raw -LiteralPath $path
+            $counts = $trx.TestRun.ResultSummary.Counters
+            $rows = @($trx.TestRun.Results.UnitTestResult)
+            if ([int]$counts.total -le 0 -or [int]$counts.failed -ne 0 -or [int]$counts.error -ne 0 -or
+                [int]$counts.aborted -ne 0 -or [int]$counts.passed + [int]$counts.notExecuted -ne [int]$counts.total -or
+                [int]$counts.executed -ne [int]$counts.passed -or $rows.Count -ne [int]$counts.total -or
+                @($rows | Where-Object outcome -notin @('Passed', 'NotExecuted')).Count -ne 0) { throw "Incomplete full-suite receipt: $suite" }
+            $skips = @($rows | Where-Object outcome -eq 'NotExecuted' | ForEach-Object {
+              $name = [string]$_.testName
+              if (-not $expectedSkips.ContainsKey($name)) { throw "Unclassified skipped case: $name" }
+              $expected = $expectedSkips[$name]
+              $reason = [string]$_.Output.ErrorInfo.Message
+              if ($reason -and $reason -cne $expected[1]) { throw "Unexpected skip reason: $name" }
+              @{ name = $name; owner = $expected[0]; recordedReason = $reason; sourceGuardReason = $expected[1]; proof = 'Not executed; not counted as passed' }
+            })
+            if ($skips.Count -ne [int]$counts.notExecuted) { throw "Skip counter mismatch: $suite" }
+            @{ suite = $suite; counters = $counts; skippedCases = $skips }
+          }
+          $summary | ConvertTo-Json -Depth 7 | Set-Content ../proof/full-suite-qualification.json -Encoding utf8
+      - name: Verify exact product and final tracked cleanup
+        if: always()
+        shell: pwsh
+        working-directory: product
+        run: |
+          $head = (git rev-parse HEAD).Trim()
+          $headExit = $LASTEXITCODE
+          git diff --exit-code HEAD
+          $workingExit = $LASTEXITCODE
+          git diff --cached --exit-code HEAD
+          $indexExit = $LASTEXITCODE
+          $status = @(git status --porcelain --untracked-files=normal)
+          $statusExit = $LASTEXITCODE
+          @{ product = $head; expectedProduct = $env:PRODUCT_SHA; headExit = $headExit; workingExit = $workingExit; indexExit = $indexExit; statusExit = $statusExit; status = $status } | ConvertTo-Json -Depth 4 | Set-Content ../proof/final-cleanup.json -Encoding utf8
+          if ($headExit -ne 0 -or $head -cne $env:PRODUCT_SHA -or $workingExit -ne 0 -or $indexExit -ne 0 -or
+              $statusExit -ne 0 -or $status.Count -ne 0) { throw 'Exact product cleanup failed' }
+      - name: Preserve public synthetic proof and cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr1128-applied-diagnostics-proof-${{ github.run_id }}
+          path: proof/
+          if-no-files-found: error
+          retention-days: 7
