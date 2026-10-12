@@ -1,0 +1,358 @@
+name: PR1128 synthetic echo diagnosis and unpackaged Dev build
+on:
+  push:
+    branches: [qa/pr1128-echo-observed-20261012]
+    paths: [.github/workflows/qa-pr1128-ui-hang.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pr1128-echo-observed-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  diagnose:
+    if: github.repository == 'TheAngryPit/openclaw-windows-node'
+    runs-on: windows-latest
+    env:
+      PRODUCT_SHA: 7dc15646c6b1b895924224be6f635d3df0686fc8
+      PRODUCT_TREE: 3f8584a15db57fc96c37e11a0d9ddc90eec5e9da
+      BETA_SHA: 16299381a4df3a5bc025d092d830fe68cb3c6314
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      OPENCLAW_RUN_INTEGRATION: '1'
+      OPENCLAW_CI_COLLECT_COVERAGE: 'false'
+      OPENCLAW_REPO_ROOT: ${{ github.workspace }}\product
+      GitVersion_NoNormalizeEnabled: 'true'
+      GitVersion_NoFetchEnabled: 'true'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact direct-child workflow-only diagnostic overlay
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_EVENT_NAME -cne 'push' -or
+              $env:GITHUB_REPOSITORY -cne 'TheAngryPit/openclaw-windows-node' -or
+              $env:GITHUB_REF -cne 'refs/heads/qa/pr1128-echo-observed-20261012') { throw 'Unexpected diagnostic push context' }
+          $head = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:GITHUB_SHA) { throw 'Diagnostic source mismatch' }
+          $parents = @((git show -s --format=%P HEAD).Trim().Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+          if ($LASTEXITCODE -ne 0 -or $parents.Count -ne 1 -or $parents[0] -cne $env:PRODUCT_SHA) { throw 'Diagnostic QA must be one direct child of7dc' }
+          $delta = @(git diff --name-only $env:PRODUCT_SHA HEAD)
+          if ($LASTEXITCODE -ne 0 -or $delta.Count -ne 1 -or $delta[0] -cne '.github/workflows/qa-pr1128-ui-hang.yml') { throw 'Unexpected diagnostic overlay path' }
+          $status = @(git status --porcelain)
+          if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0) { throw 'Diagnostic overlay is dirty' }
+          New-Item -ItemType Directory -Path proof -Force | Out-Null
+          @{ qa = $head; parent = $parents[0]; delta = $delta; product = $env:PRODUCT_SHA; tree = $env:PRODUCT_TREE;
+             beta = $env:BETA_SHA; imageOS = $env:ImageOS; imageVersion = $env:ImageVersion } |
+            ConvertTo-Json -Depth 4 | Set-Content proof/source.json -Encoding utf8
+      - uses: actions/checkout@v7
+        with:
+          ref: 7dc15646c6b1b895924224be6f635d3df0686fc8
+          path: product
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind task-only state and exact Git trust
+        shell: pwsh
+        working-directory: product
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = (git rev-parse HEAD).Trim()
+          $headExit = $LASTEXITCODE
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          $treeExit = $LASTEXITCODE
+          $status = @(git status --porcelain --untracked-files=normal)
+          if ($headExit -ne 0 -or $treeExit -ne 0 -or $LASTEXITCODE -ne 0 -or
+              $head -cne $env:PRODUCT_SHA -or $tree -cne $env:PRODUCT_TREE -or $status.Count -ne 0) { throw 'Exact product is not pristine' }
+          $bindings = @{
+            DOTNET_CLI_HOME = 'pr1128-echo-dotnet'; NUGET_PACKAGES = 'pr1128-echo-nuget'
+            OPENCLAW_TRAY_DATA_DIR = 'pr1128-echo-tray'; OPENCLAW_TRAY_APPDATA_DIR = 'pr1128-echo-roaming'
+            OPENCLAW_TRAY_LOCALAPPDATA_DIR = 'pr1128-echo-local'
+          }
+          foreach ($name in $bindings.Keys) {
+            $path = Join-Path $env:RUNNER_TEMP $bindings[$name]
+            New-Item -ItemType Directory -Path $path -Force | Out-Null
+            "$name=$path" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          }
+          $productPath = [IO.Path]::GetFullPath((Get-Location).Path).TrimEnd('\') -replace '\\', '/'
+          $expectedPath = [IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE 'product')).TrimEnd('\') -replace '\\', '/'
+          if ($productPath -cne $expectedPath) { throw 'Unexpected Git trust target' }
+          $gitGlobal = Join-Path $env:RUNNER_TEMP 'pr1128-echo-git.config'
+          if (Test-Path -LiteralPath $gitGlobal) { throw 'Task Git configuration already exists' }
+          git config --file $gitGlobal --add safe.directory $productPath
+          if ($LASTEXITCODE -ne 0) { throw 'Exact task trust write failed' }
+          $env:GIT_CONFIG_GLOBAL = $gitGlobal
+          $entries = @(git config --global --get-all safe.directory)
+          if ($LASTEXITCODE -ne 0 -or $entries.Count -ne 1 -or $entries[0] -cne $productPath) { throw 'Task trust readback failed' }
+          "GIT_CONFIG_GLOBAL=$gitGlobal" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          @{ config = $gitGlobal; entries = $entries; sha256 = (Get-FileHash $gitGlobal -Algorithm SHA256).Hash } |
+            ConvertTo-Json | Set-Content ../proof/git-trust.json -Encoding utf8
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Verify beta equivalence and capture diagnostic source/toolchain
+        shell: pwsh
+        working-directory: product
+        run: |
+          git merge-base --is-ancestor $env:BETA_SHA $env:PRODUCT_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Selected beta is not included in product' }
+          $owners = @('tests/OpenClaw.Shared.Tests/SystemRunTests.cs', 'src/OpenClaw.Shared/LocalCommandRunner.cs',
+                      'build.ps1', 'src/OpenClaw.Tray.WinUI/OpenClaw.Tray.WinUI.csproj')
+          git diff --exit-code $env:BETA_SHA $env:PRODUCT_SHA -- $owners
+          if ($LASTEXITCODE -ne 0) { throw 'Echo execution/build owners differ from beta' }
+          $hashes = foreach ($path in $owners) { @{ path = $path; sha256 = (Get-FileHash $path -Algorithm SHA256).Hash } }
+          $hashes | ConvertTo-Json | Set-Content ../proof/owner-hashes.json -Encoding utf8
+          dotnet --info | Tee-Object ../proof/dotnet-info.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain capture failed' }
+          git --version | Tee-Object ../proof/git-version.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Git capture failed' }
+      - name: Apply test-only public logger, stderr observations and child module-path controls
+        id: mirror
+        shell: pwsh
+        working-directory: product
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = 'tests/OpenClaw.Shared.Tests/SystemRunTests.cs'
+          $original = [IO.File]::ReadAllText((Join-Path (Get-Location) $path))
+          $text = $original.Replace("`r`n", "`n")
+          $start = $text.IndexOf('public class LocalCommandRunnerIntegrationTests' + "`n")
+          $end = $text.IndexOf("`n}" + "`n`n/// <summary>" + "`n/// Unit tests for LocalCommandRunner.PlanExecution", $start)
+          if ($start -lt 0 -or $end -le $start) { throw 'Unexpected original integration owner shape' }
+          $body = $text.Substring($start, $end - $start)
+          $inventory = @([regex]::Matches($body, '\[IntegrationFact\]\s+public async Task (\w+)\(') | ForEach-Object { $_.Groups[1].Value })
+          if ($inventory.Count -ne 10 -or [regex]::Matches($body, 'new LocalCommandRunner\(\);').Count -ne 10) { throw 'Original inventory changed' }
+          $addition = @'
+
+              [IntegrationFact]
+              public async Task Run_PowershellEcho_ModulePathChildControls()
+              {
+                  var results = new List<(bool RemovedModulePath, int ExitCode, string Stdout)>();
+                  foreach (var removeModulePath in new[] { false, true })
+                  {
+                      var start = new ProcessStartInfo(Path.Combine(
+                          Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                          "System32", "WindowsPowerShell", "v1.0", "powershell.exe"))
+                      {
+                          Arguments = "-NoProfile -NonInteractive -Command Write-Output 'hello world'",
+                          UseShellExecute = false,
+                          RedirectStandardOutput = true,
+                          RedirectStandardError = true,
+                          CreateNoWindow = true,
+                          StandardOutputEncoding = Encoding.UTF8,
+                          StandardErrorEncoding = Encoding.UTF8,
+                      };
+                      if (removeModulePath)
+                          start.Environment.Remove("PSModulePath");
+                      output.WriteLine($"shell-control removedModulePath={removeModulePath}; modulePathPresent={start.Environment.ContainsKey("PSModulePath")}; executable={start.FileName}");
+                      using var process = Process.Start(start);
+                      Assert.NotNull(process);
+                      var stdoutTask = process.StandardOutput.ReadToEndAsync();
+                      var stderrTask = process.StandardError.ReadToEndAsync();
+                      using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(30000));
+                      var elapsed = Stopwatch.StartNew();
+                      try
+                      {
+                          await process.WaitForExitAsync(timeout.Token);
+                          var stdout = await stdoutTask.WaitAsync(timeout.Token);
+                          var stderr = await stderrTask.WaitAsync(timeout.Token);
+                          output.WriteLine($"shell-control removedModulePath={removeModulePath}; exit={process.ExitCode}; timedOut=false; durationMs={elapsed.ElapsedMilliseconds}; stdoutLength={stdout.Length}; stderrLength={stderr.Length}; stdout={JsonSerializer.Serialize(stdout)}; stderr={JsonSerializer.Serialize(stderr)}");
+                          results.Add((removeModulePath, process.ExitCode, stdout));
+                      }
+                      catch (OperationCanceledException)
+                      {
+                          output.WriteLine($"shell-control removedModulePath={removeModulePath}; timedOut=true; durationMs={elapsed.ElapsedMilliseconds}");
+                          throw;
+                      }
+                      finally
+                      {
+                          if (!process.HasExited)
+                          {
+                              process.Kill(entireProcessTree: true);
+                              await process.WaitForExitAsync();
+                          }
+                      }
+                  }
+                  foreach (var result in results)
+                  {
+                      Assert.Equal(0, result.ExitCode);
+                      Assert.Contains("hello world", result.Stdout);
+                  }
+              }
+
+              [IntegrationFact]
+              public async Task Run_PowershellEcho_AlongsideConcurrentShortCommands()
+              {
+                  output.WriteLine("context=PowerShell echo alongside the existing 32-command stream-drain scenario");
+                  await Task.WhenAll(
+                      Run_EchoCommand_Powershell(),
+                      Run_ConcurrentShortCommands_DrainBothStreamsBeforeReturning());
+              }
+
+              private sealed class DiagnosticLogger(ITestOutputHelper output) : IOpenClawLogger
+              {
+                  private readonly object _gate = new();
+
+                  public void Info(string message) => Write("INFO", message);
+                  public void Debug(string message) => Write("DEBUG", message);
+                  public void Warn(string message) => Write("WARN", message);
+                  public void Error(string message, Exception? ex = null) =>
+                      Write("ERROR", ex is null ? message : $"{message}; exception={ex.GetType().Name}");
+
+                  private void Write(string level, string message)
+                  {
+                      ThreadPool.GetAvailableThreads(out var workerThreads, out var completionThreads);
+                      lock (_gate)
+                          output.WriteLine($"{DateTime.UtcNow:O} {level} workers={workerThreads} ioThreads={completionThreads} {message}");
+                  }
+              }
+          '@
+          $body = $body.Replace('public class LocalCommandRunnerIntegrationTests', 'public class LocalCommandRunnerIntegrationTests(ITestOutputHelper output)')
+          $body = $body.Replace('new LocalCommandRunner();', 'new LocalCommandRunner(new DiagnosticLogger(output));')
+          $echoAnchor = '        Assert.Equal(0, result.ExitCode);' + "`n" + '        Assert.Contains("hello world", result.Stdout);'
+          if ([regex]::Matches($body, [regex]::Escape($echoAnchor)).Count -ne 1) { throw 'Original echo assertion owner changed' }
+          $echoObservation = @'
+                  output.WriteLine($"synthetic-echo exit={result.ExitCode}; timedOut={result.TimedOut}; durationMs={result.DurationMs}; stdoutLength={result.Stdout.Length}; stderrLength={result.Stderr.Length}; stdout={JsonSerializer.Serialize(result.Stdout)}; stderr={JsonSerializer.Serialize(result.Stderr)}");
+                  output.WriteLine($"synthetic-echo modulePathPresent={!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PSModulePath"))}; systemRoot={Environment.GetEnvironmentVariable("SystemRoot")}");
+          '@
+          $body = $body.Replace($echoAnchor, $echoObservation + "`n" + $echoAnchor)
+          $text = $text.Substring(0, $start) + $body + $addition + $text.Substring($end)
+          $text = $text.Replace('using Xunit;' + "`n", 'using Xunit;' + "`nusing Xunit.Abstractions;" + "`n")
+          [IO.File]::WriteAllText((Join-Path (Get-Location) $path), $text, [Text.UTF8Encoding]::new($false))
+          $expected = @($inventory + 'Run_PowershellEcho_AlongsideConcurrentShortCommands' + 'Run_PowershellEcho_ModulePathChildControls')
+          @{ originalCases = $inventory; expectedCases = $expected; count = $expected.Count;
+             mirrorSha256 = (Get-FileHash $path -Algorithm SHA256).Hash } |
+            ConvertTo-Json -Depth 4 | Set-Content ../proof/diagnostic-inventory.json -Encoding utf8
+          Copy-Item -LiteralPath $path -Destination ../proof/SystemRunTests.diagnostic.cs
+          git diff -- $path | Set-Content ../proof/diagnostic-test.diff -Encoding utf8
+          $delta = @(git diff --name-only HEAD)
+          if ($LASTEXITCODE -ne 0 -or $delta.Count -ne 1 -or $delta[0] -cne $path) { throw 'Diagnostic modified unexpected source' }
+      - name: Run original assertions, concurrent context and child module-path controls
+        id: diagnostic
+        shell: pwsh
+        working-directory: product
+        run: |
+          dotnet test tests/OpenClaw.Shared.Tests -c Debug --filter 'FullyQualifiedName~OpenClaw.Shared.Tests.LocalCommandRunnerIntegrationTests' --logger 'trx;LogFileName=echo-diagnostic.trx' --results-directory ../proof/diagnostic --verbosity normal 2>&1 | Tee-Object ../proof/diagnostic-stdout.txt
+          $testExit = $LASTEXITCODE
+          [xml]$trx = Get-Content -Raw -LiteralPath ../proof/diagnostic/echo-diagnostic.trx
+          $counts = @{}
+          $counterNode = $trx.TestRun.ResultSummary.Counters
+          foreach ($counter in @('total','executed','passed','failed','notExecuted','error','aborted','timeout',
+                                  'passedButRunAborted','notRunnable','disconnected','inconclusive','warning','completed','inProgress','pending')) {
+            if (-not $counterNode.HasAttribute($counter) -or $counterNode.GetAttribute($counter) -notmatch '^\d+$') { throw "Invalid diagnostic counter $counter" }
+            $counts[$counter] = [int]$counterNode.GetAttribute($counter)
+          }
+          $rows = @($trx.TestRun.Results.UnitTestResult)
+          $inventory = Get-Content -Raw ../proof/diagnostic-inventory.json | ConvertFrom-Json
+          $names = @($rows | ForEach-Object { ([string]$_.testName) -replace '^OpenClaw.Shared.Tests.LocalCommandRunnerIntegrationTests\.', '' } | Sort-Object)
+          $expected = @($inventory.expectedCases | Sort-Object)
+          $results = @($rows | ForEach-Object {
+            @{ name = $_.testName; outcome = $_.outcome; error = [string]$_.Output.ErrorInfo.Message; observations = [string]$_.Output.StdOut }
+          })
+          @{ exitCode = $testExit; rawCounters = $counts; results = $results } |
+            ConvertTo-Json -Depth 6 | Set-Content ../proof/diagnostic-qualification.json -Encoding utf8
+          if (($names -join '|') -cne ($expected -join '|') -or $rows.Count -ne 12 -or
+              $counts.total -ne 12 -or $counts.executed -ne 12 -or $counts.notExecuted -ne 0 -or
+              $counts.error -ne 0 -or $counts.aborted -ne 0 -or $counts.timeout -ne 0 -or
+              $counts.passedButRunAborted -ne 0 -or $counts.notRunnable -ne 0 -or $counts.disconnected -ne 0 -or
+              $counts.inconclusive -ne 0 -or $counts.warning -ne 0 -or $counts.completed -ne 0 -or
+              $counts.inProgress -ne 0 -or $counts.pending -ne 0 -or
+              @($trx.TestRun.ResultSummary.RunInfos.RunInfo | Where-Object { $_ -and $_.outcome -ne 'Passed' }).Count -ne 0 -or
+              @($rows | Where-Object outcome -notin @('Passed','Failed')).Count -ne 0) { throw 'Diagnostic inventory/receipt is incomplete' }
+          foreach ($name in @('Run_EchoCommand_Powershell','Run_PowershellEcho_AlongsideConcurrentShortCommands')) {
+            $row = @($results | Where-Object { $_.name -ceq "OpenClaw.Shared.Tests.LocalCommandRunnerIntegrationTests.$name" })
+            if ($row.Count -ne 1 -or $row[0].observations -notmatch 'synthetic-echo exit=' -or
+                $row[0].observations -notmatch 'stderrLength=' -or $row[0].observations -notmatch 'stderr=' -or
+                $row[0].observations -notmatch '\[EXEC\] Exit=') { throw 'Command-specific runner observations missing' }
+          }
+          $control = @($results | Where-Object { $_.name -ceq 'OpenClaw.Shared.Tests.LocalCommandRunnerIntegrationTests.Run_PowershellEcho_ModulePathChildControls' })
+          if ($control.Count -ne 1 -or
+              $control[0].observations -notmatch 'shell-control removedModulePath=False; exit=' -or
+              $control[0].observations -notmatch 'shell-control removedModulePath=True; exit=') { throw 'Child environment controls are incomplete' }
+          if ($testExit -ne 0 -or $counts.passed -ne 12 -or $counts.failed -ne 0 -or
+              @($rows | Where-Object { $_.outcome -ne 'Passed' -or $_.Output.ErrorInfo }).Count -ne 0) { throw 'Selected unchanged behavior assertion failed; inspect public observations' }
+      - name: Restore exact test owner and verify pristine product
+        id: restored
+        if: always()
+        shell: pwsh
+        working-directory: product
+        run: |
+          git restore --source $env:PRODUCT_SHA --worktree -- tests/OpenClaw.Shared.Tests/SystemRunTests.cs
+          $restoreExit = $LASTEXITCODE
+          git diff --exit-code HEAD
+          $compareExit = $LASTEXITCODE
+          $head = (git rev-parse HEAD).Trim()
+          $headExit = $LASTEXITCODE
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          $treeExit = $LASTEXITCODE
+          $status = @(git status --porcelain --untracked-files=normal)
+          $statusExit = $LASTEXITCODE
+          @{ restoreExit = $restoreExit; compareExit = $compareExit; head = $head; tree = $tree;
+             headExit = $headExit; treeExit = $treeExit; statusExit = $statusExit; status = $status } |
+            ConvertTo-Json -Depth 4 | Set-Content ../proof/diagnostic-cleanup.json -Encoding utf8
+          if ($restoreExit -ne 0 -or $compareExit -ne 0 -or $headExit -ne 0 -or $treeExit -ne 0 -or
+              $statusExit -ne 0 -or $status.Count -ne 0 -or $head -cne $env:PRODUCT_SHA -or $tree -cne $env:PRODUCT_TREE) { throw 'Exact diagnostic source cleanup failed' }
+      - name: Build official unpackaged Release Dev app without signing/installing
+        id: devbuild
+        if: always() && steps.restored.outcome == 'success'
+        shell: pwsh
+        working-directory: product
+        run: |
+          ./build.ps1 -Project WinUI -Configuration Release -DevBuild -NoTrustRepository 2>&1 | Tee-Object ../proof/dev-build-stdout.txt
+          $buildExit = $LASTEXITCODE
+          @{ exitCode = $buildExit; product = $env:PRODUCT_SHA; tree = $env:PRODUCT_TREE; devBuild = $true; packaged = $false } |
+            ConvertTo-Json | Set-Content ../proof/dev-build-result.json -Encoding utf8
+          if ($buildExit -ne 0) { throw 'Official unpackaged Dev build failed' }
+      - name: Qualify exact Dev identity, embedded source SHA and build output
+        if: always() && steps.devbuild.outcome == 'success'
+        shell: pwsh
+        working-directory: product
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = 'src/OpenClaw.Tray.WinUI/bin/Release/net10.0-windows10.0.22621.0/win-x64'
+          $marker = (Get-Content -Raw -LiteralPath "$output/app-identity.txt").Trim()
+          if ($marker -cne 'dev') { throw 'Output is not the compiled Dev identity' }
+          $assembly = Join-Path $output 'OpenClaw.Tray.WinUI.dll'
+          $exe = Join-Path $output 'OpenClaw.Tray.WinUI.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw 'Unpackaged Dev executable missing' }
+          $metadata = [Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $assembly).Path)
+          if (-not $metadata.ProductVersion.Contains($env:PRODUCT_SHA, [StringComparison]::OrdinalIgnoreCase)) { throw 'Dev assembly does not embed the exact product commit' }
+          $files = @(Get-ChildItem -LiteralPath $output -Recurse -File | ForEach-Object {
+            @{ path = [IO.Path]::GetRelativePath((Resolve-Path $output).Path, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+          })
+          $signature = Get-AuthenticodeSignature -LiteralPath $exe
+          @{ product = $env:PRODUCT_SHA; tree = $env:PRODUCT_TREE; identity = $marker; architecture = 'win-x64';
+             actualProductVersion = $metadata.ProductVersion; signatureStatus = [string]$signature.Status; files = $files;
+             installed = $false; launched = $false; privateStateUsed = $false } |
+            ConvertTo-Json -Depth 5 | Set-Content ../proof/dev-artifact-metadata.json -Encoding utf8
+          Compress-Archive -Path "$output/*" -DestinationPath ../proof/pr1128-alpha4-7dc-unpackaged-dev-win-x64.zip
+          Get-FileHash -LiteralPath ../proof/pr1128-alpha4-7dc-unpackaged-dev-win-x64.zip -Algorithm SHA256 |
+            Select-Object Hash | ConvertTo-Json | Set-Content ../proof/dev-archive-hash.json -Encoding utf8
+      - name: Final exact product readback
+        if: always()
+        shell: pwsh
+        working-directory: product
+        run: |
+          $head = (git rev-parse HEAD).Trim()
+          $headExit = $LASTEXITCODE
+          $tree = (git rev-parse 'HEAD^{tree}').Trim()
+          $treeExit = $LASTEXITCODE
+          git diff --exit-code HEAD
+          $workingExit = $LASTEXITCODE
+          git diff --cached --exit-code HEAD
+          $indexExit = $LASTEXITCODE
+          $status = @(git status --porcelain --untracked-files=normal)
+          $statusExit = $LASTEXITCODE
+          @{ product = $head; tree = $tree; headExit = $headExit; treeExit = $treeExit; workingExit = $workingExit;
+             indexExit = $indexExit; statusExit = $statusExit; status = $status } |
+            ConvertTo-Json -Depth 4 | Set-Content ../proof/final-cleanup.json -Encoding utf8
+          if ($headExit -ne 0 -or $treeExit -ne 0 -or $workingExit -ne 0 -or $indexExit -ne 0 -or
+              $statusExit -ne 0 -or $status.Count -ne 0 -or $head -cne $env:PRODUCT_SHA -or $tree -cne $env:PRODUCT_TREE) { throw 'Final product source is not pristine7dc' }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr1128-echo-observed-dev-${{ github.run_id }}
+          path: proof/
+          if-no-files-found: error
+          retention-days: 7
