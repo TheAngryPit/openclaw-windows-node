@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -95,6 +96,8 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
         ["/usr/bin/tailscale", "status", "--json"];
     private static readonly IReadOnlyList<string> ServeStatusCommand =
         ["/usr/bin/tailscale", "serve", "status", "--json"];
+    private static readonly IReadOnlyList<string> GatewayProcessCommand =
+        ["/usr/bin/systemctl", "--user", "show", "openclaw-gateway", "-p", "MainPID", "--value"];
 
     private readonly IWslCommandRunner _commandRunner;
     private readonly TimeSpan _timeout;
@@ -212,16 +215,35 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
         WslCommandResult ownershipResult;
         try
         {
+            var serviceBefore = await _commandRunner.RunInDistroAsync(
+                    distroName, GatewayProcessCommand, timeout.Token)
+                .ConfigureAwait(false);
+            if (!serviceBefore.Success ||
+                !int.TryParse(serviceBefore.StandardOutput.Trim(), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var gatewayProcessId) || gatewayProcessId <= 0)
+            {
+                return GatewayTailscaleAuthLiveState.Unavailable;
+            }
             var ownershipScript = BuildManagedIngressOwnershipScript(
                     gatewayPort,
-                    managedIngressPort)
+                    managedIngressPort,
+                    gatewayProcessId)
                 .Replace("\r", string.Empty, StringComparison.Ordinal);
-            ownershipResult = await _commandRunner.RunInDistroWithStandardInputAsync(
-                    distroName,
-                    ["/bin/bash", "-s"],
+            ownershipResult = await _commandRunner.RunWithStandardInputAsync(
+                    BuildRootProbeArguments(distroName, ["/bin/bash", "-s"]),
                     ownershipScript,
                     timeout.Token)
                 .ConfigureAwait(false);
+            var serviceAfter = await _commandRunner.RunInDistroAsync(
+                    distroName, GatewayProcessCommand, timeout.Token)
+                .ConfigureAwait(false);
+            if (!serviceAfter.Success ||
+                !int.TryParse(serviceAfter.StandardOutput.Trim(), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var gatewayProcessIdAfter) ||
+                gatewayProcessIdAfter != gatewayProcessId)
+            {
+                return GatewayTailscaleAuthLiveState.Unavailable;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -250,12 +272,11 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
 
     private static string BuildManagedIngressOwnershipScript(
         int gatewayPort,
-        int managedIngressPort)
+        int managedIngressPort,
+        int gatewayProcessId)
     {
         var script = $$"""
-            pid_before=$(/usr/bin/systemctl --user show openclaw-gateway -p MainPID --value 2>/dev/null)
-            case "$pid_before" in ''|*[!0-9]*) /usr/bin/printf unavailable; exit 0;; esac
-            test "$pid_before" -gt 0 || { /usr/bin/printf unavailable; exit 0; }
+            pid_before={{gatewayProcessId.ToString(CultureInfo.InvariantCulture)}}
             main_cgroup=$(/usr/bin/awk -F: '$1 == "0" { print $3 }' "/proc/$pid_before/cgroup" 2>/dev/null)
             main_start_before=$(/usr/bin/awk '{ print $22 }' "/proc/$pid_before/stat" 2>/dev/null)
             main_exe=$(/usr/bin/readlink -f "/proc/$pid_before/exe" 2>/dev/null)
@@ -271,17 +292,17 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
             matched_worker=''
             matched_worker_start=''
             for proc in /proc/[0-9]*; do
-              unset argv
-              declare -a argv=()
-              while IFS= read -r -d '' arg; do argv+=("$arg"); done < "$proc/cmdline" 2>/dev/null
-              test "${#argv[@]}" -eq 5 || continue
-              test "${argv[0]}" = /usr/bin/tailscale && test "${argv[1]}" = serve && test "${argv[2]}" = --yes && test "${argv[3]}" = --bg=false && test "${argv[4]}" = {{managedIngressPort}} || continue
               candidate_pid=${proc##*/}
               candidate_exe=$(/usr/bin/readlink -f "$proc/exe" 2>/dev/null)
               candidate_cgroup=$(/usr/bin/awk -F: '$1 == "0" { print $3 }' "$proc/cgroup" 2>/dev/null)
               candidate_start=$(/usr/bin/awk '{ print $22 }' "$proc/stat" 2>/dev/null)
               candidate_parent=$(/usr/bin/awk '/^PPid:/ { print $2 }' "$proc/status" 2>/dev/null)
               test "$candidate_exe" = /usr/bin/tailscale && test "$candidate_cgroup" = "$main_cgroup" && test -n "$candidate_start" || continue
+              unset argv
+              declare -a argv=()
+              while IFS= read -r -d '' arg; do argv+=("$arg"); done < "$proc/cmdline" 2>/dev/null
+              test "${#argv[@]}" -eq 5 || continue
+              test "${argv[0]}" = /usr/bin/tailscale && test "${argv[1]}" = serve && test "${argv[2]}" = --yes && test "${argv[3]}" = --bg=false && test "${argv[4]}" = {{managedIngressPort}} || continue
               route_owner=$candidate_parent
               parent_exe=$(/usr/bin/readlink -f "/proc/$candidate_parent/exe" 2>/dev/null)
               if test "$parent_exe" = /usr/bin/sudo; then
@@ -316,12 +337,11 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
               matched_worker=$route_owner
               matched_worker_start=$worker_start
             done
-            pid_after=$(/usr/bin/systemctl --user show openclaw-gateway -p MainPID --value 2>/dev/null)
             main_start_after=$(/usr/bin/awk '{ print $22 }' "/proc/$pid_before/stat" 2>/dev/null)
             main_exe_after=$(/usr/bin/readlink -f "/proc/$pid_before/exe" 2>/dev/null)
             listeners_raw_after=$(/usr/bin/ss -H -ltnp 2>/dev/null) || { /usr/bin/printf unavailable; exit 0; }
             listeners_after=$(/usr/bin/printf '%s\n' "$listeners_raw_after" | /usr/bin/grep -E "$listener_pattern" || true)
-            test "$pid_before" = "$pid_after" && test "$main_start_before" = "$main_start_after" && test "$main_exe" = "$main_exe_after" && test "$listeners_before" = "$listeners_after" || { /usr/bin/printf unavailable; exit 0; }
+            test "$main_start_before" = "$main_start_after" && test "$main_exe" = "$main_exe_after" && test "$listeners_before" = "$listeners_after" || { /usr/bin/printf unavailable; exit 0; }
             gateway_owner=$(/usr/bin/printf '%s\n' "$listeners_after" | /usr/bin/grep -E '(^|[[:space:]])127\.0\.0\.1:{{gatewayPort}}([[:space:]]|$)' | /usr/bin/grep -F "pid=$pid_before,")
             ingress_owner=$(/usr/bin/printf '%s\n' "$listeners_after" | /usr/bin/grep -E '(^|[[:space:]])127\.0\.0\.1:{{managedIngressPort}}([[:space:]]|$)' | /usr/bin/grep -F "pid=$pid_before,")
             candidate_start_after=$(/usr/bin/awk '{ print $22 }' "/proc/$matched_pid/stat" 2>/dev/null)

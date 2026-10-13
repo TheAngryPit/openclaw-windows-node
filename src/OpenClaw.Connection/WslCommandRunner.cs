@@ -25,6 +25,18 @@ public interface IWslCommandRunner
         CancellationToken cancellationToken = default,
         IReadOnlyDictionary<string, string>? environment = null);
 
+    Task<WslCommandResult> RunWithStandardInputAsync(
+        IReadOnlyList<string> arguments,
+        string standardInput,
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? environment = null) =>
+        cancellationToken.IsCancellationRequested
+            ? Task.FromCanceled<WslCommandResult>(cancellationToken)
+            : Task.FromResult(new WslCommandResult(
+                -1,
+                string.Empty,
+                "This WSL command runner does not support standard input."));
+
     Task<IReadOnlyList<WslDistroInfo>> ListDistrosAsync(CancellationToken cancellationToken = default);
 
     Task<WslCommandResult> TerminateDistroAsync(string name, CancellationToken cancellationToken = default);
@@ -100,6 +112,13 @@ public sealed class WslExeCommandRunner : IWslCommandRunner
             environment,
             standardInput);
     }
+
+    public Task<WslCommandResult> RunWithStandardInputAsync(
+        IReadOnlyList<string> arguments,
+        string standardInput,
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? environment = null) =>
+        RunProcessAsync("wsl.exe", arguments, cancellationToken, environment, standardInput);
 
     public Task<WslCommandResult> RunInDistroWithStandardInputAsync(
         string name,

@@ -110,6 +110,21 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
                 cancellation.Token));
     }
 
+    [Fact]
+    public async Task ExplicitArgumentStandardInputCompatibilityDefault_FailsClosed()
+    {
+        IWslCommandRunner runner = new LegacyWslCommandRunner();
+
+        var result = await runner.RunWithStandardInputAsync(
+            ["-d", "OpenClawGateway", "--user", "root", "--", "/bin/bash", "-s"], "exit 0");
+
+        Assert.False(result.Success);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunWithStandardInputAsync(
+            ["-d", "OpenClawGateway", "--user", "root", "--", "/bin/bash", "-s"], "exit 0", cancellation.Token));
+    }
+
     [Theory]
     [InlineData("other.tail.example.", 18789, false, "NotReady")]
     [InlineData("host.tail.example.", 19999, false, "NotReady")]
@@ -159,7 +174,7 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         var result = await verifier.VerifyAsync(ManagedRecord(), 18789, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthLiveState.Ready, result);
-        Assert.Equal(3, runner.ProbeCalls);
+        Assert.Equal(5, runner.ProbeCalls);
     }
 
     [Fact]
@@ -177,14 +192,17 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         var result = await verifier.VerifyAsync(ManagedRecord(), 18789, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthLiveState.Ready, result);
-        Assert.Equal(3, runner.ProbeCalls);
-        Assert.Equal("/bin/bash", runner.Commands[2][0]);
-        Assert.Equal("-s", runner.Commands[2][1]);
+        Assert.Equal(5, runner.ProbeCalls);
+        Assert.Equal("/bin/bash", runner.Commands[3][0]);
+        Assert.Equal("-s", runner.Commands[3][1]);
+        Assert.Equal(
+            ["-d", "OpenClawGateway", "--", "/usr/bin/systemctl", "--user", "show", "openclaw-gateway", "-p", "MainPID", "--value"],
+            runner.HostArguments[2]);
+        Assert.Equal(["-d", "OpenClawGateway", "--user", "root", "--", "/bin/bash", "-s"], runner.HostArguments[3]);
+        Assert.Equal(runner.HostArguments[2], runner.HostArguments[4]);
         Assert.Single(runner.StandardInputs);
         var script = runner.StandardInputs[0];
         Assert.DoesNotContain('\r', script);
-        Assert.Contains("systemctl --user show openclaw-gateway", script, StringComparison.Ordinal);
-        Assert.Equal(2, script.Split("systemctl", StringSplitOptions.None).Length - 1);
         Assert.Contains(":18789", script, StringComparison.Ordinal);
         Assert.Contains(":35225", script, StringComparison.Ordinal);
         Assert.Contains("/proc/$pid_before/cgroup", script, StringComparison.Ordinal);
@@ -222,6 +240,9 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
     [InlineData("wrong-executable", "NotReady")]
     [InlineData("wrong-cgroup", "NotReady")]
     [InlineData("duplicate-owner", "NotReady")]
+    [InlineData("sudo-route", "Ready")]
+    [InlineData("sudo-trailing-argument", "NotReady")]
+    [InlineData("sudo-wrong-parent", "NotReady")]
     public async Task VerifyAsync_ExecutesForegroundOwnershipProbe(string scenario, string expected)
     {
         using var fixture = new ManagedIngressProcessFixture(scenario);
@@ -230,13 +251,55 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             command.Contains("serve", StringComparer.Ordinal)
                 ? Task.FromResult(ForegroundServeStatus(proxyPort: 35225))
                 : command.FirstOrDefault() == "/bin/bash"
-                    ? fixture.RunAsync(runner!.StandardInputs.Single(), cancellationToken)
+                    ? fixture.RunAsync(runner!.StandardInputs.Single(), cancellationToken, runner.PrivilegedStandardInput)
                     : Task.FromResult(RunningStatus()));
         var verifier = new GatewayTailscaleAuthLiveVerifier(runner);
 
         var result = await verifier.VerifyAsync(ManagedRecord(), 18789, CancellationToken.None);
 
         Assert.Equal(expected, result.ToString());
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ServiceRestartDuringPrivilegedInspectionIsUnavailable()
+    {
+        var runner = new FakeWslCommandRunner((_, command, _) => Task.FromResult(
+            command.Contains("serve", StringComparer.Ordinal)
+                ? ForegroundServeStatus(proxyPort: 35225)
+                : command.FirstOrDefault() == "/bin/bash"
+                    ? new WslCommandResult(0, "owned", "")
+                    : RunningStatus()));
+        runner.ServiceResults.Enqueue(new WslCommandResult(0, "101\n", ""));
+        runner.ServiceResults.Enqueue(new WslCommandResult(0, "202\n", ""));
+
+        var result = await new GatewayTailscaleAuthLiveVerifier(runner).VerifyAsync(
+            ManagedRecord(), 18789, CancellationToken.None);
+
+        Assert.Equal(GatewayTailscaleAuthLiveState.Unavailable, result);
+        Assert.Equal(runner.HostArguments[2], runner.HostArguments[4]);
+        Assert.DoesNotContain("root", runner.HostArguments[4]);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("2147483648")]
+    [InlineData("101\n202")]
+    [InlineData("101; exit 0")]
+    public async Task VerifyAsync_InvalidServiceProcessDoesNotDispatchPrivilegedInspection(string processId)
+    {
+        var runner = new FakeWslCommandRunner((_, command, _) => Task.FromResult(
+            command.Contains("serve", StringComparer.Ordinal)
+                ? ForegroundServeStatus(proxyPort: 35225)
+                : RunningStatus()));
+        runner.ServiceResults.Enqueue(new WslCommandResult(0, processId, ""));
+
+        var result = await new GatewayTailscaleAuthLiveVerifier(runner).VerifyAsync(
+            ManagedRecord(), 18789, CancellationToken.None);
+
+        Assert.Equal(GatewayTailscaleAuthLiveState.Unavailable, result);
+        Assert.False(runner.PrivilegedStandardInput);
+        Assert.Empty(runner.StandardInputs);
     }
 
     [Theory]
@@ -702,18 +765,31 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             string[] workerArguments = scenario == "node-options"
                 ? [node, "--max-old-space-size=12043", "--stack-size=984"]
                 : [node];
+            var sudoRoute = scenario.StartsWith("sudo-", StringComparison.Ordinal);
             workerArguments = [.. workerArguments,
                 scenario == "wrong-worker" ? "/other/worker.js" : "/gateway/dist/infra/tailscale-route-owner.worker.js",
                 scenario == "wrong-marker" ? "--other-owner" : "--openclaw-tailscale-route-owner",
                 scenario == "wrong-payload" ? "{\"argv\":[\"/usr/bin/tailscale\",\"serve\",\"--yes\",\"--bg=false\",\"19999\"]}"
-                    : "{\"argv\":[\"/usr/bin/tailscale\",\"serve\",\"--yes\",\"--bg=false\",\"35225\"]}"];
+                    : sudoRoute
+                        ? "{\"argv\":[\"sudo\",\"-n\",\"/usr/bin/tailscale\",\"serve\",\"--yes\",\"--bg=false\",\"35225\"]}"
+                        : "{\"argv\":[\"/usr/bin/tailscale\",\"serve\",\"--yes\",\"--bg=false\",\"35225\"]}"];
             if (scenario == "trailing-argument")
                 workerArguments = [.. workerArguments, "extra"];
             WriteProcess(102, scenario == "wrong-parent" ? 999 : 101,
                 scenario == "wrong-executable" ? "/other/node" : node,
                 scenario == "wrong-cgroup" ? "/other.service" : cgroup, workerArguments);
             string[] routeArguments = ["/usr/bin/tailscale", "serve", "--yes", "--bg=false", "35225"];
-            WriteProcess(103, 102, "/usr/bin/tailscale", cgroup, routeArguments);
+            if (sudoRoute)
+            {
+                string[] sudoArguments = ["sudo", "-n", .. routeArguments];
+                if (scenario == "sudo-trailing-argument")
+                    sudoArguments = [.. sudoArguments, "extra"];
+                WriteProcess(103, scenario == "sudo-wrong-parent" ? 999 : 102, "/usr/bin/sudo", cgroup, sudoArguments);
+                WriteProcess(104, 103, "/usr/bin/tailscale", cgroup, routeArguments);
+                File.WriteAllText(Path.Combine(_root, "privileged"), "yes");
+            }
+            else
+                WriteProcess(103, 102, "/usr/bin/tailscale", cgroup, routeArguments);
             if (scenario == "duplicate-owner")
                 WriteProcess(104, 102, "/usr/bin/tailscale", cgroup, routeArguments);
             File.WriteAllText(Path.Combine(_root, "listeners"),
@@ -732,7 +808,8 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             File.WriteAllText(Path.Combine(directory, "stat"), string.Join(' ', Enumerable.Repeat("1", 21).Append(pid.ToString())));
         }
 
-        public async Task<WslCommandResult> RunAsync(string script, CancellationToken cancellationToken)
+        public async Task<WslCommandResult> RunAsync(
+            string script, CancellationToken cancellationToken, bool privilegedInspection = false)
         {
             var bash = OperatingSystem.IsWindows()
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "bin", "bash.exe")
@@ -753,7 +830,8 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             var fixtureScript = "fixture_proc='" + root.Replace("'", "'\\''") + "'\n" +
                 "fixture_systemctl() { printf 101; }\n" +
                 "fixture_ss() { /usr/bin/cat \"$fixture_proc/listeners\"; }\n" +
-                "fixture_readlink() { /usr/bin/cat \"$1\"; }\n" +
+                "fixture_privileged=" + (privilegedInspection ? "yes" : "no") + "\n" +
+                "fixture_readlink() { if test -f \"$fixture_proc/privileged\" && test \"$fixture_privileged\" != yes; then case \"$1\" in */103/exe|*/104/exe) return 1;; esac; fi; /usr/bin/cat \"$1\"; }\n" +
                 script.Replace("for proc in /proc/[0-9]*; do", "for proc in \"$fixture_proc\"/[0-9]*; do", StringComparison.Ordinal)
                     .Replace("/proc/", "$fixture_proc/", StringComparison.Ordinal)
                     .Replace("/usr/bin/systemctl", "fixture_systemctl", StringComparison.Ordinal)
@@ -788,6 +866,8 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         public List<IReadOnlyList<string>> Commands { get; } = [];
         public List<IReadOnlyList<string>> HostArguments { get; } = [];
         public List<string> StandardInputs { get; } = [];
+        public bool PrivilegedStandardInput { get; private set; }
+        public Queue<WslCommandResult> ServiceResults { get; } = [];
 
         public Task<WslCommandResult> RunInDistroAsync(
             string name,
@@ -801,6 +881,9 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             ProbeCalls++;
             DistroName = name;
             Commands.Add(command);
+            HostArguments.Add(["-d", name, "--", .. command]);
+            if (command.FirstOrDefault() == "/usr/bin/systemctl")
+                return Task.FromResult(ServiceResults.Count > 0 ? ServiceResults.Dequeue() : new WslCommandResult(0, "101\n", ""));
             return runInDistro(name, command, cancellationToken);
         }
 
@@ -830,6 +913,17 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             var command = arguments.Skip(5).ToArray();
             Commands.Add(command);
             return runInDistro(DistroName, command, cancellationToken);
+        }
+
+        public Task<WslCommandResult> RunWithStandardInputAsync(
+            IReadOnlyList<string> arguments,
+            string standardInput,
+            CancellationToken cancellationToken = default,
+            IReadOnlyDictionary<string, string>? environment = null)
+        {
+            StandardInputs.Add(standardInput);
+            PrivilegedStandardInput = arguments.Count >= 6 && arguments[2] == "--user" && arguments[3] == "root";
+            return RunAsync(arguments, cancellationToken, environment);
         }
 
         public Task<IReadOnlyList<WslDistroInfo>> ListDistrosAsync(
