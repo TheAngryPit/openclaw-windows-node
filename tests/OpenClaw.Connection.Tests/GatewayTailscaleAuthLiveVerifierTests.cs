@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace OpenClaw.Connection.Tests;
@@ -207,6 +209,34 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         var result = await verifier.VerifyAsync(ManagedRecord(), 18789, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthLiveState.NotReady, result);
+    }
+
+    [Theory]
+    [InlineData("plain", "Ready")]
+    [InlineData("node-options", "Ready")]
+    [InlineData("trailing-argument", "NotReady")]
+    [InlineData("wrong-worker", "NotReady")]
+    [InlineData("wrong-marker", "NotReady")]
+    [InlineData("wrong-payload", "NotReady")]
+    [InlineData("wrong-parent", "NotReady")]
+    [InlineData("wrong-executable", "NotReady")]
+    [InlineData("wrong-cgroup", "NotReady")]
+    [InlineData("duplicate-owner", "NotReady")]
+    public async Task VerifyAsync_ExecutesForegroundOwnershipProbe(string scenario, string expected)
+    {
+        using var fixture = new ManagedIngressProcessFixture(scenario);
+        FakeWslCommandRunner? runner = null;
+        runner = new FakeWslCommandRunner((_, command, cancellationToken) =>
+            command.Contains("serve", StringComparer.Ordinal)
+                ? Task.FromResult(ForegroundServeStatus(proxyPort: 35225))
+                : command.FirstOrDefault() == "/bin/bash"
+                    ? fixture.RunAsync(runner!.StandardInputs.Single(), cancellationToken)
+                    : Task.FromResult(RunningStatus()));
+        var verifier = new GatewayTailscaleAuthLiveVerifier(runner);
+
+        var result = await verifier.VerifyAsync(ManagedRecord(), 18789, CancellationToken.None);
+
+        Assert.Equal(expected, result.ToString());
     }
 
     [Theory]
@@ -656,6 +686,98 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         SetupManagedDistroName = "OpenClawGateway",
         TrustTailscaleAuth = true,
     };
+
+    private sealed class ManagedIngressProcessFixture : IDisposable
+    {
+        private readonly string _root = Path.Combine(Path.GetTempPath(), "openclaw-ingress-" + Guid.NewGuid().ToString("N"));
+
+        public ManagedIngressProcessFixture(string scenario)
+        {
+            Directory.CreateDirectory(_root);
+            const string node = "/usr/bin/node";
+            const string cgroup = "/user.slice/openclaw-gateway.service";
+            WriteProcess(101, 1, node, cgroup, scenario == "node-options"
+                ? [node, "--max-old-space-size=12043", "--stack-size=984", "/gateway/dist/index.js", "gateway"]
+                : [node, "/gateway/dist/index.js", "gateway"]);
+            string[] workerArguments = scenario == "node-options"
+                ? [node, "--max-old-space-size=12043", "--stack-size=984"]
+                : [node];
+            workerArguments = [.. workerArguments,
+                scenario == "wrong-worker" ? "/other/worker.js" : "/gateway/dist/infra/tailscale-route-owner.worker.js",
+                scenario == "wrong-marker" ? "--other-owner" : "--openclaw-tailscale-route-owner",
+                scenario == "wrong-payload" ? "{\"argv\":[\"/usr/bin/tailscale\",\"serve\",\"--yes\",\"--bg=false\",\"19999\"]}"
+                    : "{\"argv\":[\"/usr/bin/tailscale\",\"serve\",\"--yes\",\"--bg=false\",\"35225\"]}"];
+            if (scenario == "trailing-argument")
+                workerArguments = [.. workerArguments, "extra"];
+            WriteProcess(102, scenario == "wrong-parent" ? 999 : 101,
+                scenario == "wrong-executable" ? "/other/node" : node,
+                scenario == "wrong-cgroup" ? "/other.service" : cgroup, workerArguments);
+            string[] routeArguments = ["/usr/bin/tailscale", "serve", "--yes", "--bg=false", "35225"];
+            WriteProcess(103, 102, "/usr/bin/tailscale", cgroup, routeArguments);
+            if (scenario == "duplicate-owner")
+                WriteProcess(104, 102, "/usr/bin/tailscale", cgroup, routeArguments);
+            File.WriteAllText(Path.Combine(_root, "listeners"),
+                "LISTEN 0 128 127.0.0.1:18789 0.0.0.0:* users:((\"node\",pid=101,fd=1))\n" +
+                "LISTEN 0 128 127.0.0.1:35225 0.0.0.0:* users:((\"node\",pid=101,fd=2))\n");
+        }
+
+        private void WriteProcess(int pid, int parent, string executable, string cgroup, string[] arguments)
+        {
+            var directory = Path.Combine(_root, pid.ToString());
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "cmdline"), string.Join('\0', arguments) + '\0', new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(directory, "exe"), executable);
+            File.WriteAllText(Path.Combine(directory, "cgroup"), "0::" + cgroup + "\n");
+            File.WriteAllText(Path.Combine(directory, "status"), $"PPid:\t{parent}\n");
+            File.WriteAllText(Path.Combine(directory, "stat"), string.Join(' ', Enumerable.Repeat("1", 21).Append(pid.ToString())));
+        }
+
+        public async Task<WslCommandResult> RunAsync(string script, CancellationToken cancellationToken)
+        {
+            var bash = OperatingSystem.IsWindows()
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Git", "bin", "bash.exe")
+                : "/bin/bash";
+            Assert.True(File.Exists(bash), $"Ownership probe regression requires Bash at {bash}.");
+            var start = new ProcessStartInfo(bash)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            start.ArgumentList.Add("-s");
+            var root = _root.Replace('\\', '/');
+            if (OperatingSystem.IsWindows())
+                root = "/" + char.ToLowerInvariant(root[0]) + root[2..];
+            var fixtureScript = "fixture_proc='" + root.Replace("'", "'\\''") + "'\n" +
+                "fixture_systemctl() { printf 101; }\n" +
+                "fixture_ss() { /usr/bin/cat \"$fixture_proc/listeners\"; }\n" +
+                "fixture_readlink() { /usr/bin/cat \"$1\"; }\n" +
+                script.Replace("for proc in /proc/[0-9]*; do", "for proc in \"$fixture_proc\"/[0-9]*; do", StringComparison.Ordinal)
+                    .Replace("/proc/", "$fixture_proc/", StringComparison.Ordinal)
+                    .Replace("/usr/bin/systemctl", "fixture_systemctl", StringComparison.Ordinal)
+                    .Replace("/usr/bin/ss", "fixture_ss", StringComparison.Ordinal)
+                    .Replace("/usr/bin/readlink -f", "fixture_readlink", StringComparison.Ordinal);
+            using var process = Process.Start(start)!;
+            var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            var error = process.StandardError.ReadToEndAsync(cancellationToken);
+            try
+            {
+                await process.StandardInput.WriteAsync(fixtureScript.AsMemory(), cancellationToken);
+                process.StandardInput.Close();
+                await process.WaitForExitAsync(cancellationToken);
+                return new WslCommandResult(process.ExitCode, await output, await error);
+            }
+            finally
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+        }
+
+        public void Dispose() => Directory.Delete(_root, recursive: true);
+    }
 
     private sealed class FakeWslCommandRunner(
         Func<string, IReadOnlyList<string>, CancellationToken, Task<WslCommandResult>> runInDistro)

@@ -301,12 +301,13 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
               unset worker_argv
               declare -a worker_argv=()
               while IFS= read -r -d '' arg; do worker_argv+=("$arg"); done < "/proc/$route_owner/cmdline" 2>/dev/null
-              test "${#worker_argv[@]}" -eq 4 || continue
-              case "${worker_argv[1]}" in */dist/infra/tailscale-route-owner.worker.js) ;; *) continue;; esac
-              test "${worker_argv[2]}" = --openclaw-tailscale-route-owner || continue
+              test "${#worker_argv[@]}" -ge 4 || continue
+              worker_script_index=$((${#worker_argv[@]} - 3))
+              case "${worker_argv[$worker_script_index]}" in */dist/infra/tailscale-route-owner.worker.js) ;; *) continue;; esac
+              test "${worker_argv[$((worker_script_index + 1))]}" = --openclaw-tailscale-route-owner || continue
               expected_direct='{"argv":["/usr/bin/tailscale","serve","--yes","--bg=false","{{managedIngressPort}}"]}'
               expected_sudo='{"argv":["sudo","-n","/usr/bin/tailscale","serve","--yes","--bg=false","{{managedIngressPort}}"]}'
-              test "${worker_argv[3]}" = "$expected_direct" || test "${worker_argv[3]}" = "$expected_sudo" || continue
+              test "${worker_argv[$((worker_script_index + 2))]}" = "$expected_direct" || test "${worker_argv[$((worker_script_index + 2))]}" = "$expected_sudo" || continue
               candidate_count=$((candidate_count + 1))
               matched_pid=$candidate_pid
               matched_start=$candidate_start
