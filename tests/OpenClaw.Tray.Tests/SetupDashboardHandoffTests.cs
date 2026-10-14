@@ -276,6 +276,47 @@ public sealed class SetupDashboardHandoffTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DashboardLinkFailure_RequestsVisibleRecoveryWithoutLaunchingOrRetrying(bool saved)
+    {
+        var revalidations = 0;
+        var launches = 0;
+        var validations = 0;
+        var failures = 0;
+        var opened = 0;
+        var linkFailures = new List<GatewayDashboardLinkResult>();
+        var request = new GatewayDashboardLinkRequest(Gateway.Url, "channels", null, false, "gateway-a");
+        var service = new GatewayDashboardLinkService((_, _) =>
+        {
+            revalidations++;
+            return Task.FromResult(false);
+        }, key => "localized:" + key);
+        var launcher = new GatewayDashboardLauncher(
+            () => true,
+            _ => request,
+            service,
+            _ => { launches++; return Task.FromResult(true); },
+            result => linkFailures.Add(result),
+            () => failures++,
+            () => opened++);
+
+        var success = saved
+            ? await launcher.OpenSavedAsync(request, _ => { validations++; return Task.FromResult(true); })
+            : await launcher.OpenAsync("channels");
+
+        Assert.False(success);
+        Assert.Equal(1, revalidations);
+        var failure = Assert.Single(linkFailures);
+        Assert.Equal("localized:DashboardLink_NoBrowserCompatibleCredential", failure.Error);
+        Assert.Null(failure.Url);
+        Assert.Equal(1, failures);
+        Assert.Equal(0, launches);
+        Assert.Equal(0, validations);
+        Assert.Equal(0, opened);
+    }
+
+    [Theory]
     [InlineData("tunnel")]
     [InlineData("credential")]
     [InlineData("browser")]

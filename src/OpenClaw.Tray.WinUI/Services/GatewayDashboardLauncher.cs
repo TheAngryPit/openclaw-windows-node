@@ -65,6 +65,7 @@ internal sealed class GatewayDashboardLauncher(
         if (!result.Success)
         {
             reportLinkFailure(result);
+            reportFailure();
             return false;
         }
 
