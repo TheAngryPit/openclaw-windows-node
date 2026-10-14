@@ -1,0 +1,185 @@
+name: PR1128 Dashboard recovery proof
+on:
+  push:
+    branches: [qa/pr1128-dashboard-recovery-20261014]
+    paths: [.github/workflows/qa-pr1128-ui-hang.yml]
+permissions:
+  contents: read
+concurrency:
+  group: pr1128-dashboard-recovery-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  prove:
+    if: github.repository == 'TheAngryPit/openclaw-windows-node'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      PRODUCT_SHA: 63adc635dd835b6fd5d66ca94cd005d5419847cd
+      PRODUCT_TREE: 2582ee268b91a9d379f2141ce88ef2a453525dca
+      BASELINE_SHA: 82258a449124bdd02c04f8b18a053000188bfe54
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      OPENCLAW_RUN_INTEGRATION: '0'
+      OPENCLAW_CI_COLLECT_COVERAGE: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: qa
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify unique workflow-only direct child
+        shell: pwsh
+        working-directory: qa
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_EVENT_NAME -cne 'push' -or $env:GITHUB_REPOSITORY -cne 'TheAngryPit/openclaw-windows-node' -or
+              $env:GITHUB_REF -cne 'refs/heads/qa/pr1128-dashboard-recovery-20261014') { throw 'Unexpected proof context' }
+          $head = (git rev-parse HEAD).Trim()
+          $parents = @((git show -s --format=%P HEAD).Trim().Split(' ', [StringSplitOptions]::RemoveEmptyEntries))
+          $delta = @(git diff --name-only $env:PRODUCT_SHA HEAD)
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:GITHUB_SHA -or $parents.Count -ne 1 -or
+              $parents[0] -cne $env:PRODUCT_SHA -or $delta.Count -ne 1 -or
+              $delta[0] -cne '.github/workflows/qa-pr1128-ui-hang.yml') { throw 'Unexpected QA source' }
+          New-Item -ItemType Directory -Path ../proof -Force | Out-Null
+          @{ qa = $head; parent = $parents[0]; delta = $delta; imageOS = $env:ImageOS; imageVersion = $env:ImageVersion } |
+            ConvertTo-Json -Depth 4 | Set-Content ../proof/qa-source.json
+      - uses: actions/checkout@v7
+        with:
+          ref: 63adc635dd835b6fd5d66ca94cd005d5419847cd
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 82258a449124bdd02c04f8b18a053000188bfe54
+          path: baseline
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Bind disposable state and verify product pins
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @('DOTNET_CLI_HOME','NUGET_PACKAGES','OPENCLAW_TRAY_DATA_DIR','OPENCLAW_TRAY_APPDATA_DIR','OPENCLAW_TRAY_LOCALAPPDATA_DIR')) {
+            $path = Join-Path $env:RUNNER_TEMP "pr1128-dashboard-$name"
+            New-Item -ItemType Directory -Path $path -Force | Out-Null
+            "$name=$path" | Out-File -Append $env:GITHUB_ENV -Encoding utf8
+          }
+          foreach ($binding in @(@{ path='candidate'; sha=$env:PRODUCT_SHA }, @{ path='baseline'; sha=$env:BASELINE_SHA })) {
+            $head = (git -C $binding.path rev-parse HEAD).Trim()
+            $status = @(git -C $binding.path status --porcelain)
+            if ($LASTEXITCODE -ne 0 -or $head -cne $binding.sha -or $status.Count -ne 0) { throw 'Unexpected product checkout' }
+          }
+          $tree = (git -C candidate rev-parse 'HEAD^{tree}').Trim()
+          $parent = (git -C candidate rev-parse 'HEAD^').Trim()
+          $delta = @(git -C candidate diff --name-only $env:BASELINE_SHA HEAD)
+          $expected = @('src/OpenClaw.Tray.WinUI/Services/GatewayDashboardLauncher.cs','tests/OpenClaw.Tray.Tests/SetupDashboardHandoffTests.cs')
+          if ($LASTEXITCODE -ne 0 -or $tree -cne $env:PRODUCT_TREE -or $parent -cne $env:BASELINE_SHA -or
+              ($delta -join '|') -cne ($expected -join '|')) { throw 'Unexpected candidate delta' }
+          $launcher = (git -C candidate hash-object src/OpenClaw.Tray.WinUI/Services/GatewayDashboardLauncher.cs).Trim()
+          $tests = (git -C candidate hash-object tests/OpenClaw.Tray.Tests/SetupDashboardHandoffTests.cs).Trim()
+          if ($launcher -cne '6b1ef83a7e6b1355ebb69561454ee97fa8e80b00' -or $tests -cne 'ce61f283ca01a1c882eac59401dec05ac8da0355') { throw 'Unexpected reviewed blobs' }
+          @{ product=$env:PRODUCT_SHA; tree=$tree; baseline=$env:BASELINE_SHA; delta=$delta; launcher=$launcher; tests=$tests;
+             shellFrameHook='Existing assembly-wide cleanup runs only on this disposable Windows host'; uiInteractionProven=$false } |
+            ConvertTo-Json -Depth 4 | Set-Content proof/product-source.json
+          dotnet --info | Tee-Object proof/dotnet-info.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Toolchain capture failed' }
+      - name: Run intended baseline RED with candidate regression only
+        id: red
+        shell: pwsh
+        working-directory: baseline
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:OPENCLAW_REPO_ROOT = (Get-Location).Path
+          Copy-Item ../candidate/tests/OpenClaw.Tray.Tests/SetupDashboardHandoffTests.cs tests/OpenClaw.Tray.Tests/SetupDashboardHandoffTests.cs
+          $delta = @(git diff --name-only HEAD)
+          if ($LASTEXITCODE -ne 0 -or $delta.Count -ne 1 -or $delta[0] -cne 'tests/OpenClaw.Tray.Tests/SetupDashboardHandoffTests.cs') { throw 'Unexpected baseline fixture overlay' }
+          dotnet restore tests/OpenClaw.Tray.Tests -r win-x64 2>&1 | Tee-Object ../proof/red-restore.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline restore failed' }
+          dotnet test tests/OpenClaw.Tray.Tests -c Release -r win-x64 --no-restore -m:1 --filter 'FullyQualifiedName~DashboardLinkFailure_RequestsVisibleRecoveryWithoutLaunchingOrRetrying' --logger 'trx;LogFileName=red.trx' --results-directory ../proof/red 2>&1 | Tee-Object ../proof/red-stdout.txt
+          $testExit = $LASTEXITCODE
+          [xml]$trx = Get-Content ../proof/red/red.trx -Raw
+          $rows = @($trx.TestRun.Results.UnitTestResult)
+          $counts = $trx.TestRun.ResultSummary.Counters
+          $expected = @('OpenClaw.Tray.Tests.SetupDashboardHandoffTests.DashboardLinkFailure_RequestsVisibleRecoveryWithoutLaunchingOrRetrying(saved: False)', 'OpenClaw.Tray.Tests.SetupDashboardHandoffTests.DashboardLinkFailure_RequestsVisibleRecoveryWithoutLaunchingOrRetrying(saved: True)')
+          if ($testExit -ne 1 -or $rows.Count -ne 2 -or
+              ((@($rows.testName | Sort-Object)) -join '|') -cne (($expected | Sort-Object) -join '|') -or
+              $counts.total -ne '2' -or $counts.executed -ne '2' -or $counts.failed -ne '2' -or $counts.passed -ne '0' -or $counts.notExecuted -ne '0') { throw 'Not the intended two-case RED' }
+          foreach ($row in $rows) {
+            if ($row.outcome -cne 'Failed' -or [string]$row.Output.ErrorInfo.Message -notmatch 'Assert.Equal\(\) Failure' -or
+                [string]$row.Output.ErrorInfo.Message -notmatch 'Expected:\s+1\s+Actual:\s+0' -or
+                [string]$row.Output.ErrorInfo.StackTrace -notmatch 'SetupDashboardHandoffTests\.cs:line 313') { throw 'RED failed for an unrelated reason' }
+          }
+          foreach ($name in @('error','aborted','timeout','passedButRunAborted','notRunnable','disconnected','inconclusive')) {
+            if (-not $counts.HasAttribute($name) -or $counts.GetAttribute($name) -ne '0') { throw "Invalid RED counter $name" }
+          }
+          if ($trx.TestRun.ResultSummary.outcome -cne 'Failed' -or
+              @($rows.executionId | Sort-Object -Unique).Count -ne 2 -or @($rows | Where-Object { -not $_.executionId }).Count -ne 0) { throw 'Incomplete RED receipt' }
+          @{ exitCode=$testExit; intendedFailure='Missing visible recovery callback: expected1 actual0 at line313'; cases=@($rows.testName) } |
+            ConvertTo-Json -Depth 4 | Set-Content ../proof/red-qualified.json
+      - name: Run candidate GREEN with complete positive handoff inventory
+        id: green
+        shell: pwsh
+        working-directory: candidate
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:OPENCLAW_REPO_ROOT = (Get-Location).Path
+          dotnet restore tests/OpenClaw.Tray.Tests -r win-x64 2>&1 | Tee-Object ../proof/green-restore.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate restore failed' }
+          dotnet test tests/OpenClaw.Tray.Tests -c Release -r win-x64 --no-restore -m:1 --filter 'FullyQualifiedName~OpenClaw.Tray.Tests.SetupDashboardHandoffTests' --logger 'trx;LogFileName=green.trx' --results-directory ../proof/green 2>&1 | Tee-Object ../proof/green-stdout.txt
+          $testExit = $LASTEXITCODE
+          [xml]$trx = Get-Content ../proof/green/green.trx -Raw
+          $rows = @($trx.TestRun.Results.UnitTestResult)
+          $counts = $trx.TestRun.ResultSummary.Counters
+          $expected = @{
+            NativeStartup_DoesNotWaitForUpdatePromptOrExitForInstaller=2; OrdinaryStartup_StillRunsUpdateAndHonorsInstallerExit=3
+            RestartAndForwardedActivation_PreserveTypedReceipt=2; OldRestartArguments_KeepTheirRoutes=3
+            RetiredOrInvalidHandoff_IsVisibleFailureRoute_NotGlobalDashboardFallback=2; OrdinaryDashboard_UsesRequestedPathAndNormalCredentials=2
+            DeviceAndBootstrapTokens_NeverEnterBrowserUrl=2; SavedDashboard_WithoutBrowserCredential_BypassesCredentialFallbackValidation=1
+            SavedDashboard_SharedCredentialStillRequiresEndpointAuthorization=1; SavedDashboard_EmbeddedTokenStillRequiresEndpointAuthorization=1
+            SavedDashboard_CancellationAfterLinkPreparationSkipsAuthorizationAndLaunch=1; SavedDashboard_CancellationAfterAuthorizationSkipsBrowserDispatch=1
+            DashboardLinkFailure_RequestsVisibleRecoveryWithoutLaunchingOrRetrying=2; Failure_IsReportedOnceWithoutAutomaticRetry=4
+            EndpointBinding_ExcludesRotatingTokensButIncludesSshRealm=1; ExplicitDashboardRetry_KeepsRequestedPathAndClearsFailureOnlyAfterOpen=1
+          }
+          $actual = @{}
+          foreach ($row in $rows) {
+            if ($row.outcome -cne 'Passed' -or $row.Output.ErrorInfo -or
+                [string]$row.testName -notmatch '^OpenClaw\.Tray\.Tests\.SetupDashboardHandoffTests\.([A-Za-z0-9_]+)(?:\(|$)') { throw 'Unqualified GREEN row' }
+            $method = $Matches[1]
+            if (-not $expected.ContainsKey($method)) { throw 'Unexpected GREEN method' }
+            $actual[$method] = 1 + [int]$actual[$method]
+          }
+          foreach ($method in $expected.Keys) { if ($actual[$method] -ne $expected[$method]) { throw "Missing GREEN cases for $method" } }
+          if ($testExit -ne 0 -or $rows.Count -ne 29 -or $counts.total -ne '29' -or $counts.executed -ne '29' -or
+              $counts.passed -ne '29' -or $counts.failed -ne '0' -or $counts.notExecuted -ne '0' -or
+              @($rows.executionId | Sort-Object -Unique).Count -ne 29 -or @($rows | Where-Object { -not $_.executionId }).Count -ne 0) { throw 'Incomplete GREEN' }
+          foreach ($name in @('error','aborted','timeout','passedButRunAborted','notRunnable','disconnected','inconclusive')) {
+            if (-not $counts.HasAttribute($name) -or $counts.GetAttribute($name) -ne '0') { throw "Invalid GREEN counter $name" }
+          }
+          if ($trx.TestRun.ResultSummary.outcome -cne 'Completed' -or
+              @($trx.TestRun.ResultSummary.RunInfos.RunInfo | Where-Object { $_ -and $_.outcome -ne 'Passed' }).Count -ne 0) { throw 'GREEN summary error' }
+          @{ exitCode=$testExit; rows=$rows.Count; expected=$expected; actual=$actual; uiInteractionProven=$false } |
+            ConvertTo-Json -Depth 5 | Set-Content ../proof/green-qualified.json
+      - name: Restore exact baseline and final source readback
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git -C baseline restore --source $env:BASELINE_SHA --worktree -- tests/OpenClaw.Tray.Tests/SetupDashboardHandoffTests.cs
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline restoration failed' }
+          foreach ($binding in @(@{path='candidate';sha=$env:PRODUCT_SHA}, @{path='baseline';sha=$env:BASELINE_SHA})) {
+            $head = (git -C $binding.path rev-parse HEAD).Trim()
+            $status = @(git -C $binding.path status --porcelain)
+            if ($LASTEXITCODE -ne 0 -or $head -cne $binding.sha -or $status.Count -ne 0) { throw 'Final product source mismatch' }
+          }
+          @{ product=$env:PRODUCT_SHA; baseline=$env:BASELINE_SHA; restored=$true } | ConvertTo-Json | Set-Content proof/final-source.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr1128-dashboard-recovery-${{ github.run_id }}
+          path: proof/
+          if-no-files-found: error
+          retention-days: 7
