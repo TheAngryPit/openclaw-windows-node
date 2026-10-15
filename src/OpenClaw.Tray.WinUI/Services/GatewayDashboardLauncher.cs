@@ -10,7 +10,7 @@ internal sealed class GatewayDashboardLauncher(
     GatewayDashboardLinkService linkService,
     Func<string, Task<bool>> launchBrowser,
     Action<GatewayDashboardLinkResult> reportLinkFailure,
-    Action reportFailure,
+    Action<string?> reportFailure,
     Action? reportOpened = null,
     Action<string>? reportRevalidationWarning = null)
 {
@@ -28,13 +28,13 @@ internal sealed class GatewayDashboardLauncher(
         }
         catch (Exception ex) when (IsExpectedLaunchFailure(ex))
         {
-            reportFailure();
+            reportFailure(null);
             return false;
         }
 
         if (request is null)
         {
-            reportFailure();
+            reportFailure(null);
             return false;
         }
 
@@ -65,7 +65,7 @@ internal sealed class GatewayDashboardLauncher(
         if (!result.Success)
         {
             reportLinkFailure(result);
-            reportFailure();
+            reportFailure(result.Error);
             return false;
         }
 
@@ -83,7 +83,7 @@ internal sealed class GatewayDashboardLauncher(
         catch (Exception ex) when (IsExpectedLaunchFailure(ex))
         {
             // Browser failures can include a credential-bearing URL. Do not log them.
-            reportFailure();
+            reportFailure(null);
             return false;
         }
 

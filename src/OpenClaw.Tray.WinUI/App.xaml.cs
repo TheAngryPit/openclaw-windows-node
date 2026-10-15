@@ -4101,8 +4101,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
             result => ShowConnectionSettingsForPairingIssue(
                 "Dashboard",
                 result.Error ?? "Dashboard URL is unavailable"),
-            () => AsyncEventHandlerGuard.Run(
-                () => _windowManager?.ShowDashboardLaunchFailureAsync(retry) ?? Task.CompletedTask,
+            reason => AsyncEventHandlerGuard.Run(
+                () => _windowManager?.ShowDashboardLaunchFailureAsync(retry, reason) ?? Task.CompletedTask,
                 new AppLogger(),
                 "Dashboard launch error"),
             () => _appNotificationService?.Dismiss(GatewayDashboardLauncher.FailureNotificationId),
