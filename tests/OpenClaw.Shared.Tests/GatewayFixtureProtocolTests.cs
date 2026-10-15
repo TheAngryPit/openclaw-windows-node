@@ -56,12 +56,12 @@ public sealed class GatewayFixtureProtocolTests
         Assert.False(toggled.GetProperty("enabled").GetBoolean());
         Assert.Equal("America/Chicago", toggled.GetProperty("schedule").GetProperty("tz").GetString());
         var beforeInvalid = JsonSerializer.Serialize(scenario.GetCronJobs());
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendWizardRequestAsync("cron.update",
+        await Assert.ThrowsAsync<GatewayRequestRejectedException>(() => client.SendWizardRequestAsync("cron.update",
             new { id = "listed", patch = new { schedule = new { kind = "every", everyMs = "invalid" } } }));
         Assert.Equal(beforeInvalid, JsonSerializer.Serialize(scenario.GetCronJobs()));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendWizardRequestAsync("cron.update",
+        await Assert.ThrowsAsync<GatewayRequestRejectedException>(() => client.SendWizardRequestAsync("cron.update",
             new { id = "unknown", patch = new { name = "Unknown" } }));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendWizardRequestAsync("cron.run", new { id = "listed" }));
+        await Assert.ThrowsAsync<GatewayRequestRejectedException>(() => client.SendWizardRequestAsync("cron.run", new { id = "listed" }));
         Assert.Empty(server.UnexpectedRequests);
     }
 
