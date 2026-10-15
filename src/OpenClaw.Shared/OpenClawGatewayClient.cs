@@ -1333,18 +1333,29 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
         try
         {
-            var sent = await SendRawAsync(
-                    SerializeRequest(requestId, method, parameters),
-                    connectionGeneration,
-                    CancellationToken)
-                .ConfigureAwait(false);
+            bool sent;
+            using (var dispatchTimeout = new CancellationTokenSource(timeoutMs))
+            {
+                sent = await SendRawAsync(
+                        SerializeRequest(requestId, method, parameters),
+                        connectionGeneration,
+                        dispatchTimeout.Token)
+                    .ConfigureAwait(false);
+                if (!sent && dispatchTimeout.IsCancellationRequested)
+                    throw new TimeoutException($"Timed out sending {method} request");
+            }
+
             if (!sent)
                 throw new InvalidOperationException($"Gateway connection changed before {method} could be sent.");
-            return await pending.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), CancellationToken);
-        }
-        catch (TimeoutException ex)
-        {
-            throw new TimeoutException($"Timed out waiting for {method} response", ex);
+
+            try
+            {
+                return await pending.Task.WaitAsync(TimeSpan.FromMilliseconds(timeoutMs), CancellationToken);
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException($"Timed out waiting for {method} response", ex);
+            }
         }
         finally
         {

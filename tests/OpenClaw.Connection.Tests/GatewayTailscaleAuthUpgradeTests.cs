@@ -231,6 +231,83 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         Assert.Equal(18789, liveVerifier.LastGatewayPort);
     }
 
+    [Theory]
+    [InlineData("sourceConfig")]
+    [InlineData("resolved")]
+    public async Task RevalidateAsync_UsesResolvedSourceForGrantAndProbePort(string sourceProperty)
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
+        registry.Save();
+        using var response = JsonDocument.Parse($$"""
+            {
+              "parsed": { "gateway": { "port": 18789, "auth": { "allowTailscale": false } } },
+              "{{sourceProperty}}": { "gateway": { "port": 19876, "auth": { "allowTailscale": true } } },
+              "hash": "root-and-includes-cas",
+              "configRevisionHash": "revision-new",
+              "appliedConfigHash": "revision-new"
+            }
+            """);
+        var client = new FakeConfigClient(response.RootElement.Clone());
+        var liveVerifier = new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready);
+        var service = new GatewayTailscaleAuthUpgradeService(registry, liveVerifier);
+
+        var trusted = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.True(trusted);
+        Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(19876, liveVerifier.LastGatewayPort);
+        Assert.Equal(1, liveVerifier.Calls);
+    }
+
+    [Fact]
+    public async Task RevalidateAsync_MissingResolvedSourcePreservesMarkerAndSkipsProbe()
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
+        registry.Save();
+        using var response = JsonDocument.Parse("""
+            {
+              "parsed": { "gateway": { "port": 19876, "auth": { "allowTailscale": true } } },
+              "configRevisionHash": "revision-new",
+              "appliedConfigHash": "revision-new"
+            }
+            """);
+        var client = new FakeConfigClient(response.RootElement.Clone());
+        var liveVerifier = new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready);
+        var service = new GatewayTailscaleAuthUpgradeService(registry, liveVerifier);
+
+        var trusted = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.False(trusted);
+        Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(0, liveVerifier.Calls);
+    }
+
+    [Fact]
+    public async Task EnableAsync_UsesResolvedSourceAndPreservesCoreCasHash()
+    {
+        var registry = CreateRegistry();
+        using var response = JsonDocument.Parse("""
+            {
+              "parsed": { "gateway": { "auth": { "allowTailscale": true } } },
+              "sourceConfig": { "gateway": { "auth": { "allowTailscale": false } } },
+              "hash": "root-and-includes-cas",
+              "configRevisionHash": "revision-new",
+              "appliedConfigHash": "revision-new"
+            }
+            """);
+        var client = new FakeConfigClient(response.RootElement.Clone());
+        var service = new GatewayTailscaleAuthUpgradeService(registry);
+
+        var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.Succeeded, result.Outcome);
+        Assert.Equal(1, client.PatchCalls);
+        Assert.Equal("root-and-includes-cas", client.PatchBaseHash);
+        Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+    }
+
     [Fact]
     public async Task RevalidateAsync_OmittedGatewayPort_UsesCoreDefault()
     {
@@ -268,6 +345,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         using var response = JsonDocument.Parse($$"""
             {
               "{{documentProperty}}": { "gateway": { "auth": { "allowTailscale": true } } },
+              "sourceConfig": { "gateway": { "auth": { "allowTailscale": true } } },
               {{revisionProperties}}
             }
             """);
@@ -711,6 +789,13 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                 },
                 "unrelated": "keep"
               },
+              "sourceConfig": {
+                "gateway": {
+                  {{(includeGatewayPort ? "\"port\": 18789," : "")}}
+                  "auth": { "allowTailscale": {{allowTailscale.ToString().ToLowerInvariant()}} }
+                },
+                "unrelated": "keep"
+              },
               "configRevisionHash": "revision-new",
               "appliedConfigHash": "{{appliedRevision}}"{{(includeBaseHash ? ",\n  \"baseHash\": \"base-1\"" : "")}}
             }
@@ -728,6 +813,12 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                   "auth": { "allowTailscale": true }
                 }
               },
+              "sourceConfig": {
+                "gateway": {
+                  "port": {{gatewayPort}},
+                  "auth": { "allowTailscale": true }
+                }
+              },
               "configRevisionHash": "revision-new",
               "appliedConfigHash": "revision-new"
             }
@@ -740,6 +831,12 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         using var document = JsonDocument.Parse("""
             {
               "parsed": {
+                "gateway": {
+                  "auth": { "mode": "token" },
+                  "tailscale": { "mode": "serve" }
+                }
+              },
+              "sourceConfig": {
                 "gateway": {
                   "auth": { "mode": "token" },
                   "tailscale": { "mode": "serve" }

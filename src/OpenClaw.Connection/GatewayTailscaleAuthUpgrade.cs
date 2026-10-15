@@ -598,11 +598,17 @@ internal sealed class GatewayTailscaleAuthUpgradeService
 
     private static ConfigSnapshot CaptureSnapshot(JsonElement response)
     {
-        var root = response.TryGetProperty("parsed", out var parsed)
-            ? parsed
-            : response.TryGetProperty("config", out var config)
-                ? config
-                : response;
+        var hasRoot = response.TryGetProperty("sourceConfig", out var root) &&
+            root.ValueKind == JsonValueKind.Object;
+        if (!hasRoot && response.TryGetProperty("resolved", out var resolved) &&
+            resolved.ValueKind == JsonValueKind.Object)
+        {
+            root = resolved;
+            hasRoot = true;
+        }
+
+        if (!hasRoot)
+            throw new InvalidOperationException("Resolved source config is unavailable.");
         var baseHash = response.TryGetProperty("baseHash", out var baseHashElement) &&
             baseHashElement.ValueKind == JsonValueKind.String
                 ? baseHashElement.GetString()

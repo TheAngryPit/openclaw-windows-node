@@ -569,6 +569,14 @@ public class OpenClawGatewayClientTests
             return GetPendingRegistry().Count;
         }
 
+        public SemaphoreSlim GetSendLockForTest()
+        {
+            var field = typeof(WebSocketClientBase).GetField(
+                "_sendLock",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            return (SemaphoreSlim)field!.GetValue(_client)!;
+        }
+
         private PendingRequestRegistry GetPendingRegistry()
         {
             var field = typeof(OpenClawGatewayClient).GetField(
@@ -874,6 +882,46 @@ public class OpenClawGatewayClientTests
 
         Assert.Equal("Timed out waiting for wizard.status response", exception.Message);
         Assert.Equal(0, helper.GetPendingRequestCount());
+    }
+
+    [Fact]
+    public async Task SendWizardRequestAsync_DeadlineExpiresWhileQueuedForSend_DoesNotWriteAfterUnlock()
+    {
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("wizard-request-send-timeout-");
+        await server.StartAsync();
+        var helper = new GatewayClientTestHelper(
+            gatewayUrl: server.WebSocketUrl,
+            identityPath: identity.Path);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+
+        var sendLock = helper.GetSendLockForTest();
+        await sendLock.WaitAsync();
+        var lockHeld = true;
+        try
+        {
+            var request = client.SendWizardRequestAsync("wizard.status", timeoutMs: 150);
+            Assert.Equal(1, helper.GetPendingRequestCount());
+
+            var exception = await Assert.ThrowsAsync<TimeoutException>(async () =>
+                await request.WaitAsync(TimeSpan.FromSeconds(2)));
+
+            Assert.Equal("Timed out sending wizard.status request", exception.Message);
+            Assert.Equal(0, helper.GetPendingRequestCount());
+            sendLock.Release();
+            lockHeld = false;
+
+            using var noFrameTimeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await server.ReceiveTextAsync(noFrameTimeout.Token).WaitAsync(TimeSpan.FromSeconds(2)));
+        }
+        finally
+        {
+            if (lockHeld)
+                sendLock.Release();
+        }
     }
 
     [Fact]
