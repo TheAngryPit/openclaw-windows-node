@@ -206,11 +206,7 @@ internal sealed class GatewayTailscaleAuthLiveVerifier : IGatewayTailscaleAuthLi
         if (serveStatus.FunnelEnabled)
             return GatewayTailscaleAuthLiveState.NotReady;
         if (serveStatus.ForegroundProxyPort is not { } managedIngressPort)
-        {
-            return serveStatus.RoutesToGateway
-                ? GatewayTailscaleAuthLiveState.Ready
-                : GatewayTailscaleAuthLiveState.NotReady;
-        }
+            return GatewayTailscaleAuthLiveState.NotReady;
 
         WslCommandResult ownershipResult;
         try

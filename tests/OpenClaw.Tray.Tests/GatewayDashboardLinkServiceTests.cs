@@ -1,3 +1,7 @@
+using System.Text.Json;
+using OpenClaw.Connection;
+using OpenClaw.Shared;
+using OpenClaw.TestSupport;
 using OpenClawTray.Services;
 
 namespace OpenClaw.Tray.Tests;
@@ -46,6 +50,55 @@ public sealed class GatewayDashboardLinkServiceTests
         Assert.False(result.TrustTailscaleAuth);
         Assert.True(result.BrowserCredentialIncluded);
         Assert.Contains("token=shared-token", result.Url);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BuildAsync_ExternalServe_PreservesConsentAndRequiresApprovedSharedFallback(
+        bool approveSharedFallback)
+    {
+        using var temp = new TempDirectory();
+        var registry = new GatewayRegistry(temp.Path);
+        registry.AddOrUpdate(new GatewayRecord
+        {
+            Id = "gateway-1",
+            Url = "wss://host.tail1234.ts.net",
+            IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway",
+            TrustTailscaleAuth = true,
+            SharedGatewayToken = "shared-token",
+        });
+        registry.SetActive("gateway-1");
+        registry.Save();
+        var commandRunner = new ExternalServeCommandRunner();
+        var client = new AppliedTailscaleConfigClient();
+        var upgrade = new GatewayTailscaleAuthUpgradeService(
+            registry, new GatewayTailscaleAuthLiveVerifier(commandRunner));
+        var service = CreateService((id, cancellationToken) =>
+            upgrade.RevalidateAsync(id, client, cancellationToken));
+
+        var result = await service.BuildAsync(Request(
+            appendBrowserCredential: approveSharedFallback,
+            tailscaleGatewayId: "gateway-1",
+            gatewayUrl: "wss://host.tail1234.ts.net"));
+
+        Assert.Equal(1, client.ConfigRequests);
+        Assert.Equal(2, commandRunner.ProbeCalls);
+        Assert.False(result.TrustTailscaleAuth);
+        Assert.Equal(approveSharedFallback, result.Success);
+        Assert.Equal(approveSharedFallback, result.BrowserCredentialIncluded);
+        if (approveSharedFallback)
+            Assert.Equal("https://host.tail1234.ts.net/settings/profile#token=shared-token", result.Url);
+        else
+        {
+            Assert.Null(result.Url);
+            Assert.Equal("localized:DashboardLink_NoBrowserCompatibleCredential", result.Error);
+        }
+        var reloaded = new GatewayRegistry(temp.Path);
+        reloaded.Load();
+        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal("shared-token", reloaded.GetActive()!.SharedGatewayToken);
     }
 
     [Fact]
@@ -170,6 +223,66 @@ public sealed class GatewayDashboardLinkServiceTests
     private static GatewayDashboardLinkService CreateService(
         Func<string, CancellationToken, Task<bool>> revalidate) =>
         new(revalidate, key => $"localized:{key}");
+
+    private sealed class AppliedTailscaleConfigClient : IGatewayTailscaleAuthConfigClient
+    {
+        public IReadOnlyList<string> GrantedOperatorScopes => ["operator.read"];
+        public bool IsConnectedToGateway => true;
+        public int ConfigRequests { get; private set; }
+
+        public Task<JsonElement> RequestConfigDetailedAsync(int timeoutMs = 15000)
+        {
+            ConfigRequests++;
+            using var config = JsonDocument.Parse("""
+                {
+                  "sourceConfig": {
+                    "gateway": {
+                      "auth": { "allowTailscale": true },
+                      "tailscale": { "mode": "off" },
+                      "trustedProxies": ["127.0.0.1"]
+                    }
+                  },
+                  "configRevisionHash": "applied-config",
+                  "appliedConfigHash": "applied-config"
+                }
+                """);
+            return Task.FromResult(config.RootElement.Clone());
+        }
+
+        public Task<ConfigPatchResult> PatchConfigDetailedAsync(
+            JsonElement fullConfig, string? baseHash, int timeoutMs = 15000) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class ExternalServeCommandRunner : IWslCommandRunner
+    {
+        public int ProbeCalls { get; private set; }
+
+        public Task<WslCommandResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken = default,
+            IReadOnlyDictionary<string, string>? environment = null)
+        {
+            ProbeCalls++;
+            return Task.FromResult(new WslCommandResult(0, arguments.Contains("serve")
+                ? """{"Web":{"host.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:18789"}}}}}"""
+                : """{"BackendState":"Running","Self":{"DNSName":"host.tail1234.ts.net."}}""", ""));
+        }
+
+        public Task<WslCommandResult> RunInDistroAsync(
+            string name, IReadOnlyList<string> command, CancellationToken cancellationToken = default,
+            IReadOnlyDictionary<string, string>? environment = null, string? standardInput = null) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<WslDistroInfo>> ListDistrosAsync(
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<WslCommandResult> TerminateDistroAsync(
+            string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<WslCommandResult> UnregisterDistroAsync(
+            string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 
     private static GatewayDashboardLinkRequest Request(
         bool appendBrowserCredential = true,

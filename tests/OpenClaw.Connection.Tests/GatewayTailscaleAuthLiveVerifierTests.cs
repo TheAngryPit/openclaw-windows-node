@@ -10,7 +10,8 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
     [MemberData(nameof(StatusResults))]
     public async Task VerifyAsync_ClassifiesStatusResult(
         WslCommandResult commandResult,
-        string expected)
+        string expected,
+        int expectedProbeCalls)
     {
         var runner = new FakeWslCommandRunner((_, command, _) => Task.FromResult(
             command.Contains("serve", StringComparer.Ordinal)
@@ -26,8 +27,8 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         Assert.Equal(
             ["-d", "OpenClawGateway", "--user", "root", "--", "/usr/bin/tailscale", "status", "--json"],
             runner.HostArguments[0]);
-        Assert.Equal(expected == "Ready" ? 2 : 1, runner.ProbeCalls);
-        if (expected == "Ready")
+        Assert.Equal(expectedProbeCalls, runner.ProbeCalls);
+        if (expectedProbeCalls == 2)
         {
             Assert.Equal(["/usr/bin/tailscale", "serve", "status", "--json"], runner.Commands[1]);
             Assert.Equal(
@@ -518,15 +519,15 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
         Assert.Equal(expected, result.ToString());
     }
 
-    public static TheoryData<WslCommandResult, string> StatusResults => new()
+    public static TheoryData<WslCommandResult, string, int> StatusResults => new()
     {
-        { RunningStatus(), "Ready" },
-        { Status("NeedsLogin", "host.tail.example."), "NotReady" },
-        { Status("Stopped", "host.tail.example."), "NotReady" },
-        { Status("Running", ""), "NotReady" },
-        { new WslCommandResult(0, "{}", ""), "NotReady" },
-        { new WslCommandResult(0, "not-json", ""), "Unavailable" },
-        { new WslCommandResult(1, "", "tailscaled unavailable"), "Unavailable" },
+        { RunningStatus(), "NotReady", 2 },
+        { Status("NeedsLogin", "host.tail.example."), "NotReady", 1 },
+        { Status("Stopped", "host.tail.example."), "NotReady", 1 },
+        { Status("Running", ""), "NotReady", 1 },
+        { new WslCommandResult(0, "{}", ""), "NotReady", 1 },
+        { new WslCommandResult(0, "not-json", ""), "Unavailable", 1 },
+        { new WslCommandResult(1, "", "tailscaled unavailable"), "Unavailable", 1 },
     };
 
     public static TheoryData<string, string> UnsafeForegroundServeStatuses => new()
