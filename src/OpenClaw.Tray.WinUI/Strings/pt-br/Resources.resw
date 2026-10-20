@@ -5680,13 +5680,22 @@ Certifique-se de que o Gateway está em execução.</value>
     <value>Usar a identidade do Tailscale no painel?</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthBody" xml:space="preserve">
-    <value>Isso habilita a autenticação verificada pela identidade do Tailscale neste gateway gerenciado. O token salvo, a identidade do dispositivo, a distribuição WSL e o pareamento permanecem inalterados.</value>
+    <value>Isso solicita autenticação pela identidade do Tailscale em um gateway que gerencia o Tailscale Serve em primeiro plano. O token salvo, a identidade do dispositivo, a distribuição WSL e o pareamento permanecem inalterados. Esta ação não altera o Serve.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnable" xml:space="preserve">
     <value>Ativar</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnabled" xml:space="preserve">
     <value>Identidade do Tailscale para o painel ativada.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthAccepted" xml:space="preserve">
+    <value>O gateway aceitou a configuração de identidade do Tailscale. Os links do painel verificarão se ela foi aplicada e está pronta antes de omitir o token.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureUnsupportedTopology" xml:space="preserve">
+    <value>Esta ação requer o Tailscale Serve em primeiro plano, gerenciado pelo gateway. O Serve em segundo plano criado pela instalação não é compatível. Peça ao administrador do gateway para revisar a implantação. Nenhuma configuração foi alterada.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureIngressNotReady" xml:space="preserve">
+    <value>A entrada Tailscale gerenciada pelo gateway não está pronta ou não pôde ser verificada. Verifique o gateway e a conexão Tailscale e tente novamente. Nenhuma configuração foi alterada.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureIneligible" xml:space="preserve">
     <value>Este gateway não é mais um gateway Tailscale gerenciado. Atualize a lista de gateways e tente novamente.</value>
@@ -5704,7 +5713,7 @@ Certifique-se de que o Gateway está em execução.</value>
     <value>Não foi possível ler a configuração do gateway. Reconecte-se ao gateway e tente novamente.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePatchRejected" xml:space="preserve">
-    <value>O gateway não confirmou a alteração. Reconecte-se e verifique se a identidade Tailscale está habilitada antes de tentar novamente.</value>
+    <value>O gateway não confirmou a alteração. Reconecte-se e tente novamente. Uma nova tentativa reaplica com segurança apenas a mesma configuração do Tailscale.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed" xml:space="preserve">
     <value>Não foi possível salvar localmente a configuração de confiança do Tailscale. Verifique o acesso à pasta de dados do OpenClaw Tray e tente novamente.</value>

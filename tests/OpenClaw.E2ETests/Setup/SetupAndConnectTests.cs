@@ -765,6 +765,7 @@ public class SetupAndConnectTests
             var dashboard = dashboardDoc.RootElement;
             var dashboardUrl = dashboard.GetProperty("url").GetString();
             Assert.NotNull(dashboardUrl);
+            Assert.Equal("record.BootstrapToken", dashboard.GetProperty("credentialSource").GetString());
             Assert.False(dashboard.GetProperty("usesSharedGatewayToken").GetBoolean());
             Assert.False(dashboard.GetProperty("hasTokenQuery").GetBoolean());
             Assert.DoesNotContain("token=", dashboardUrl, StringComparison.OrdinalIgnoreCase);

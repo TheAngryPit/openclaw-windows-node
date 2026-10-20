@@ -268,7 +268,7 @@ public partial class App
             {
                 url,
                 credentialSource,
-                usesSharedGatewayToken = !isBootstrapToken && credentialSource == CredentialResolver.SourceSharedGatewayToken,
+                usesSharedGatewayToken = result.BrowserCredentialIncluded,
                 hasTokenQuery = url.Contains("?token=", StringComparison.Ordinal) || url.Contains("&token=", StringComparison.Ordinal)
             };
         };

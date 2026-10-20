@@ -5703,13 +5703,22 @@ Controleer of de gateway actief is.</value>
     <value>Tailscale-identiteit gebruiken voor het dashboard?</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthBody" xml:space="preserve">
-    <value>Hiermee wordt verificatie via Tailscale-identiteit ingeschakeld op deze beheerde gateway. Uw opgeslagen token, apparaatidentiteit, WSL-distributie en koppeling blijven ongewijzigd.</value>
+    <value>Hiermee vraagt u verificatie via Tailscale-identiteit aan op een gateway die Tailscale Serve op de voorgrond beheert. Uw opgeslagen token, apparaatidentiteit, WSL-distributie en koppeling blijven ongewijzigd. Deze actie wijzigt Serve niet.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnable" xml:space="preserve">
     <value>Inschakelen</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnabled" xml:space="preserve">
     <value>Tailscale-identiteit voor het dashboard is ingeschakeld.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthAccepted" xml:space="preserve">
+    <value>De gateway heeft de instelling voor Tailscale-identiteit geaccepteerd. Dashboardlinks controleren of deze is toegepast en gereed is voordat het token wordt weggelaten.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureUnsupportedTopology" xml:space="preserve">
+    <value>Deze actie vereist Tailscale Serve op de voorgrond, beheerd door de gateway. Serve op de achtergrond uit de installatie wordt niet ondersteund. Vraag de gatewaybeheerder om de implementatie te controleren. Er is geen instelling gewijzigd.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureIngressNotReady" xml:space="preserve">
+    <value>De door de gateway beheerde Tailscale-toegang is niet gereed of kon niet worden geverifieerd. Controleer de gateway en de Tailscale-verbinding en probeer het opnieuw. Er is geen instelling gewijzigd.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureIneligible" xml:space="preserve">
     <value>Deze gateway is niet langer een beheerde Tailscale-gateway. Vernieuw de gatewaylijst en probeer het opnieuw.</value>
@@ -5727,7 +5736,7 @@ Controleer of de gateway actief is.</value>
     <value>De gatewayconfiguratie kon niet worden gelezen. Maak opnieuw verbinding met de gateway en probeer het opnieuw.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePatchRejected" xml:space="preserve">
-    <value>De gateway heeft de wijziging niet bevestigd. Maak opnieuw verbinding en controleer of Tailscale-identiteit is ingeschakeld voordat u het opnieuw probeert.</value>
+    <value>De gateway heeft de wijziging niet bevestigd. Maak opnieuw verbinding en probeer het opnieuw. Een nieuwe poging past veilig alleen dezelfde Tailscale-instelling opnieuw toe.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed" xml:space="preserve">
     <value>De lokale instelling voor Tailscale-vertrouwen kon niet worden opgeslagen. Controleer de toegang tot de gegevensmap van OpenClaw Tray en probeer het opnieuw.</value>

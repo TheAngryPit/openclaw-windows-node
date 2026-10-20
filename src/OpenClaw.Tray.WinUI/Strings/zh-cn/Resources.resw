@@ -5702,13 +5702,22 @@
     <value>使用 Tailscale 身份访问仪表板？</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthBody" xml:space="preserve">
-    <value>这将在此托管网关上启用经过验证的 Tailscale 身份认证。已保存的令牌、设备身份、WSL 发行版和配对信息均保持不变。</value>
+    <value>这将向自行管理前台 Tailscale Serve 的网关请求 Tailscale 身份认证。已保存的令牌、设备身份、WSL 发行版和配对信息均保持不变。此操作不会更改 Serve。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnable" xml:space="preserve">
     <value>启用</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnabled" xml:space="preserve">
     <value>已启用仪表板的 Tailscale 身份认证。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthAccepted" xml:space="preserve">
+    <value>网关已接受 Tailscale 身份设置。仪表板链接将在确认设置已应用且就绪后才省略令牌。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureUnsupportedTopology" xml:space="preserve">
+    <value>此操作需要由网关管理的前台 Tailscale Serve。不支持安装程序创建的后台 Serve。请让网关管理员检查部署。未更改任何设置。</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureIngressNotReady" xml:space="preserve">
+    <value>由网关管理的 Tailscale 入口尚未就绪或无法验证。请检查网关和 Tailscale 连接后重试。未更改任何设置。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureIneligible" xml:space="preserve">
     <value>此网关已不再是受管理的 Tailscale 网关。请刷新网关列表后重试。</value>
@@ -5726,7 +5735,7 @@
     <value>无法读取网关配置。请重新连接网关后重试。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePatchRejected" xml:space="preserve">
-    <value>网关未确认此更改。请重新连接，并在重试前检查是否已启用 Tailscale 身份认证。</value>
+    <value>网关未确认此更改。请重新连接后重试。重试只会安全地重新应用同一项 Tailscale 设置。</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed" xml:space="preserve">
     <value>无法在本地保存 Tailscale 信任设置。请检查 OpenClaw Tray 数据文件夹的访问权限后重试。</value>

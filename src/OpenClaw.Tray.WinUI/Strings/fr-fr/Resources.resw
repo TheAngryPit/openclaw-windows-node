@@ -5702,13 +5702,22 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
     <value>Utiliser l’identité Tailscale pour le tableau de bord ?</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthBody" xml:space="preserve">
-    <value>Cela active l’authentification vérifiée par identité Tailscale sur cette passerelle gérée. Votre jeton enregistré, l’identité de l’appareil, la distribution WSL et l’association restent inchangés.</value>
+    <value>Cela demande l’authentification par identité Tailscale sur une passerelle qui gère Tailscale Serve au premier plan. Votre jeton enregistré, l’identité de l’appareil, la distribution WSL et l’association restent inchangés. Cette action ne modifie pas Serve.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnable" xml:space="preserve">
     <value>Activer</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthEnabled" xml:space="preserve">
     <value>L’identité Tailscale est activée pour le tableau de bord.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthAccepted" xml:space="preserve">
+    <value>La passerelle a accepté le paramètre d’identité Tailscale. Les liens du tableau de bord vérifieront qu’il est appliqué et opérationnel avant d’omettre le jeton.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureUnsupportedTopology" xml:space="preserve">
+    <value>Cette action nécessite Tailscale Serve au premier plan, géré par la passerelle. Le mode Serve en arrière-plan créé par l’installation n’est pas pris en charge. Demandez à l’administrateur de la passerelle de vérifier le déploiement. Aucun paramètre n’a été modifié.</value>
+  </data>
+  <data name="ConnectionPage_TailscaleDashboardAuthFailureIngressNotReady" xml:space="preserve">
+    <value>Le point d’entrée Tailscale géré par la passerelle n’est pas prêt ou n’a pas pu être vérifié. Vérifiez la passerelle et la connexion Tailscale, puis réessayez. Aucun paramètre n’a été modifié.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailureIneligible" xml:space="preserve">
     <value>Cette passerelle n’est plus une passerelle Tailscale gérée. Actualisez la liste des passerelles et réessayez.</value>
@@ -5726,7 +5735,7 @@ Assurez-vous que la passerelle est en cours d'exécution.</value>
     <value>Impossible de lire la configuration de la passerelle. Reconnectez-vous à la passerelle et réessayez.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePatchRejected" xml:space="preserve">
-    <value>La passerelle n’a pas confirmé la modification. Reconnectez-vous et vérifiez si l’identité Tailscale est activée avant de réessayer.</value>
+    <value>La passerelle n’a pas confirmé la modification. Reconnectez-vous et réessayez. Une nouvelle tentative réapplique uniquement le même paramètre Tailscale en toute sécurité.</value>
   </data>
   <data name="ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed" xml:space="preserve">
     <value>Impossible d’enregistrer localement le paramètre de confiance Tailscale. Vérifiez l’accès au dossier de données OpenClaw Tray, puis réessayez.</value>

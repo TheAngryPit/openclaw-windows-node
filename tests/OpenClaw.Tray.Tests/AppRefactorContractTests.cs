@@ -521,6 +521,25 @@ public sealed class AppRefactorContractTests
     }
 
     [Fact]
+    public void DashboardUrlResponse_ReportsEmittedCredentialWithoutChangingProvenance()
+    {
+        var source = ReadAppSources();
+        var start = source.IndexOf("app.DashboardUrlHandler = async (path) =>", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        var end = source.IndexOf("app.ChatSnapshotHandler", start, StringComparison.Ordinal);
+        Assert.True(end > start);
+        var handler = source[start..end];
+
+        // Retire with mounted handler coverage that does not start real app services.
+        Assert.Contains("TryResolveChatCredentials(out var gatewayUrl, out var dashboardCredential, out var credentialSource, out var isBootstrapToken)", handler);
+        Assert.Contains("!isBootstrapToken && credentialSource == CredentialResolver.SourceSharedGatewayToken", handler);
+        AssertInOrder(handler, "new GatewayDashboardLinkRequest(", "dashboardCredential,", "usesSharedCredential,", "tailscaleGatewayId)");
+        Assert.Contains("usesSharedGatewayToken = result.BrowserCredentialIncluded", handler);
+        AssertInOrder(handler, "var url = result.Url!;", "url,", "credentialSource,", "usesSharedGatewayToken = result.BrowserCredentialIncluded");
+        Assert.DoesNotContain("usesSharedGatewayToken = !isBootstrapToken", handler);
+    }
+
+    [Fact]
     public void SshTunnelExit_RecoversActiveRegistryGatewayThroughConnectionManager()
     {
         var source = ReadAppSources();

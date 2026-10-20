@@ -3345,7 +3345,7 @@ public class GatewayConnectionManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task TailscaleDashboardAuthFailure_RecordsOutcomeAndError()
+    public async Task TailscaleDashboardAuthUnsupportedTopology_RecordsOutcomeWithoutPatch()
     {
         const string fixtureToken = "fixture-operator-token";
         const string gatewayId = "tailscale-gateway";
@@ -3396,17 +3396,16 @@ public class GatewayConnectionManagerTests : IDisposable
 
         var result = await manager.EnableTailscaleDashboardAuthAsync(gatewayId);
 
-        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, result.Outcome);
-        Assert.Contains("Fixture Gateway is read-only", result.Error ?? string.Empty);
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.UnsupportedTopology, result.Outcome);
+        Assert.Null(result.Error);
         Assert.Contains(fixture.Requests, request => request.Method == "config.get" && request.Outcome == "ok");
-        Assert.Contains(fixture.Requests, request =>
-            request.Method == "config.patch" && request.Outcome == "error:FIXTURE_READ_ONLY");
+        Assert.DoesNotContain(fixture.Requests, request => request.Method == "config.patch");
         var upgradeEvents = manager.Diagnostics.GetAll()
             .Where(entry => entry.Category == "tailscale-auth")
             .ToArray();
         var diagnostic = Assert.Single(upgradeEvents);
-        Assert.Equal("Dashboard auth upgrade: PatchRejected", diagnostic.Message);
-        Assert.Contains("Fixture Gateway is read-only", diagnostic.Detail ?? string.Empty);
+        Assert.Equal("Dashboard auth upgrade: UnsupportedTopology", diagnostic.Message);
+        Assert.Null(diagnostic.Detail);
     }
 
     [Fact]

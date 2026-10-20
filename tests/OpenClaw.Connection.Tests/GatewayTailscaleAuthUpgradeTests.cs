@@ -9,16 +9,28 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     private readonly TempDirectory _temp = new();
 
     [Fact]
-    public async Task EnableAsync_PersistsRecordBeforePatchingCore()
+    public async Task EnableAsync_PersistsRecordOnlyAfterCoreAcceptance()
     {
         var registry = CreateRegistry();
         var client = new FakeConfigClient(Config(allowTailscale: false));
-        client.BeforePatch = () => Assert.True(registry.GetActive()!.TrustTailscaleAuth);
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        registry.Save();
+        bool? trustedBeforeAcceptance = null;
+        bool? couldRetryBeforeAcceptance = null;
+        client.BeforePatch = () =>
+        {
+            trustedBeforeAcceptance = registry.GetActive()!.TrustTailscaleAuth;
+            var beforeAcceptance = new GatewayRegistry(_temp.Path);
+            beforeAcceptance.Load();
+            couldRetryBeforeAcceptance = GatewayTailscaleAuthUpgradePolicy.CanOffer(beforeAcceptance.GetActive());
+        };
+        var service = new GatewayTailscaleAuthUpgradeService(
+            registry, new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready));
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.Succeeded, result.Outcome);
+        Assert.False(trustedBeforeAcceptance);
+        Assert.True(couldRetryBeforeAcceptance);
         Assert.True(registry.GetActive()!.TrustTailscaleAuth);
         Assert.Equal("test-token-placeholder", registry.GetActive()!.SharedGatewayToken);
         Assert.Equal(1, client.PatchCalls);
@@ -36,17 +48,95 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         Assert.Equal("test-token-placeholder", reloaded.GetActive()!.SharedGatewayToken);
     }
 
+    [Theory]
+    [InlineData("off", "UnsupportedTopology")]
+    [InlineData("serve", "IngressNotReady")]
+    public async Task EnableAsync_SetupBackgroundServe_DoesNotPatchOrPersistTrust(
+        string mode, string expectedOutcome)
+    {
+        var registry = CreateRegistry();
+        registry.Save();
+        var originalRegistry = File.ReadAllText(_temp.Combine("gateways.json"));
+        using var config = JsonDocument.Parse($$"""
+            {
+              "sourceConfig": {
+                "gateway": {
+                  "port": 18789,
+                  "bind": "loopback",
+                  "auth": { "mode": "token", "token": "test-token-placeholder", "allowTailscale": false },
+                  "tailscale": { "mode": "{{mode}}" },
+                  "trustedProxies": ["127.0.0.1"]
+                }
+              },
+              "baseHash": "setup-config",
+              "configRevisionHash": "setup-config",
+              "appliedConfigHash": "setup-config"
+            }
+            """);
+        var client = new FakeConfigClient(config.RootElement.Clone());
+        var verifier = new GatewayTailscaleAuthLiveVerifier(new BackgroundServeCommandRunner());
+        var service = new GatewayTailscaleAuthUpgradeService(registry, verifier);
+
+        Assert.Equal(GatewayTailscaleAuthLiveState.NotReady,
+            await verifier.VerifyAsync(registry.GetActive()!, 18789, CancellationToken.None));
+        var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.Equal(expectedOutcome, result.Outcome.ToString());
+        Assert.Equal(0, client.PatchCalls);
+        Assert.False(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(originalRegistry, File.ReadAllText(_temp.Combine("gateways.json")));
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.True(GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
+    }
+
+    [Theory]
+    [InlineData(false, "not-ready")]
+    [InlineData(true, "not-ready")]
+    [InlineData(false, "unavailable")]
+    [InlineData(true, "unavailable")]
+    [InlineData(false, "exception")]
+    [InlineData(true, "exception")]
+    [InlineData(false, "missing-verifier")]
+    [InlineData(true, "missing-verifier")]
+    public async Task EnableAsync_UnverifiedIngress_DoesNotPatchOrChangeTrust(
+        bool previouslyTrusted, string probeResult)
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = previouslyTrusted });
+        registry.Save();
+        var originalRegistry = File.ReadAllText(_temp.Combine("gateways.json"));
+        var client = new FakeConfigClient(Config(allowTailscale: previouslyTrusted));
+        var verifier = probeResult == "missing-verifier" ? null : new FakeLiveVerifier(probeResult switch
+        {
+            "not-ready" => GatewayTailscaleAuthLiveState.NotReady,
+            "unavailable" => GatewayTailscaleAuthLiveState.Unavailable,
+            _ => (object)new IOException("probe failed"),
+        });
+        var service = new GatewayTailscaleAuthUpgradeService(registry, verifier);
+
+        var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.IngressNotReady, result.Outcome);
+        Assert.Equal(0, client.PatchCalls);
+        Assert.Equal(previouslyTrusted, registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(originalRegistry, File.ReadAllText(_temp.Combine("gateways.json")));
+    }
+
     [Fact]
     public async Task EnableAsync_CoreAlreadyEnabled_RequiresAcceptedIdempotentPatch()
     {
         var registry = CreateRegistry();
         var client = new FakeConfigClient(Config(allowTailscale: true));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.Succeeded, result.Outcome);
         Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(1, client.PatchCalls);
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled,
+            (await service.EnableAsync("gateway-1", client, CancellationToken.None)).Outcome);
         Assert.Equal(1, client.PatchCalls);
     }
 
@@ -57,7 +147,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
         registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: false));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -74,7 +164,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
         registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: true));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -91,7 +181,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         registry.Update("gateway-1", current => current with { TrustTailscaleAuth = true });
         registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: true, includeBaseHash: false));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -109,7 +199,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         {
             PatchResult = new ConfigPatchResult { Ok = false, Error = "application pending" },
         };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -123,7 +213,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     {
         var registry = CreateRegistry();
         var client = new FakeConfigClient(Config(allowTailscale: false, includeBaseHash: false));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -145,7 +235,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                 IsGatewayRejection = true,
             },
         };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -154,21 +244,64 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         Assert.Equal("test-token-placeholder", registry.GetActive()!.SharedGatewayToken);
     }
 
-    [Fact]
-    public async Task EnableAsync_AmbiguousPatchFailure_PreservesMarkerForRevalidation()
+    [Theory]
+    [InlineData(false, "timeout")]
+    [InlineData(false, "exception")]
+    [InlineData(false, "rejection")]
+    [InlineData(true, "timeout")]
+    [InlineData(true, "exception")]
+    [InlineData(true, "rejection")]
+    public async Task EnableAsync_UnconfirmedPatch_PreservesExistingTrustAndNewOptInRetry(
+        bool previouslyTrusted, string failure)
     {
         var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = previouslyTrusted });
+        registry.Save();
+        var originalRegistry = File.ReadAllText(_temp.Combine("gateways.json"));
         var client = new FakeConfigClient(Config(allowTailscale: false))
         {
-            PatchResult = new ConfigPatchResult { Ok = false, Error = "request timed out" },
+            PatchResult = new ConfigPatchResult
+            {
+                Ok = false,
+                Error = "unconfirmed patch",
+                IsGatewayRejection = failure == "rejection",
+            },
+            PatchError = failure == "exception" ? new IOException("response lost") : null,
         };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, result.Outcome);
-        Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(previouslyTrusted, registry.GetActive()!.TrustTailscaleAuth);
         Assert.Equal("test-token-placeholder", registry.GetActive()!.SharedGatewayToken);
+        Assert.Equal(originalRegistry, File.ReadAllText(_temp.Combine("gateways.json")));
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.Equal(!previouslyTrusted, GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
+        Assert.Equal(previouslyTrusted, reloaded.GetActive()!.TrustTailscaleAuth);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EnableAsync_ConfigTimeoutBeforeDispatchPreservesRetryAndTrust(bool previouslyTrusted)
+    {
+        var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = previouslyTrusted });
+        registry.Save();
+        var client = new FakeConfigClient(Config(allowTailscale: false))
+        {
+            ConfigError = new TimeoutException("config read timed out"),
+        };
+        var result = await CreateReadyService(registry).EnableAsync("gateway-1", client, CancellationToken.None);
+
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.ConfigUnavailable, result.Outcome);
+        Assert.Equal(0, client.PatchCalls);
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.Equal(previouslyTrusted, reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(!previouslyTrusted, GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
     }
 
     [Theory]
@@ -199,16 +332,25 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     [Fact]
     public async Task EnableAsync_SaveFailure_RestoresInMemoryMarker()
     {
-        var registry = CreateRegistry(new FailingWriteFileSystem());
+        var registry = CreateRegistry(new FailOnSecondWriteFileSystem());
+        registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: true));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
         Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, result.Outcome);
         Assert.False(registry.GetActive()!.TrustTailscaleAuth);
         Assert.Equal("test-token-placeholder", registry.GetActive()!.SharedGatewayToken);
-        Assert.Equal(0, client.PatchCalls);
+        Assert.Equal(1, client.PatchCalls);
+        var reloaded = new GatewayRegistry(_temp.Path);
+        reloaded.Load();
+        Assert.True(GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.Succeeded,
+            (await service.EnableAsync("gateway-1", client, CancellationToken.None)).Outcome);
+        reloaded.Load();
+        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(2, client.PatchCalls);
     }
 
     [Fact]
@@ -291,14 +433,14 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         using var response = JsonDocument.Parse("""
             {
               "parsed": { "gateway": { "auth": { "allowTailscale": true } } },
-              "sourceConfig": { "gateway": { "auth": { "allowTailscale": false } } },
+              "sourceConfig": { "gateway": { "auth": { "allowTailscale": false }, "tailscale": { "mode": "serve" } } },
               "hash": "root-and-includes-cas",
               "configRevisionHash": "revision-new",
               "appliedConfigHash": "revision-new"
             }
             """);
         var client = new FakeConfigClient(response.RootElement.Clone());
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
 
@@ -363,22 +505,26 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     }
 
     [Fact]
-    public async Task RevalidateAsync_AmbiguousAdoptionTrustsOnlyAfterAppliedRevisionConverges()
+    public async Task EnableAsync_AmbiguousAdoptionCanRetryAfterReloadBeforeAppliedRevisionConverges()
     {
         var registry = CreateRegistry();
+        registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: false))
         {
             PatchResult = new ConfigPatchResult { Ok = false, Error = "response lost" },
         };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
         var result = await service.EnableAsync("gateway-1", client, CancellationToken.None);
         Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, result.Outcome);
 
         var reloaded = new GatewayRegistry(_temp.Path);
         reloaded.Load();
-        service = new GatewayTailscaleAuthUpgradeService(
-            reloaded, new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready));
+        Assert.True(GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
+        service = CreateReadyService(reloaded);
         client.ConfigResponse = Config(allowTailscale: true, appliedRevision: "revision-old");
+        client.PatchResult = new ConfigPatchResult { Ok = true };
+        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.Succeeded,
+            (await service.EnableAsync("gateway-1", client, CancellationToken.None)).Outcome);
         var pending = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
         client.ConfigResponse = Config(allowTailscale: true);
         var applied = await service.RevalidateAsync("gateway-1", client, CancellationToken.None);
@@ -387,7 +533,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         Assert.True(applied);
         Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
         Assert.Equal("test-token-placeholder", reloaded.GetActive()!.SharedGatewayToken);
-        Assert.Equal(1, client.PatchCalls);
+        Assert.Equal(2, client.PatchCalls);
     }
 
     [Fact]
@@ -606,12 +752,17 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
     }
 
     [Fact]
-    public async Task EnableAsync_CancellationAfterMarkerPersistenceRollsBackBeforeDispatch()
+    public async Task EnableAsync_CancellationAfterIngressProbeDoesNotPersistOrDispatch()
     {
         using var cancellation = new CancellationTokenSource();
-        var registry = CreateRegistry(new CancelOnFirstWriteFileSystem(cancellation));
+        var registry = CreateRegistry();
+        registry.Save();
         var client = new FakeConfigClient(Config(allowTailscale: false));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = new GatewayTailscaleAuthUpgradeService(
+            registry, new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready)
+            {
+                AfterVerify = cancellation.Cancel,
+            });
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             service.EnableAsync("gateway-1", client, cancellation.Token));
@@ -621,106 +772,57 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         var reloaded = new GatewayRegistry(_temp.Path);
         reloaded.Load();
         Assert.False(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.True(GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
     }
 
-    [Fact]
-    public async Task EnableAsync_CancellationBeforeDispatchSurfacesRollbackPersistenceFailure()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var registry = CreateRegistry(new CancelThenFailRollbackFileSystem(cancellation));
-        var client = new FakeConfigClient(Config(allowTailscale: false));
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
-
-        var result = await service.EnableAsync("gateway-1", client, cancellation.Token);
-
-        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, result.Outcome);
-        Assert.Contains("trust-marker rollback failed", result.Error);
-        Assert.DoesNotContain("Core rejected", result.Error);
-        Assert.Equal(0, client.PatchCalls);
-        var reloaded = new GatewayRegistry(_temp.Path);
-        reloaded.Load();
-        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
-    }
-
-    [Fact]
-    public async Task EnableAsync_CancellationDuringPatchPreservesMarkerForRevalidation()
+    [Theory]
+    [InlineData(false, "accepted")]
+    [InlineData(false, "rejected")]
+    [InlineData(false, "unknown")]
+    [InlineData(false, "exception")]
+    [InlineData(true, "accepted")]
+    [InlineData(true, "rejected")]
+    [InlineData(true, "unknown")]
+    [InlineData(true, "exception")]
+    public async Task EnableAsync_CancellationDuringPatchDrainsWithoutChangingTrust(
+        bool previouslyTrusted, string completion)
     {
         using var cancellation = new CancellationTokenSource();
         var registry = CreateRegistry();
+        registry.Update("gateway-1", current => current with { TrustTailscaleAuth = previouslyTrusted });
+        registry.Save();
+        var originalRegistry = File.ReadAllText(_temp.Combine("gateways.json"));
         var patchCompletion = new TaskCompletionSource<ConfigPatchResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var client = new FakeConfigClient(Config(allowTailscale: false))
         {
             PatchCompletion = patchCompletion,
         };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
+        var service = CreateReadyService(registry);
 
         var enableTask = service.EnableAsync("gateway-1", client, cancellation.Token);
         await client.PatchStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
         cancellation.Cancel();
 
         Assert.False(enableTask.IsCompleted);
-        patchCompletion.SetResult(new ConfigPatchResult { Ok = true });
+        Assert.Equal(originalRegistry, File.ReadAllText(_temp.Combine("gateways.json")));
+        if (completion == "exception")
+            patchCompletion.SetException(new IOException("response lost"));
+        else
+            patchCompletion.SetResult(new ConfigPatchResult
+            {
+                Ok = completion == "accepted",
+                IsGatewayRejection = completion == "rejected",
+            });
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => enableTask);
-        Assert.True(registry.GetActive()!.TrustTailscaleAuth);
+        Assert.True(patchCompletion.Task.IsCompleted);
+        Assert.Equal(previouslyTrusted, registry.GetActive()!.TrustTailscaleAuth);
         Assert.Equal(1, client.PatchCalls);
-    }
-
-    [Fact]
-    public async Task EnableAsync_CancellationDuringPatchRollsBackDefinitiveGatewayRejection()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var registry = CreateRegistry();
-        var patchCompletion = new TaskCompletionSource<ConfigPatchResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = new FakeConfigClient(Config(allowTailscale: false))
-        {
-            PatchCompletion = patchCompletion,
-        };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
-
-        var enableTask = service.EnableAsync("gateway-1", client, cancellation.Token);
-        await client.PatchStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
-        cancellation.Cancel();
-        patchCompletion.SetResult(new ConfigPatchResult
-        {
-            Ok = false,
-            Error = "base hash mismatch",
-            IsGatewayRejection = true,
-        });
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => enableTask);
-        Assert.False(registry.GetActive()!.TrustTailscaleAuth);
-    }
-
-    [Fact]
-    public async Task EnableAsync_CancellationDuringPatchSurfacesRollbackPersistenceFailure()
-    {
-        using var cancellation = new CancellationTokenSource();
-        var registry = CreateRegistry(new FailOnSecondWriteFileSystem());
-        var patchCompletion = new TaskCompletionSource<ConfigPatchResult>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = new FakeConfigClient(Config(allowTailscale: false))
-        {
-            PatchCompletion = patchCompletion,
-        };
-        var service = new GatewayTailscaleAuthUpgradeService(registry);
-
-        var enableTask = service.EnableAsync("gateway-1", client, cancellation.Token);
-        await client.PatchStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
-        cancellation.Cancel();
-        patchCompletion.SetResult(new ConfigPatchResult
-        {
-            Ok = false,
-            Error = "base hash mismatch",
-            IsGatewayRejection = true,
-        });
-
-        var result = await enableTask;
-        Assert.Equal(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, result.Outcome);
+        Assert.Equal(originalRegistry, File.ReadAllText(_temp.Combine("gateways.json")));
         var reloaded = new GatewayRegistry(_temp.Path);
         reloaded.Load();
-        Assert.True(reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(previouslyTrusted, reloaded.GetActive()!.TrustTailscaleAuth);
+        Assert.Equal(!previouslyTrusted, GatewayTailscaleAuthUpgradePolicy.CanOffer(reloaded.GetActive()));
     }
 
     [Fact]
@@ -774,6 +876,9 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         SharedGatewayToken = "test-token-placeholder",
     };
 
+    private static GatewayTailscaleAuthUpgradeService CreateReadyService(GatewayRegistry registry) =>
+        new(registry, new FakeLiveVerifier(GatewayTailscaleAuthLiveState.Ready));
+
     private static JsonElement Config(
         bool allowTailscale,
         bool includeBaseHash = true,
@@ -785,6 +890,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
               "parsed": {
                 "gateway": {
                   {{(includeGatewayPort ? "\"port\": 18789," : "")}}
+                  "tailscale": { "mode": "serve" },
                   "auth": { "allowTailscale": {{allowTailscale.ToString().ToLowerInvariant()}} }
                 },
                 "unrelated": "keep"
@@ -792,6 +898,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
               "sourceConfig": {
                 "gateway": {
                   {{(includeGatewayPort ? "\"port\": 18789," : "")}}
+                  "tailscale": { "mode": "serve" },
                   "auth": { "allowTailscale": {{allowTailscale.ToString().ToLowerInvariant()}} }
                 },
                 "unrelated": "keep"
@@ -862,6 +969,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         public JsonElement? PatchedConfig { get; private set; }
         public ConfigPatchResult PatchResult { get; set; } = new() { Ok = true };
         public Exception? ConfigError { get; set; }
+        public Exception? PatchError { get; set; }
         public bool EmitConfig { get; set; } = true;
         public Action? AfterConfig { get; set; }
         public Action? BeforePatch { get; set; }
@@ -892,49 +1000,10 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
             PatchBaseHash = baseHash;
             PatchedConfig = fullConfig.Clone();
             PatchStarted.TrySetResult();
+            if (PatchError is not null)
+                return Task.FromException<ConfigPatchResult>(PatchError);
             return PatchCompletion?.Task ?? Task.FromResult(PatchResult);
         }
-    }
-
-    private sealed class CancelOnFirstWriteFileSystem(CancellationTokenSource cancellation) : IFileSystem
-    {
-        private readonly RealFileSystem _inner = new();
-        private int _writes;
-
-        public bool FileExists(string path) => _inner.FileExists(path);
-        public string ReadAllText(string path) => _inner.ReadAllText(path);
-        public void WriteAllText(string path, string content)
-        {
-            _inner.WriteAllText(path, content);
-            if (Interlocked.Increment(ref _writes) == 1)
-                cancellation.Cancel();
-        }
-        public void CreateDirectory(string path) => _inner.CreateDirectory(path);
-        public bool DirectoryExists(string path) => _inner.DirectoryExists(path);
-        public void CopyFile(string source, string destination, bool overwrite) =>
-            _inner.CopyFile(source, destination, overwrite);
-        public void DeleteFile(string path) => _inner.DeleteFile(path);
-    }
-
-    private sealed class CancelThenFailRollbackFileSystem(CancellationTokenSource cancellation) : IFileSystem
-    {
-        private readonly RealFileSystem _inner = new();
-        private int _writes;
-
-        public bool FileExists(string path) => _inner.FileExists(path);
-        public string ReadAllText(string path) => _inner.ReadAllText(path);
-        public void WriteAllText(string path, string content)
-        {
-            if (Interlocked.Increment(ref _writes) == 2)
-                throw new IOException("rollback write failed");
-            _inner.WriteAllText(path, content);
-            cancellation.Cancel();
-        }
-        public void CreateDirectory(string path) => _inner.CreateDirectory(path);
-        public bool DirectoryExists(string path) => _inner.DirectoryExists(path);
-        public void CopyFile(string source, string destination, bool overwrite) =>
-            _inner.CopyFile(source, destination, overwrite);
-        public void DeleteFile(string path) => _inner.DeleteFile(path);
     }
 
     private sealed class FailOnSecondWriteFileSystem : IFileSystem
@@ -947,7 +1016,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         public void WriteAllText(string path, string content)
         {
             if (Interlocked.Increment(ref _writes) == 2)
-                throw new IOException("rollback write failed");
+                throw new IOException("trust-marker write failed");
             _inner.WriteAllText(path, content);
         }
         public void CreateDirectory(string path) => _inner.CreateDirectory(path);
@@ -955,17 +1024,6 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
         public void CopyFile(string source, string destination, bool overwrite) =>
             _inner.CopyFile(source, destination, overwrite);
         public void DeleteFile(string path) => _inner.DeleteFile(path);
-    }
-
-    private sealed class FailingWriteFileSystem : IFileSystem
-    {
-        public bool FileExists(string path) => false;
-        public string ReadAllText(string path) => throw new NotSupportedException();
-        public void WriteAllText(string path, string content) => throw new IOException("write failed");
-        public void CreateDirectory(string path) { }
-        public bool DirectoryExists(string path) => true;
-        public void CopyFile(string source, string destination, bool overwrite) => throw new NotSupportedException();
-        public void DeleteFile(string path) { }
     }
 
     private sealed class FakeLiveVerifier : IGatewayTailscaleAuthLiveVerifier
@@ -976,6 +1034,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
 
         public int Calls { get; private set; }
         public int? LastGatewayPort { get; private set; }
+        public Action? AfterVerify { get; init; }
 
         public Task<GatewayTailscaleAuthLiveState> VerifyAsync(
             GatewayRecord record,
@@ -986,6 +1045,7 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
             LastGatewayPort = gatewayPort;
             cancellationToken.ThrowIfCancellationRequested();
             var result = _results.Count > 1 ? _results.Dequeue() : _results.Peek();
+            AfterVerify?.Invoke();
             return result switch
             {
                 GatewayTailscaleAuthLiveState state => Task.FromResult(state),
@@ -993,5 +1053,33 @@ public sealed class GatewayTailscaleAuthUpgradeTests : IDisposable
                 _ => throw new InvalidOperationException("Unsupported fake live-verifier result."),
             };
         }
+    }
+
+    private sealed class BackgroundServeCommandRunner : IWslCommandRunner
+    {
+        public Task<WslCommandResult> RunAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken = default,
+            IReadOnlyDictionary<string, string>? environment = null)
+        {
+            Assert.Equal(["-d", "OpenClawGateway", "--user", "root", "--"], arguments.Take(5));
+            return Task.FromResult(new WslCommandResult(0, arguments.Contains("serve")
+                ? """{"Web":{"openclaw-host.tail1234.ts.net:443":{"Handlers":{"/":{"Proxy":"http://127.0.0.1:18789"}}}}}"""
+                : """{"BackendState":"Running","Self":{"DNSName":"openclaw-host.tail1234.ts.net."}}""", ""));
+        }
+
+        public Task<WslCommandResult> RunInDistroAsync(
+            string name, IReadOnlyList<string> command, CancellationToken cancellationToken = default,
+            IReadOnlyDictionary<string, string>? environment = null, string? standardInput = null) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<WslDistroInfo>> ListDistrosAsync(
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<WslCommandResult> TerminateDistroAsync(
+            string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<WslCommandResult> UnregisterDistroAsync(
+            string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 }

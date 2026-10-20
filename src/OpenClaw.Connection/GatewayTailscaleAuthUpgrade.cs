@@ -17,6 +17,8 @@ public enum GatewayTailscaleAuthUpgradeOutcome
     ConfigUnavailable,
     PatchRejected,
     PersistenceFailed,
+    UnsupportedTopology,
+    IngressNotReady,
 }
 
 public sealed record GatewayTailscaleAuthUpgradeResult(
@@ -411,52 +413,37 @@ internal sealed class GatewayTailscaleAuthUpgradeService
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (!UsesManagedTailscaleServe(snapshot.Root))
+            return new(GatewayTailscaleAuthUpgradeOutcome.UnsupportedTopology);
+
+        if (_liveVerifier is null || !TryGetGatewayPort(snapshot.Root, out var gatewayPort))
+            return new(GatewayTailscaleAuthUpgradeOutcome.IngressNotReady);
+
+        try
+        {
+            if (await _liveVerifier.VerifyAsync(record!, gatewayPort, cancellationToken).ConfigureAwait(false) !=
+                GatewayTailscaleAuthLiveState.Ready)
+            {
+                return new(GatewayTailscaleAuthUpgradeOutcome.IngressNotReady);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new(GatewayTailscaleAuthUpgradeOutcome.IngressNotReady, ex.Message);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (record!.TrustTailscaleAuth && snapshot.IsApplied && AllowsTailscaleAuth(snapshot.Root))
             return new(GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled);
 
         if (string.IsNullOrWhiteSpace(snapshot.BaseHash))
         {
             return new(GatewayTailscaleAuthUpgradeOutcome.ConfigUnavailable, "Config base hash is unavailable.");
-        }
-
-        var previousValue = false;
-        var changed = false;
-        if (!record.TrustTailscaleAuth)
-        {
-            _registry.Update(gatewayId, current =>
-            {
-                if (!GatewayTailscaleAuthUpgradePolicy.CanOffer(current))
-                    return current;
-
-                previousValue = current.TrustTailscaleAuth;
-                changed = true;
-                return current with { TrustTailscaleAuth = true };
-            });
-
-            if (!changed)
-                return new(GatewayTailscaleAuthUpgradeOutcome.NotActive);
-
-            try
-            {
-                _registry.Save();
-            }
-            catch (Exception ex)
-            {
-                _registry.Update(gatewayId, current => current with { TrustTailscaleAuth = previousValue });
-                return new(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, ex.Message);
-            }
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            var rollback = RollBackMarkerAfterRejectedPatch(
-                gatewayId,
-                changed,
-                previousValue,
-                patchError: null);
-            if (rollback.Outcome == GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed)
-                return rollback;
-            cancellationToken.ThrowIfCancellationRequested();
         }
 
         // Core beta.7 and current main define config.patch as JSON Merge Patch.
@@ -475,21 +462,12 @@ internal sealed class GatewayTailscaleAuthUpgradeService
         {
             // Dispatch cannot be canceled at the client boundary. Observe its bounded
             // result before returning so callers never proceed beside an in-flight
-            // mutation. Roll back only a definitive gateway rejection; otherwise the
-            // marker remains for the next trust-aware live revalidation.
+            // mutation. Cancellation does not issue new trust, even if Core accepted
+            // the patch. A later explicit retry safely repeats the idempotent leaf.
             try
             {
-                var completedPatch = await patchTask!.ConfigureAwait(false);
-                if (!completedPatch.Ok && completedPatch.IsGatewayRejection)
-                {
-                    var rollback = RollBackMarkerAfterRejectedPatch(
-                        gatewayId,
-                        changed,
-                        previousValue,
-                        completedPatch.Error);
-                    if (rollback.Outcome == GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed)
-                        return rollback;
-                }
+                if (patchTask is not null)
+                    await patchTask.ConfigureAwait(false);
             }
             catch
             {
@@ -499,21 +477,43 @@ internal sealed class GatewayTailscaleAuthUpgradeService
         }
         catch (Exception ex)
         {
-            // The response can be lost after Core commits the patch. Keep the marker so
-            // the next trust-aware launch revalidates the authoritative Core state.
+            // An unknown result must not hide a new opt-in's retry. Existing trust
+            // remains intact; only authoritative applied config can revoke it.
             return new(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, ex.Message);
         }
 
-        if (!patch.Ok && patch.IsGatewayRejection)
-            return RollBackMarkerAfterRejectedPatch(gatewayId, changed, previousValue, patch.Error);
-
+        cancellationToken.ThrowIfCancellationRequested();
         if (!patch.Ok)
-        {
-            // The request may have committed before its response was lost. Preserve
-            // the marker so the next trust-aware launch revalidates Core state.
             return new(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, patch.Error);
+
+        if (!record.TrustTailscaleAuth)
+        {
+            var changed = false;
+            _registry.Update(gatewayId, current =>
+            {
+                if (!GatewayTailscaleAuthUpgradePolicy.CanOffer(current))
+                    return current;
+
+                changed = true;
+                return current with { TrustTailscaleAuth = true };
+            });
+
+            if (!changed)
+                return new(GatewayTailscaleAuthUpgradeOutcome.NotActive);
+
+            try
+            {
+                _registry.Save();
+            }
+            catch (Exception ex)
+            {
+                _registry.Update(gatewayId, current => current with { TrustTailscaleAuth = false });
+                return new(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, ex.Message);
+            }
         }
 
+        // Acceptance is not evidence of asynchronous Core apply or continued ingress
+        // readiness. Dashboard-link creation still performs its live revalidation.
         return new(GatewayTailscaleAuthUpgradeOutcome.Succeeded);
     }
 
@@ -640,28 +640,15 @@ internal sealed class GatewayTailscaleAuthUpgradeService
         return document.RootElement.Clone();
     }
 
-    private GatewayTailscaleAuthUpgradeResult RollBackMarkerAfterRejectedPatch(
-        string gatewayId,
-        bool changed,
-        bool previousValue,
-        string? patchError)
-    {
-        if (!changed)
-            return new(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, patchError);
-
-        _registry.Update(gatewayId, current => current with { TrustTailscaleAuth = previousValue });
-        try
-        {
-            _registry.Save();
-            return new(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, patchError);
-        }
-        catch (Exception ex)
-        {
-            return new(
-                GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed,
-                $"Local Tailscale trust-marker rollback failed: {ex.Message}");
-        }
-    }
+    private static bool UsesManagedTailscaleServe(JsonElement config) =>
+        config.ValueKind == JsonValueKind.Object &&
+        config.TryGetProperty("gateway", out var gateway) &&
+        gateway.ValueKind == JsonValueKind.Object &&
+        gateway.TryGetProperty("tailscale", out var tailscale) &&
+        tailscale.ValueKind == JsonValueKind.Object &&
+        tailscale.TryGetProperty("mode", out var mode) &&
+        mode.ValueKind == JsonValueKind.String &&
+        string.Equals(mode.GetString(), "serve", StringComparison.Ordinal);
 
     // A true marker is issued only after this service or setup explicitly writes
     // allowTailscale=true. Omission therefore means that grant drifted or was revoked;

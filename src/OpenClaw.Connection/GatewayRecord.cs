@@ -34,8 +34,8 @@ public sealed record GatewayRecord
     public string? SetupManagedDistroName { get; init; }
 
     /// <summary>
-    /// True when setup or an explicit upgrade granted this managed gateway's
-    /// Dashboard access to verified Tailscale identity authentication.
+    /// Explicit setup consent or a confirmed, accepted auth upgrade for this managed
+    /// gateway. Dashboard access still requires applied config and live ingress verification.
     /// </summary>
     public bool TrustTailscaleAuth { get; init; }
 

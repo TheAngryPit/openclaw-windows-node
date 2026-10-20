@@ -107,6 +107,7 @@ public sealed class GatewayDashboardLinkServiceTests
         var service = CreateService((_, _) => Task.FromResult(false));
 
         var result = await service.BuildAsync(Request(
+            browserCredential: "bootstrap-do-not-export",
             appendBrowserCredential: false,
             tailscaleGatewayId: null));
 
@@ -114,6 +115,45 @@ public sealed class GatewayDashboardLinkServiceTests
         Assert.False(result.BrowserCredentialIncluded);
         Assert.NotNull(result.Url);
         Assert.DoesNotContain("token=", result.Url);
+    }
+
+    [Theory]
+    [InlineData("shared", true, "record.SharedGatewayToken", false)]
+    [InlineData("shared", false, "record.SharedGatewayToken", true)]
+    [InlineData("bootstrap", false, "record.BootstrapToken", false)]
+    public async Task BuildAsync_ResolvedCredentialProvenanceDoesNotImplyBrowserInclusion(
+        string credentialKind, bool identityReady, string expectedSource, bool expectedInclusion)
+    {
+        using var data = new TempDirectory();
+        var registry = new GatewayRegistry(data.Path);
+        var record = new GatewayRecord
+        {
+            Id = "gateway-1",
+            Url = "wss://host.tail1234.ts.net",
+            SharedGatewayToken = credentialKind == "shared" ? "shared-token" : null,
+            BootstrapToken = credentialKind == "bootstrap" ? "bootstrap-do-not-export" : null,
+            TrustTailscaleAuth = credentialKind == "shared",
+        };
+        registry.AddOrUpdate(record);
+        registry.SetActive(record.Id);
+        Assert.True(InteractiveGatewayCredentialResolver.TryResolve(
+            registry, data.Path, DeviceIdentityFileReader.Instance, record.Url, null, null, out var credential));
+        Assert.NotNull(credential);
+        Assert.Equal(expectedSource, credential.Source);
+        var service = CreateService((_, _) => Task.FromResult(identityReady));
+
+        var result = await service.BuildAsync(new GatewayDashboardLinkRequest(
+            credential.GatewayUrl, null, credential.Token,
+            !credential.IsBootstrapToken && credential.Source == CredentialResolver.SourceSharedGatewayToken,
+            record.TrustTailscaleAuth ? record.Id : null));
+
+        Assert.True(result.Success);
+        Assert.Equal(identityReady, result.TrustTailscaleAuth);
+        Assert.Equal(expectedInclusion, result.BrowserCredentialIncluded);
+        Assert.Equal(expectedInclusion
+            ? "https://host.tail1234.ts.net#token=shared-token"
+            : "https://host.tail1234.ts.net", result.Url);
+        Assert.DoesNotContain("bootstrap-do-not-export", result.Url);
     }
 
     [Fact]

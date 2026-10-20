@@ -141,6 +141,8 @@ internal sealed record ConnectionPagePlan
         GatewayTailscaleAuthUpgradeOutcome.ConfigUnavailable => "ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable",
         GatewayTailscaleAuthUpgradeOutcome.PatchRejected => "ConnectionPage_TailscaleDashboardAuthFailurePatchRejected",
         GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed => "ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed",
+        GatewayTailscaleAuthUpgradeOutcome.UnsupportedTopology => "ConnectionPage_TailscaleDashboardAuthFailureUnsupportedTopology",
+        GatewayTailscaleAuthUpgradeOutcome.IngressNotReady => "ConnectionPage_TailscaleDashboardAuthFailureIngressNotReady",
         _ => "ConnectionPage_TailscaleDashboardAuthFailureGeneric",
     };
 

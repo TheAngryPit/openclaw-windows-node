@@ -27,6 +27,9 @@ public sealed class ConnectionPageTailscaleRecoveryTests
         Assert.Contains("ConnectionPagePlan.TailscaleAuthFailureMessageResourceKey(result.Outcome)", method);
         Assert.DoesNotContain("result.Error", method);
         Assert.DoesNotContain("result.Outcome.ToString()", method);
+        Assert.Contains("result.Outcome == GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled", method);
+        Assert.Contains("? \"ConnectionPage_TailscaleDashboardAuthEnabled\"", method);
+        Assert.Contains(": \"ConnectionPage_TailscaleDashboardAuthAccepted\"", method);
     }
 
     [Theory]
@@ -37,11 +40,33 @@ public sealed class ConnectionPageTailscaleRecoveryTests
     [InlineData(GatewayTailscaleAuthUpgradeOutcome.ConfigUnavailable, "ConnectionPage_TailscaleDashboardAuthFailureConfigUnavailable")]
     [InlineData(GatewayTailscaleAuthUpgradeOutcome.PatchRejected, "ConnectionPage_TailscaleDashboardAuthFailurePatchRejected")]
     [InlineData(GatewayTailscaleAuthUpgradeOutcome.PersistenceFailed, "ConnectionPage_TailscaleDashboardAuthFailurePersistenceFailed")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.UnsupportedTopology, "ConnectionPage_TailscaleDashboardAuthFailureUnsupportedTopology")]
+    [InlineData(GatewayTailscaleAuthUpgradeOutcome.IngressNotReady, "ConnectionPage_TailscaleDashboardAuthFailureIngressNotReady")]
     [InlineData(GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled, "ConnectionPage_TailscaleDashboardAuthFailureGeneric")]
     public void TailscaleDashboardAuthFailure_MapsOutcomeToLocalizedRecoveryMessage(
         GatewayTailscaleAuthUpgradeOutcome outcome,
         string expectedResourceKey) =>
         Assert.Equal(expectedResourceKey, ConnectionPagePlan.TailscaleAuthFailureMessageResourceKey(outcome));
+
+    [Fact]
+    public void EnableDashboardAuth_UsesLiveVerifierAndOfferPolicyWithoutPageOwnedMutation()
+    {
+        var root = TestRepositoryPaths.GetRepositoryRoot();
+        var manager = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Connection", "GatewayConnectionManager.cs"));
+        var start = manager.IndexOf("public async Task<GatewayTailscaleAuthUpgradeResult> EnableTailscaleDashboardAuthAsync(", StringComparison.Ordinal);
+        var end = manager.IndexOf("public async Task<bool> RevalidateTailscaleDashboardAuthAsync(", start, StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        var enable = manager[start..end];
+        Assert.Contains("new GatewayTailscaleAuthUpgradeService(\n", enable.Replace("\r", ""));
+        Assert.Contains("_tailscaleAuthLiveVerifier);", enable);
+        Assert.Contains("_transitionSemaphore.WaitAsync(cancellationToken)", enable);
+        Assert.Contains("_transitionSemaphore.Release();", enable);
+
+        var page = File.ReadAllText(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Pages", "ConnectionPage.xaml.cs"));
+        Assert.Contains("row.IsActive && GatewayTailscaleAuthUpgradePolicy.CanOffer(gatewayRecord)", page);
+        Assert.Contains("enableTailscaleAuth.Click += OnEnableTailscaleDashboardAuth;", page);
+        Assert.DoesNotContain("TrustTailscaleAuth = true", page);
+    }
 
     [Fact]
     public void SavedDashboardLaunch_DelegatesToSharedDashboardLinkService()

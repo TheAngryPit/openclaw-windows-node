@@ -239,7 +239,9 @@ public sealed class GatewayConnectionManager :
             }
             else
             {
-                var service = new GatewayTailscaleAuthUpgradeService(_registry);
+                var service = new GatewayTailscaleAuthUpgradeService(
+                    _registry,
+                    _tailscaleAuthLiveVerifier);
                 result = await service.EnableAsync(
                         gatewayId,
                         new GatewayTailscaleAuthConfigClientAdapter(client),

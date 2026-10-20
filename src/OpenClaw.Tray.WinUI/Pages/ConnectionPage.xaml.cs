@@ -2660,7 +2660,10 @@ public sealed partial class ConnectionPage : Page
         var result = await _connectionManager.EnableTailscaleDashboardAuthAsync(gatewayId);
         if (result.IsSuccess)
         {
-            SetGatewayHostActionStatus(LocalizationHelper.GetString("ConnectionPage_TailscaleDashboardAuthEnabled"));
+            var successKey = result.Outcome == GatewayTailscaleAuthUpgradeOutcome.AlreadyEnabled
+                ? "ConnectionPage_TailscaleDashboardAuthEnabled"
+                : "ConnectionPage_TailscaleDashboardAuthAccepted";
+            SetGatewayHostActionStatus(LocalizationHelper.GetString(successKey));
             LoadSavedGateways();
             return;
         }
