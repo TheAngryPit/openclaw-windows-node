@@ -46,6 +46,17 @@ fields, returns a server-assigned ID, and exposes it through subsequent
 remain rejected. The test verifies the refreshed selector while retaining the
 existing session and unsent draft. Normal interactive browse runs remain read-only.
 
+The opt-in `session-mutations` scenario accepts in-memory `sessions.patch`,
+`sessions.delete`, and parallel `sessions.create` requests. Creation uses a known
+parent, returns a distinct server-assigned key/session ID, and exposes the empty
+conversation through session-list and history reads without replacing its parent.
+The response gate can hold creation while the UI navigates elsewhere. Composer
+`/new` tests use this path to check initial Home -> new conversation -> Back/Forward
+and delayed completion on Notifications. A newer page navigation fences the
+pending selection: returning Home retains the original conversation, while the
+created session remains available for explicit sidebar selection. No provider, transcript file, or real
+Gateway is involved; other mutations and unsupported creation parameters still fail.
+
 The host is `tests\OpenClaw.GatewayFixtureHost`, a plain .NET console app, not a
 test container. The request-driven server and scenario live in
 `tests\OpenClaw.TestSupport\Gateway`. Repeated reads and different request
@@ -104,6 +115,18 @@ call cannot prevent failure reporting and owned-process cleanup.
 
 Inspect the captured PNGs when claiming visual proof. UI Automation alone does
 not detect every overlap, clipping or theme defect.
+
+`HistoricalFractionalVoiceConversationRendersWithoutLoadingPlaceholder` uses
+the opt-in `GatewayScenario.CreateFractionalVoiceHistory()` scenario. It adds
+30 synthetic historical messages, including 18 fractional-millisecond Talk
+rows with realtime voice provenance, block-array user text and no usage fields.
+The real Gateway client protocol test checks every message's content, ID,
+sequence and truncated timestamp. The native UI test checks all 30 projected
+texts, visible final voice content, no loading placeholder, and switching to an
+integer-timestamp typed control and back. Screenshots and the synthetic MCP
+snapshot are retained with the run artifacts. This proves stored-history
+compatibility, not microphone capture, live voice streaming or real Gateway
+pairing, and does not use the reporter's private sessions.
 
 ## Cron editor proof
 

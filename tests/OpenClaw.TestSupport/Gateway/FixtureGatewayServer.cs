@@ -468,7 +468,8 @@ public sealed class FixtureGatewayServer : IAsyncDisposable
                     }
 
                     var parameters = root.TryGetProperty("params", out var p) ? p : EmptyParameters;
-                    var key = ReadString(parameters, "sessionKey") ?? ReadString(parameters, "key");
+                    var key = ReadString(parameters, "sessionKey") ?? ReadString(parameters, "key")
+                        ?? ReadString(parameters, "parentSessionKey");
                     var requestIndex = Record(
                         method!,
                         (_scenario.ContainsSession(key ?? "") || Interactive?.ContainsSession(key ?? "") == true) ? key : key is null ? null : "<unknown>",
@@ -512,7 +513,7 @@ public sealed class FixtureGatewayServer : IAsyncDisposable
                     Task? gate;
                     lock (_sync)
                     {
-                        gate = method is "sessions.patch" or "sessions.delete"
+                        gate = method is "sessions.patch" or "sessions.delete" or "sessions.create"
                             ? _sessionMutationGate?.Task
                             : method == "chat.send"
                                 ? _chatSendGate?.Task
