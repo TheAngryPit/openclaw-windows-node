@@ -4,6 +4,20 @@ namespace OpenClaw.Shared.Tests;
 
 public sealed class AssistantMediaDirectiveParserTests
 {
+    [Theory]
+    [InlineData("/fixture/first/same-name.png", true)]
+    [InlineData("/fixture/second/same-name.png", false)]
+    public void MediaContentEquality_PreservesPrivateLegacyIdentity(string source, bool equal)
+    {
+        var first = Assert.Single(AssistantMediaDirectiveParser.Project(
+            "assistant", "MEDIA:/fixture/first/same-name.png").ContentParts).Media!;
+        var second = Assert.Single(AssistantMediaDirectiveParser.Project(
+            "assistant", $"MEDIA:{source}").ContentParts).Media!;
+        Assert.NotSame(first, second);
+        Assert.Equal(first.FileName, second.FileName);
+        Assert.Equal(equal, first.HasSameContent(second));
+    }
+
     [Fact]
     public void Project_AssistantAbsolutePath_ProducesMediaWithoutExposingPath()
     {
