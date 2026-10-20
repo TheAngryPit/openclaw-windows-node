@@ -554,7 +554,7 @@ public partial class OpenClawGatewayClient
     /// </summary>
     public async Task<SessionListResult> ListArchivedSessionsAsync(int timeoutMs = 15000)
     {
-        var payload = await TryRequestPayloadAsync("sessions.list", new { archived = true }, timeoutMs).ConfigureAwait(false);
+        var payload = await TryRequestPayloadAsync("sessions.list", new { archived = true, includeDerivedTitles = true }, timeoutMs).ConfigureAwait(false);
         if (payload is null) return new SessionListResult { IsSupported = false };
         return new SessionListResult { Sessions = ParseDetachedSessionRows(payload.Value) };
     }

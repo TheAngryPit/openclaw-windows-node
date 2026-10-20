@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 
 namespace OpenClawTray.Services;
 
-/// <summary>Owns browser launch outcomes while the link service owns Dashboard URL/auth policy.</summary>
 internal sealed class GatewayDashboardLauncher(
     Func<bool> ensureTunnel,
     Func<string?, GatewayDashboardLinkRequest?> resolveRequest,

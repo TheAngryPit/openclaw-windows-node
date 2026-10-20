@@ -40,7 +40,6 @@ public static class GatewayTailscaleAuthUpgradePolicy
             return false;
         }
 
-        // Topology only limits where the opt-in is offered; confirmation and a successful Core patch grant trust.
         return GatewayTopologyClassifier.Classify(record.Url, useSshTunnel: false).DetectedKind ==
             GatewayKind.Tailscale;
     }
@@ -663,9 +662,8 @@ internal sealed class GatewayTailscaleAuthUpgradeService
         }
     }
 
-    // A true marker is issued only after this service or setup explicitly writes
-    // allowTailscale=true. Omission therefore means that grant drifted or was revoked;
-    // do not duplicate Core's environment-sensitive implicit auth resolver here.
+    // Revalidation requires Core's explicit allowTailscale=true grant; omission is drift or revocation,
+    // not permission to infer Core's environment-sensitive default.
     private static bool AllowsTailscaleAuth(JsonElement config) =>
         config.ValueKind == JsonValueKind.Object &&
         config.TryGetProperty("gateway", out var gateway) &&
