@@ -828,11 +828,13 @@ public sealed class GatewayTailscaleAuthLiveVerifierTests
             var root = _root.Replace('\\', '/');
             if (OperatingSystem.IsWindows())
                 root = "/" + char.ToLowerInvariant(root[0]) + root[2..];
+            // Synthetic file reads do not need repeated MSYS process launches.
+            // Keep the real verifier deadline and ownership assertions unchanged.
             var fixtureScript = "fixture_proc='" + root.Replace("'", "'\\''") + "'\n" +
                 "fixture_systemctl() { printf 101; }\n" +
-                "fixture_ss() { /usr/bin/cat \"$fixture_proc/listeners\"; }\n" +
+                "fixture_ss() { test -r \"$fixture_proc/listeners\" || return 1; printf '%s\\n' \"$(< \"$fixture_proc/listeners\")\"; }\n" +
                 "fixture_privileged=" + (privilegedInspection ? "yes" : "no") + "\n" +
-                "fixture_readlink() { if test -f \"$fixture_proc/privileged\" && test \"$fixture_privileged\" != yes; then case \"$1\" in */103/exe|*/104/exe) return 1;; esac; fi; /usr/bin/cat \"$1\"; }\n" +
+                "fixture_readlink() { if test -f \"$fixture_proc/privileged\" && test \"$fixture_privileged\" != yes; then case \"$1\" in */103/exe|*/104/exe) return 1;; esac; fi; test -r \"$1\" || return 1; printf '%s' \"$(< \"$1\")\"; }\n" +
                 script.Replace("for proc in /proc/[0-9]*; do", "for proc in \"$fixture_proc\"/[0-9]*; do", StringComparison.Ordinal)
                     .Replace("/proc/", "$fixture_proc/", StringComparison.Ordinal)
                     .Replace("/usr/bin/systemctl", "fixture_systemctl", StringComparison.Ordinal)
