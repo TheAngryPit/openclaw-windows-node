@@ -173,7 +173,7 @@ public sealed partial class GatewayFixtureProtocolTests
         await server.NotifySessionsChangedAsync(deadline.Token);
         await refreshed.Task.WaitAsync(deadline.Token);
         await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendChatMessageForRunAsync(ContextUsageFixture.SecondPrompt, ContextUsageFixture.SessionKey));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => client.SendWizardRequestAsync("sessions.reset", new { key = ContextUsageFixture.SessionKey }));
+        await Assert.ThrowsAsync<GatewayRequestRejectedException>(() => client.SendWizardRequestAsync("sessions.reset", new { key = ContextUsageFixture.SessionKey }));
         Assert.Empty(server.UnexpectedRequests);
 
         static JsonElement UsageRow(JsonElement listing) => listing.GetProperty("sessions").EnumerateArray()
