@@ -19,9 +19,6 @@ public sealed record GatewayDashboardLinkResult(
     public bool Success => Url is not null && Error is null;
 }
 
-/// <summary>
-/// Owns dashboard-link authentication policy while callers retain UI and MCP side effects.
-/// </summary>
 public sealed class GatewayDashboardLinkService
 {
     internal const string NoBrowserCompatibleCredentialKey =
@@ -78,8 +75,6 @@ public sealed class GatewayDashboardLinkService
                 RevalidationError: revalidationError);
         }
 
-        // The emitted link can carry a shared token already embedded in its endpoint fragment.
-        // Keep saved-link authorization aligned with the URL, not just the append request.
         var browserCredentialIncluded = !trustTailscaleAuth &&
             ((request.AppendBrowserCredential && !string.IsNullOrEmpty(request.BrowserCredential)) ||
              GatewayDashboardUrlBuilder.HasSharedTokenFragment(request.GatewayUrl));
