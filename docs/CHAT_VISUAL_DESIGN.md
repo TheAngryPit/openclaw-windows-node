@@ -231,6 +231,15 @@ There is no composer overflow menu. Voice preferences remain available in
 Settings > Voice, where "Read responses aloud" controls the same shared
 speaker mute state. Native focus, hover and disabled states remain.
 
+The context-usage footer shows the latest assistant request measurement, not
+the sum of overlapping requests. Newer session snapshots may lower that value,
+including after compaction, but require an explicit positive total. A missing
+total does not make input/output billing counters authoritative because they
+may omit cached context. Cached seeding retains its existing fallback behavior.
+Undated duplicates preserve the known measurement timestamp only when their
+effective usage fields are unchanged, so matching older history cannot rewind
+the footer. Changed undated usage does not inherit a measurement timestamp.
+
 The compact effort gauge is an explicitly requested exception to the font-icon
 convention: `ChatEffortGauge` renders the published web SVG geometry with native
 WinUI paths and an ellipse, not a font approximation or WebView. It preserves the
@@ -269,6 +278,13 @@ replace their navigation algorithm.
 Pending attachments use a bounded horizontal rail with 56-pixel chips, 32-pixel
 removal targets and room for focus visuals instead of growing the composer for
 every file. Video-specific previews are not invented by the native file rail.
+
+On history reload, message-wide structured user attachments appear on the first
+nonempty text part only, not again on later text parts from that same message.
+A textual media envelope retains precedence and prevents a later structured
+fallback from repeating its chips. Matching cached captions preserve internal
+line breaks and restore local filenames; already-flattened legacy captions
+fall back to Gateway filenames. Reloaded descriptors do not restore image bytes.
 
 The model flyout searches and groups only the existing catalog. Provider,
 context and availability descriptions use `ChatModelLabels`. Provider headings
