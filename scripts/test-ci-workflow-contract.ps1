@@ -606,16 +606,19 @@ $e2eLanes = [ordered]@{
     "setup-e2e" = @{
         Output = "setup_e2e"
         Name = "setup-connect"
+        Step = "Run setup and connect E2E tests"
         Filter = "OpenClaw.E2ETests.Setup.SetupAndConnectTests"
     }
     "revocation-e2e" = @{
         Output = "revocation_e2e"
         Name = "revocation-recovery"
+        Step = "Run revocation recovery E2E tests"
         Filter = "OpenClaw.E2ETests.Setup.RevocationAndRecoveryTests"
     }
     "network-e2e" = @{
         Output = "network_e2e"
         Name = "network-recovery"
+        Step = "Run network recovery E2E tests"
         Filter = "OpenClaw.E2ETests.Setup.NetworkRecoveryTests"
     }
 }
@@ -640,6 +643,14 @@ foreach ($lane in $e2eLanes.GetEnumerator()) {
             -Message "E2E lane '$($lane.Key)' is missing '$token'."
     }
     $jobHeader = ($job -split '(?m)^    steps:\s*$', 2)[0]
+    Assert-Contains -Text $jobHeader -Expected 'timeout-minutes: 25' `
+        -Message "E2E lane '$($lane.Key)' must leave a stalled job bounded to 25 minutes."
+    $testStep = Get-StepBlock -Text $job -Name $lane.Value.Step
+    Assert-Contains -Text $testStep -Expected 'timeout-minutes: 20' `
+        -Message "E2E lane '$($lane.Key)' must stop stalled tests before the job deadline."
+    $uploadStep = Get-StepBlock -Text $job -Name 'Upload E2E Test Results & Logs'
+    Assert-Contains -Text $uploadStep -Expected 'if: always()' `
+        -Message "E2E lane '$($lane.Key)' must upload diagnostics after a test timeout."
     Assert-NotContains -Text $jobHeader -Unexpected 'continue-on-error:' `
         -Message "WSL Latest must be required in '$($lane.Key)'."
     Assert-NotContains -Text $jobHeader -Unexpected 'strategy:' `
@@ -1134,6 +1145,74 @@ try {
     if ($pushDecision -ne "true") {
         throw "Push and tag workflow runs must run the proof-pool regression."
     }
+
+    $e2eHarness = Join-Path $tempRoot 'e2e-runner-harness.ps1'
+    Set-Content -LiteralPath $e2eHarness -Value @'
+param([string]$Runner, [string]$Root, [int]$Timeout, [int]$TestExit, [string]$Name, [switch]$Override)
+$ErrorActionPreference = 'Stop'
+Set-Location $Root
+function global:dotnet {
+    Set-Content -LiteralPath 'dotnet-called.txt' -Value 'called'
+    $values = @($args)
+    foreach ($flag in @('--blame-hang', '--blame-hang-timeout', '--blame-hang-dump-type')) {
+        if ($flag -notin $values) { throw "Missing E2E hang protection: $flag" }
+    }
+    foreach ($pair in @(
+        @('--blame-hang-timeout', "${Timeout}s"),
+        @('--blame-hang-dump-type', 'none'),
+        @('--filter', 'Sentinel.Filter'))) {
+        $index = [Array]::IndexOf($values, $pair[0])
+        if ($index -lt 0 -or $values[$index + 1] -cne $pair[1]) {
+            throw "Unexpected E2E argument: $($pair[0])"
+        }
+    }
+    if ($TestExit -eq 0) {
+        $directory = $values[[Array]::IndexOf($values, '--results-directory') + 1]
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+        $logger = @($values | Where-Object { $_ -like 'trx;LogFileName=*' })[0]
+        $report = Join-Path $directory $logger.Substring('trx;LogFileName='.Length)
+        Set-Content -LiteralPath $report -Value '<TestRun><ResultSummary><Counters executed="1" /></ResultSummary><Results><UnitTestResult testName="Sentinel" outcome="Passed" /></Results></TestRun>'
+    }
+    $global:LASTEXITCODE = $TestExit
+}
+$parameters = @{ Name = $Name; Filter = 'Sentinel.Filter' }
+if ($Override) { $parameters.HangTimeoutSeconds = $Timeout }
+& $Runner @parameters
+exit $LASTEXITCODE
+'@
+    $shell = (Get-Process -Id $PID).Path
+    $e2eRunnerCases = @(
+        @{ Id = 'default'; Timeout = 600; TestExit = 0; ExpectedExit = 0 },
+        @{ Id = 'override'; Timeout = 2; TestExit = 0; ExpectedExit = 0; Override = $true },
+        @{ Id = 'invalid'; Timeout = 0; TestExit = 0; ExpectedExit = 1; Override = $true },
+        @{ Id = 'failed'; Timeout = 600; TestExit = 9; ExpectedExit = 9 },
+        @{ Id = 'missing-proof'; Timeout = 600; TestExit = 0; ExpectedExit = 1; Name = 'setup-connect' }
+    )
+    foreach ($case in $e2eRunnerCases) {
+        $caseRoot = Join-Path $tempRoot "e2e-runner/$($case.Id)"
+        New-Item -ItemType Directory -Path $caseRoot -Force | Out-Null
+        $caseArguments = @('-Runner', $e2eRunnerPath, '-Root', $caseRoot, '-Timeout', $case.Timeout,
+            '-TestExit', $case.TestExit, '-Name', $(if ($case.ContainsKey('Name')) { $case.Name } else { 'network-recovery' }))
+        if ($case.ContainsKey('Override')) { $caseArguments += '-Override' }
+        $previousPreference = $ErrorActionPreference
+        try {
+            $ErrorActionPreference = 'Continue'
+            $output = & $shell -NoProfile -File $e2eHarness @caseArguments 2>&1
+            $exit = $LASTEXITCODE
+        } finally { $ErrorActionPreference = $previousPreference }
+        if ($exit -ne $case.ExpectedExit) {
+            throw "E2E runner case '$($case.Id)' expected exit $($case.ExpectedExit), got ${exit}: $output"
+        }
+        if ($case.Id -eq 'invalid' -and (Test-Path (Join-Path $caseRoot 'dotnet-called.txt'))) {
+            throw 'An invalid hang timeout must be rejected before starting tests.'
+        }
+        if ($case.Id -eq 'missing-proof' -and ($output -join "`n") -notmatch 'did not report the MXC proof') {
+            throw "E2E hang protection must preserve required proof assertions: $output"
+        }
+    }
+    Write-Host "E2E runner hang-guard contracts passed: $($e2eRunnerCases.Count) cases."
+    # Expected child failures must not become the GitHub Actions step exit code.
+    $global:LASTEXITCODE = 0
 
     $baselineCases = @(
         @{ Name = 'valid'; Version = '2026.9.9'; Json = '{"version":"2026.9.9"}'; Succeeds = $true },

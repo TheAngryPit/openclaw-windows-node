@@ -823,7 +823,7 @@ internal static class OnboardingNativeProof
             }, new JsonSerializerOptions { WriteIndented = true }));
             phase = "validate-missing-labels";
             foreach (var label in missing)
-                Assert.Contains(label, new[] { "Connect your AI", "Local AI on this PC" });
+                Assert.Contains(label, new[] { "Set up your AI", "Set up a local model" });
             return new(original.Text, result.Text, factor, decoder.PixelWidth, decoder.PixelHeight,
                 transform.ScaledWidth, transform.ScaledHeight, missing);
         }

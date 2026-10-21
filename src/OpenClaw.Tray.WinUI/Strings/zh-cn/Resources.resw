@@ -7227,7 +7227,7 @@
   <data name="ChatDashboardButton.Content" xml:space="preserve"><value>Dashboard</value></data>
   <data name="ChatDashboardHint.Text" xml:space="preserve"><value>频道、集成和网关设置</value></data>
   <data name="Onboarding_Flow_WelcomeDescription.Text" xml:space="preserve"><value>OpenClaw 是帮助你在电脑上完成任务的 AI 助手。</value></data>
-  <data name="Onboarding_AiSetup_Title.Text" xml:space="preserve"><value>连接你的 AI</value></data>
+  <data name="Onboarding_AiSetup_Title.Text" xml:space="preserve"><value>设置你的 AI</value></data>
   <data name="Onboarding_AiSetup_CatalogOptIn" xml:space="preserve"><value>发现现有提供商对话（可选）</value></data>
   <data name="Onboarding_AiSetup_Starting" xml:space="preserve"><value>正在启动提供商设置…</value></data>
   <data name="Onboarding_AiSetup_WorkingProvider" xml:space="preserve"><value>正在等待提供商…</value></data>
@@ -7273,7 +7273,7 @@
   <data name="Onboarding_AiSetup_LocalProgress_Verifying" xml:space="preserve"><value>正在通过 Gateway 测试所选模型的实际响应...</value></data>
   <data name="Onboarding_AiSetup_LocalProgress_Detecting" xml:space="preserve"><value>正在发现已配置的模型和 AI 提供商...</value></data>
   <data name="Onboarding_AiSetup_LocalProgress_Console" xml:space="preserve"><value>正在打开隔离 Gateway 的诊断控制台...</value></data>
-  <data name="Onboarding_AiSetup_Choose" xml:space="preserve"><value>选择模型或连接 AI 提供商。</value></data>
+  <data name="Onboarding_AiSetup_Choose" xml:space="preserve"><value>连接 AI 提供商或模型。</value></data>
   <data name="Onboarding_AiSetup_Running" xml:space="preserve"><value>按照提供商的步骤完成设置。</value></data>
   <data name="Onboarding_AiSetup_Verifying" xml:space="preserve"><value>模型已保存。正在验证当前 Gateway 连接。</value></data>
   <data name="Onboarding_AiSetup_Verified" xml:space="preserve"><value>AI 已就绪。正在打开 Chat...</value></data>
@@ -7465,14 +7465,19 @@
   <data name="Onboarding_V3_ProfileCustomTitle.Text" xml:space="preserve"><value>自定义</value></data>
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>保留当前选择，并在下方进行调整。</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>在此电脑上</value></data>
-  <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>此电脑上的本地 AI</value></data>
+  <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>本地 AI</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>在这台电脑上设置模型，或连接到 LM Studio 或 Ollama。</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>在这台电脑上运行，无需支付服务商按量使用费。我们会帮助你设置适合硬件的模型。</value></data>
+  <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>使用在线服务提供的 AI。</value></data>
+  <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>连接你已在 LM Studio 中使用的模型。</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>连接这台电脑或其他主机上的 Ollama，使用本地或云端模型。</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>托管的 Windows llama-server 使用此电脑的 GPU。这与 NVIDIA 的云端 API 不同。</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Gateway 上可用的模型</value></data>
-  <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>连接 AI 提供商</value></data>
+  <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>云端 AI</value></data>
   <data name="Onboarding_AiSetup_OtherLocal" xml:space="preserve"><value>设置本地模型</value></data>
   <data name="Onboarding_AiSetup_OtherLocalDetail" xml:space="preserve"><value>通过 Gateway 设置并使用模型。继续前请查看下载或权限请求。</value></data>
   <data name="Onboarding_AiSetup_UtilityNotice" xml:space="preserve"><value>Gateway 还提供设置或辅助任务模型。此页面仅连接主助手，因此不显示仅供辅助任务使用的选项。</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUp" xml:space="preserve"><value>设置本地 AI</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUp" xml:space="preserve"><value>设置</value></data>
   <data name="Onboarding_AiSetup_LocalStartAndUse" xml:space="preserve"><value>启动并使用</value></data>
   <data name="Onboarding_AiSetup_LocalUse" xml:space="preserve"><value>使用此模型</value></data>
   <data name="Onboarding_AiSetup_LocalRepair" xml:space="preserve"><value>修复本地 AI</value></data>

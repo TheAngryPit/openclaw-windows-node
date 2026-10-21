@@ -7228,7 +7228,7 @@ Controleer of de gateway actief is.</value>
   <data name="ChatDashboardButton.Content" xml:space="preserve"><value>Dashboard</value></data>
   <data name="ChatDashboardHint.Text" xml:space="preserve"><value>Kanalen, integraties en gateway-instellingen</value></data>
   <data name="Onboarding_Flow_WelcomeDescription.Text" xml:space="preserve"><value>OpenClaw is uw AI-assistent om dingen gedaan te krijgen op uw pc.</value></data>
-  <data name="Onboarding_AiSetup_Title.Text" xml:space="preserve"><value>Verbind je AI</value></data>
+  <data name="Onboarding_AiSetup_Title.Text" xml:space="preserve"><value>Stel je AI in</value></data>
   <data name="Onboarding_AiSetup_CatalogOptIn" xml:space="preserve"><value>Bestaande providergesprekken ontdekken (optioneel)</value></data>
   <data name="Onboarding_AiSetup_Starting" xml:space="preserve"><value>Provider instellen…</value></data>
   <data name="Onboarding_AiSetup_WorkingProvider" xml:space="preserve"><value>Wachten op je provider…</value></data>
@@ -7274,7 +7274,7 @@ Controleer of de gateway actief is.</value>
   <data name="Onboarding_AiSetup_LocalProgress_Verifying" xml:space="preserve"><value>Een echt antwoord van het geselecteerde model via je Gateway testen...</value></data>
   <data name="Onboarding_AiSetup_LocalProgress_Detecting" xml:space="preserve"><value>Geconfigureerde modellen en AI-providers zoeken...</value></data>
   <data name="Onboarding_AiSetup_LocalProgress_Console" xml:space="preserve"><value>De diagnostische console van de geïsoleerde Gateway openen...</value></data>
-  <data name="Onboarding_AiSetup_Choose" xml:space="preserve"><value>Kies een model of verbind een AI-provider.</value></data>
+  <data name="Onboarding_AiSetup_Choose" xml:space="preserve"><value>Verbind een AI-provider of model.</value></data>
   <data name="Onboarding_AiSetup_Running" xml:space="preserve"><value>Volg de stappen van je provider.</value></data>
   <data name="Onboarding_AiSetup_Verifying" xml:space="preserve"><value>Model opgeslagen. De huidige Gateway-verbinding wordt gecontroleerd.</value></data>
   <data name="Onboarding_AiSetup_Verified" xml:space="preserve"><value>Je AI is klaar. Chat wordt geopend...</value></data>
@@ -7466,14 +7466,19 @@ Controleer of de gateway actief is.</value>
   <data name="Onboarding_V3_ProfileCustomTitle.Text" xml:space="preserve"><value>Aangepast</value></data>
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>Begin met je huidige keuzes en pas ze hieronder aan.</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>Op deze pc</value></data>
-  <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>Lokale AI op deze pc</value></data>
+  <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>Lokale AI</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Stel een model in op deze pc of maak verbinding met LM Studio of Ollama.</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Draait op deze pc zonder gebruikskosten van een provider. We helpen je een model in te stellen dat bij je hardware past.</value></data>
+  <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>Gebruik AI van een online dienst.</value></data>
+  <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>Verbind een model dat je al gebruikt in LM Studio.</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Maak verbinding met Ollama op deze pc of een andere host voor lokale of cloudmodellen.</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>De beheerde Windows llama-server gebruikt de GPU van deze pc. Dit staat los van de gehoste API van NVIDIA.</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Beschikbaar op je Gateway</value></data>
-  <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>Een AI-provider verbinden</value></data>
+  <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>AI in de cloud</value></data>
   <data name="Onboarding_AiSetup_OtherLocal" xml:space="preserve"><value>Een lokaal model instellen</value></data>
   <data name="Onboarding_AiSetup_OtherLocalDetail" xml:space="preserve"><value>Stel een model in en gebruik het via je Gateway. Controleer download- en toestemmingsverzoeken voordat je doorgaat.</value></data>
   <data name="Onboarding_AiSetup_UtilityNotice" xml:space="preserve"><value>Je Gateway biedt ook installatie- of hulpmodellen. Deze pagina verbindt alleen de hoofdassistent; keuzes voor alleen hulptaken worden niet getoond.</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUp" xml:space="preserve"><value>Lokale AI instellen</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUp" xml:space="preserve"><value>Instellen</value></data>
   <data name="Onboarding_AiSetup_LocalStartAndUse" xml:space="preserve"><value>Starten en gebruiken</value></data>
   <data name="Onboarding_AiSetup_LocalUse" xml:space="preserve"><value>Dit model gebruiken</value></data>
   <data name="Onboarding_AiSetup_LocalRepair" xml:space="preserve"><value>Lokale AI herstellen</value></data>

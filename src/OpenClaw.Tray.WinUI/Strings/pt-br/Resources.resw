@@ -7279,7 +7279,7 @@ Certifique-se de que o Gateway está em execução.</value>
   <data name="ChatDashboardButton.Content" xml:space="preserve"><value>Dashboard</value></data>
   <data name="ChatDashboardHint.Text" xml:space="preserve"><value>Canais, integrações e configurações do gateway</value></data>
   <data name="Onboarding_Flow_WelcomeDescription.Text" xml:space="preserve"><value>O OpenClaw é seu assistente de IA para realizar tarefas no seu PC.</value></data>
-  <data name="Onboarding_AiSetup_Title.Text" xml:space="preserve"><value>Conecte sua IA</value></data>
+  <data name="Onboarding_AiSetup_Title.Text" xml:space="preserve"><value>Configure sua IA</value></data>
   <data name="Onboarding_AiSetup_CatalogOptIn" xml:space="preserve"><value>Descobrir conversas existentes dos provedores (opcional)</value></data>
   <data name="Onboarding_AiSetup_Starting" xml:space="preserve"><value>Iniciando a configuração do provedor…</value></data>
   <data name="Onboarding_AiSetup_WorkingProvider" xml:space="preserve"><value>Aguardando seu provedor…</value></data>
@@ -7325,7 +7325,7 @@ Certifique-se de que o Gateway está em execução.</value>
   <data name="Onboarding_AiSetup_LocalProgress_Verifying" xml:space="preserve"><value>Testando uma resposta real do modelo selecionado pelo Gateway...</value></data>
   <data name="Onboarding_AiSetup_LocalProgress_Detecting" xml:space="preserve"><value>Buscando modelos configurados e provedores de IA...</value></data>
   <data name="Onboarding_AiSetup_LocalProgress_Console" xml:space="preserve"><value>Abrindo o console de diagnóstico do Gateway isolado...</value></data>
-  <data name="Onboarding_AiSetup_Choose" xml:space="preserve"><value>Escolha um modelo ou conecte um provedor de IA.</value></data>
+  <data name="Onboarding_AiSetup_Choose" xml:space="preserve"><value>Conecte um provedor ou modelo de IA.</value></data>
   <data name="Onboarding_AiSetup_Running" xml:space="preserve"><value>Siga as etapas do seu provedor.</value></data>
   <data name="Onboarding_AiSetup_Verifying" xml:space="preserve"><value>Modelo salvo. Verificando a conexão atual com o Gateway.</value></data>
   <data name="Onboarding_AiSetup_Verified" xml:space="preserve"><value>Sua IA está pronta. Abrindo o Chat...</value></data>
@@ -7517,14 +7517,19 @@ Certifique-se de que o Gateway está em execução.</value>
   <data name="Onboarding_V3_ProfileCustomTitle.Text" xml:space="preserve"><value>Personalizado</value></data>
   <data name="Onboarding_V3_ProfileCustomDescription.Text" xml:space="preserve"><value>Comece com suas escolhas atuais e ajuste-as abaixo.</value></data>
   <data name="Onboarding_AiSetup_OnThisPc" xml:space="preserve"><value>Neste PC</value></data>
-  <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>IA local neste PC</value></data>
+  <data name="Onboarding_AiSetup_LocalTitle" xml:space="preserve"><value>IA local</value></data>
+  <data name="Onboarding_AiSetup_LocalGroupDescription" xml:space="preserve"><value>Configure um modelo neste PC ou conecte-se ao LM Studio ou Ollama.</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUpDescription" xml:space="preserve"><value>Roda neste PC sem cobranças de uso do provedor. Ajudamos você a configurar um modelo adequado ao seu hardware.</value></data>
+  <data name="Onboarding_AiSetup_CloudDetail" xml:space="preserve"><value>Use IA de um serviço online.</value></data>
+  <data name="Onboarding_AiSetup_LmStudioDetail" xml:space="preserve"><value>Conecte um modelo que você já usa no LM Studio.</value></data>
+  <data name="Onboarding_AiSetup_OllamaDetail" xml:space="preserve"><value>Conecte-se ao Ollama neste PC ou em outro host para usar modelos locais ou na nuvem.</value></data>
   <data name="Onboarding_AiSetup_LocalExplanation" xml:space="preserve"><value>O llama-server gerenciado do Windows usa a GPU deste PC. Ele é separado da API hospedada da NVIDIA.</value></data>
   <data name="Onboarding_AiSetup_GatewayModels" xml:space="preserve"><value>Disponível no seu Gateway</value></data>
-  <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>Conectar um provedor de IA</value></data>
+  <data name="Onboarding_AiSetup_ConnectProvider" xml:space="preserve"><value>IA na nuvem</value></data>
   <data name="Onboarding_AiSetup_OtherLocal" xml:space="preserve"><value>Configurar um modelo local</value></data>
   <data name="Onboarding_AiSetup_OtherLocalDetail" xml:space="preserve"><value>Configure e use um modelo pelo seu Gateway. Revise as solicitações de download ou permissão antes de continuar.</value></data>
   <data name="Onboarding_AiSetup_UtilityNotice" xml:space="preserve"><value>Seu Gateway também oferece modelos de configuração ou utilitários. Esta página conecta apenas o assistente principal; opções exclusivas para tarefas utilitárias não são exibidas.</value></data>
-  <data name="Onboarding_AiSetup_LocalSetUp" xml:space="preserve"><value>Configurar IA local</value></data>
+  <data name="Onboarding_AiSetup_LocalSetUp" xml:space="preserve"><value>Configurar</value></data>
   <data name="Onboarding_AiSetup_LocalStartAndUse" xml:space="preserve"><value>Iniciar e usar</value></data>
   <data name="Onboarding_AiSetup_LocalUse" xml:space="preserve"><value>Usar este modelo</value></data>
   <data name="Onboarding_AiSetup_LocalRepair" xml:space="preserve"><value>Reparar IA local</value></data>
