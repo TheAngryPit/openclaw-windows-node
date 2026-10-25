@@ -75,15 +75,23 @@ public sealed class GatewayDashboardLinkService
                 RevalidationError: revalidationError);
         }
 
-        var browserCredentialIncluded = !trustTailscaleAuth &&
-            ((request.AppendBrowserCredential && !string.IsNullOrEmpty(request.BrowserCredential)) ||
-             GatewayDashboardUrlBuilder.HasSharedTokenFragment(request.GatewayUrl));
-        var url = GatewayDashboardUrlBuilder.Build(
-            request.GatewayUrl,
-            request.Path,
-            request.BrowserCredential,
-            request.AppendBrowserCredential && !trustTailscaleAuth,
-            trustTailscaleAuth);
+        if (!GatewayDashboardUrlBuilder.TryBuild(
+                request.GatewayUrl,
+                request.Path,
+                request.BrowserCredential,
+                request.AppendBrowserCredential && !trustTailscaleAuth,
+                out var url,
+                out var urlError,
+                trustTailscaleAuth))
+        {
+            return new GatewayDashboardLinkResult(
+                Url: null,
+                TrustTailscaleAuth: trustTailscaleAuth,
+                Error: urlError,
+                RevalidationError: revalidationError);
+        }
+
+        var browserCredentialIncluded = GatewayDashboardUrlBuilder.HasSharedTokenFragment(url);
 
         return new GatewayDashboardLinkResult(
             url,

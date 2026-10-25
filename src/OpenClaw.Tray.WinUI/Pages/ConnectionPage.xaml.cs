@@ -2582,6 +2582,19 @@ public sealed partial class ConnectionPage : Page
         var recordSnapshot = rec with { };
         try
         {
+            if (!GatewayDashboardUrlBuilder.TryBuild(
+                    recordSnapshot.Url,
+                    path: null,
+                    sharedGatewayToken: null,
+                    appendSharedGatewayToken: false,
+                    out _,
+                    out _))
+            {
+                CurrentApp.ShowTransientConnectionError(
+                    LocalizationHelper.GetString("ConnectionPage_SavedDashboardInvalidAddress"));
+                return;
+            }
+
             await CurrentApp.OpenDashboardFromLinkServiceAsync(new GatewayDashboardLinkRequest(
                 recordSnapshot.Url,
                 null,

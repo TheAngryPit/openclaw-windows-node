@@ -24,8 +24,11 @@ separate and does not claim or restore Companion management.
 After setup restarts Companion, destination handoff waits for native connection
 startup and any already-admitted Local AI recovery before fresh model verification.
 An unused receipt must still be acquired within five minutes. First exclusive
-acquisition persists one 13.5-minute execution window for the bounded phases below;
-neither restart nor retry renews it. A failed attempt remains available for explicit Retry,
+acquisition persists one execution window for the bounded phases below: 13.5 minutes
+at the default startup budget, longer with `OPENCLAW_NATIVE_GATEWAY_START_TIMEOUT`.
+Neither restart nor retry renews it. A restart with a different startup override keeps the
+stored window when it falls within the range a supported override can produce (13.5 to
+127.5 minutes). A failed attempt remains available for explicit Retry,
 but automatic reactivation does not show the same failure dialog again. Successful
 runtime checks alone do not prove that a full, potentially longer chat turn has finished.
 
@@ -458,6 +461,23 @@ If a listener appears between a pending status and the host snapshot, one immedi
 status recheck may admit only a fresh `running` attestation. The full selected-port,
 listener and process-sequence checks still run; another pending status or failed
 attribution rejects the start.
+The startup budget defaults to three minutes. Set `OPENCLAW_NATIVE_GATEWAY_START_TIMEOUT`
+to whole seconds (30 to 3600) before starting Companion to change it; the published
+connection phase and credential handoff budgets grow with a longer value.
+
+When native setup fails after the package is installed, the setup page keeps the
+failed step, shows the typed failure (for a startup timeout: the phase, budget and
+last package status) and offers recovery actions:
+
+- **Collect Gateway diagnostics** runs `clawctl collect-logs --json` and reveals the
+  package's redacted diagnostics ZIP.
+- **Open terminal** opens `clawctl pwsh` inside the isolated Gateway.
+- **View setup log** reveals `Logs\Setup\native-setup-<utc>.jsonl` under the Companion
+  data folder. It records setup steps, sanitized package commands and the runtime's
+  startup timeline, and the Debug page diagnostics bundle includes it.
+
+The timeout guidance names the override variable. **Retry setup** reruns the full flow.
+
 The published native connection borrow gets up to 210 seconds for startup,
 authenticated handshake and authorization before exact-model verification.
 Preflight and final inspection also consume that outer budget; the confirmation

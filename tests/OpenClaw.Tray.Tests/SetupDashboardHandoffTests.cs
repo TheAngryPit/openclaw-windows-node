@@ -194,7 +194,7 @@ public sealed class SetupDashboardHandoffTests
     }
 
     [Fact]
-    public async Task SavedDashboard_EmbeddedTokenStillRequiresEndpointAuthorization()
+    public async Task SavedDashboard_ApprovedEmbeddedTokenStillRequiresEndpointAuthorization()
     {
         var launches = 0;
         var validationCalls = 0;
@@ -212,7 +212,7 @@ public sealed class SetupDashboardHandoffTests
                 "wss://gateway.example/control/#token=stale&view=compact",
                 null,
                 null,
-                AppendBrowserCredential: false),
+                AppendBrowserCredential: true),
             result =>
             {
                 Assert.True(result.BrowserCredentialIncluded);

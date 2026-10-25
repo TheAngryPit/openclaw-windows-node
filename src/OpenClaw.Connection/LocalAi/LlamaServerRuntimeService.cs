@@ -527,12 +527,17 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
             string? draftModelPath = GetRuntimeDraftModelPath();
             if (draftModelPath is not null)
                 draftModelPath = ResolveChildProcessPath(draftModelPath);
+            // The projector is the last additional asset, after the draft checkpoint.
+            string? projectorPath = LlamaServerRouterConfiguration.ResolveInstalledPlan(install).Model.Recipe.VisionProjector is null
+                ? null
+                : ResolveChildProcessPath(_verifiedAdditionalAssets[^1].ResolvedPath);
             LlamaServerRouterLaunchPlan launchPlan = LlamaServerRouterConfiguration.BuildForVerifiedRuntime(
                 _options.Paths,
                 install,
                 _runtimeModelPath,
                 draftModelPath,
-                requestedPort);
+                requestedPort,
+                projectorPath);
             if (string.Equals(install.Manifest.ModelCatalogId, LocalModelCatalog.NemotronBoltModelId,
                     StringComparison.OrdinalIgnoreCase))
             {
@@ -1957,11 +1962,11 @@ public sealed class LlamaServerRuntimeService : ILocalAiRuntime
     /// <summary>
     /// The handle-resolved path of the draft checkpoint this process verified and still
     /// holds open, or null when the recipe has no additional assets. Additional assets are
-    /// verified in catalog order and the draft checkpoint is always last, matching
+    /// verified in catalog order and the draft checkpoint is always first, matching
     /// <see cref="LocalModelCatalog.AdditionalArtifacts"/>.
     /// </summary>
     private string? GetRuntimeDraftModelPath() =>
-        _verifiedAdditionalAssets.Count == 0 ? null : _verifiedAdditionalAssets[^1].ResolvedPath;
+        _verifiedAdditionalAssets.Count == 0 ? null : _verifiedAdditionalAssets[0].ResolvedPath;
 
     private string GetRuntimeModelPath(LocalAiResolvedInstall install)
     {

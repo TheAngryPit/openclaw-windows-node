@@ -588,13 +588,38 @@ public sealed class AppRefactorContractTests
         Assert.True(end > start);
         var handler = source[start..end];
 
-        // Retire with mounted handler coverage that does not start real app services.
         Assert.Contains("TryResolveChatCredentials(out var gatewayUrl, out var dashboardCredential, out var credentialSource, out var isBootstrapToken)", handler);
         Assert.Contains("!isBootstrapToken && credentialSource == CredentialResolver.SourceSharedGatewayToken", handler);
         AssertInOrder(handler, "new GatewayDashboardLinkRequest(", "dashboardCredential,", "usesSharedCredential,", "tailscaleGatewayId)");
         Assert.Contains("usesSharedGatewayToken = result.BrowserCredentialIncluded", handler);
         AssertInOrder(handler, "var url = result.Url!;", "url,", "credentialSource,", "usesSharedGatewayToken = result.BrowserCredentialIncluded");
         Assert.DoesNotContain("usesSharedGatewayToken = !isBootstrapToken", handler);
+    }
+
+    [Fact]
+    public void SavedDashboard_InvalidUrl_UsesLocalizedCopy()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Pages", "ConnectionPage.xaml.cs"));
+        var method = ExtractMethod(source, "OnSavedRowOpenDashboardAsync");
+
+        AssertInOrder(method,
+            "GatewayDashboardUrlBuilder.TryBuild(",
+            "out _))",
+            "CurrentApp.ShowTransientConnectionError(",
+            "LocalizationHelper.GetString(\"ConnectionPage_SavedDashboardInvalidAddress\")",
+            "return;",
+            "OpenDashboardFromLinkServiceAsync(");
+        Assert.DoesNotContain("urlError", method);
+
+        var resources = File.ReadAllText(Path.Combine(
+            TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Strings", "en-us", "Resources.resw"));
+        Assert.Contains(
+            "This saved gateway address cannot open the dashboard. Edit the saved gateway and use an http, https, ws, or wss address.",
+            resources,
+            StringComparison.Ordinal);
     }
 
     [Fact]

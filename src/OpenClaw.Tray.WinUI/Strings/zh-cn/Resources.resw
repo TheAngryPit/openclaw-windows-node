@@ -3014,7 +3014,7 @@
     <value>欢迎使用 OpenClaw</value>
   </data>
   <data name="Chat_ZeroState_WelcomeSubtitle" xml:space="preserve">
-    <value>今天我能帮你做什么？</value>
+    <value>选择此会话的运行位置，然后说明要执行的任务。</value>
   </data>
   <data name="Chat_Status_Done" xml:space="preserve">
     <value>完成</value>
@@ -3108,6 +3108,12 @@
   </data>
   <data name="Chat_Composer_Accessibility_Model" xml:space="preserve">
     <value>模型</value>
+  </data>
+  <data name="Chat_Composer_Model_Loading" xml:space="preserve">
+    <value>正在加载模型…</value>
+  </data>
+  <data name="Chat_Composer_Model_Unavailable" xml:space="preserve">
+    <value>模型不可用</value>
   </data>
   <data name="Chat_Composer_Accessibility_Reasoning" xml:space="preserve">
     <value>推理</value>
@@ -5789,6 +5795,9 @@
   <data name="ConnectionPage_InvalidUrl" xml:space="preserve">
     <value>URL 无效</value>
   </data>
+  <data name="ConnectionPage_SavedDashboardInvalidAddress" xml:space="preserve">
+    <value>此已保存的网关地址无法打开仪表板。请编辑已保存的网关，并使用 http、https、ws 或 wss 地址。</value>
+  </data>
   <data name="ConnectionPage_ConnectionFailed" xml:space="preserve">
     <value>连接失败</value>
   </data>
@@ -7488,6 +7497,7 @@
   <data name="Onboarding_AiSetup_LocalInstalling" xml:space="preserve"><value>正在设置本地 AI</value></data>
   <data name="Onboarding_AiSetup_LocalChanged" xml:space="preserve"><value>Gateway 或本地 AI 的就绪状态已更改。请返回连接 AI 页面并重新检查，然后再安装。</value></data>
   <data name="Onboarding_AiSetup_LocalStartFailed" xml:space="preserve"><value>本地 AI 无法启动。清理已完成。请修复本地 AI 或选择其他提供商。</value></data>
+  <data name="Onboarding_AiSetup_OpenLocalAiLogs" xml:space="preserve"><value>打开本地 AI 日志</value></data>
   <data name="Onboarding_AiSetup_LocalState_Checking" xml:space="preserve"><value>正在检查此电脑。你仍可选择 AI 提供商。</value></data>
   <data name="Onboarding_AiSetup_LocalState_SetUp" xml:space="preserve"><value>电脑兼容。安装前请查看设置。</value></data>
   <data name="Onboarding_AiSetup_LocalState_StartAndUse" xml:space="preserve"><value>已安装，未运行</value></data>
@@ -7825,6 +7835,15 @@
   <data name="Onboarding_Native_StepPrepare" xml:space="preserve"><value>准备您的 Gateway 配置文件</value></data>
   <data name="Onboarding_Native_StepVerify" xml:space="preserve"><value>启动并验证 Gateway</value></data>
   <data name="Onboarding_Native_Retry.Content" xml:space="preserve"><value>重试设置</value></data>
+  <data name="Onboarding_Native_CollectDiagnostics.Content" xml:space="preserve"><value>收集 Gateway 诊断信息</value></data>
+  <data name="Onboarding_Native_ViewLog.Content" xml:space="preserve"><value>查看设置日志</value></data>
+  <data name="Onboarding_Native_RecoveryGuidance" xml:space="preserve"><value>收集 Gateway 诊断信息以获取可查看或共享的已脱敏 ZIP，或在隔离的 Gateway 中打开终端。然后选择“重试设置”。</value></data>
+  <data name="Onboarding_Native_StartTimeoutGuidance" xml:space="preserve"><value>Gateway 未在 {0} 秒内就绪。首次启动可能较慢。请收集 Gateway 诊断信息查看原因，然后选择“重试设置”。如需允许更长的启动时间，请将环境变量 {1} 设置为秒数并重启 Companion。</value></data>
+  <data name="Onboarding_Native_CollectingDiagnostics" xml:space="preserve"><value>正在收集已脱敏的 Gateway 诊断信息...</value></data>
+  <data name="Onboarding_Native_DiagnosticsSaved" xml:space="preserve"><value>Gateway 诊断信息已保存到 {0}。</value></data>
+  <data name="Onboarding_Native_DiagnosticsNoPath" xml:space="preserve"><value>Gateway 包已收集诊断信息，但未报告保存位置。</value></data>
+  <data name="Onboarding_Native_DiagnosticsFailed" xml:space="preserve"><value>无法收集 Gateway 诊断信息：{0}</value></data>
+  <data name="Onboarding_Native_TerminalFailed" xml:space="preserve"><value>无法打开 Gateway 终端：{0}</value></data>
   <data name="Onboarding_Native_Preview" xml:space="preserve"><value>仅供预览。不会安装任何包或启动 Gateway。</value></data>
   <data name="Onboarding_Native_FeaturesNote.Text" xml:space="preserve"><value>节点模式连接 Gateway 并完成配对后，即可使用这些 Windows 功能。Windows 权限和命令审批仍然适用。</value></data>
   <data name="Onboarding_Native_ConfiguredTitle" xml:space="preserve"><value>原生 Gateway 已配置</value></data>
@@ -7988,7 +8007,7 @@
   <data name="WorkspaceShell_OpenDashboard" xml:space="preserve"><value>Open gateway dashboard</value></data>
   <data name="WorkspaceShell_Help" xml:space="preserve"><value>Help</value></data>
   <data name="WorkspaceShell_Documentation" xml:space="preserve"><value>Documentation</value></data>
-  <data name="WorkspaceShell_Support" xml:space="preserve"><value>Get help</value></data>
+  <data name="WorkspaceShell_Support" xml:space="preserve"><value>获取支持</value></data>
   <data name="WorkspaceShell_Community" xml:space="preserve"><value>Community</value></data>
   <data name="WorkspaceShell_ReleaseNotes" xml:space="preserve"><value>Release notes</value></data>
   <data name="WorkspaceShell_GetApps" xml:space="preserve"><value>Get apps</value></data>
@@ -8094,9 +8113,6 @@
   <data name="LocalAi_ProfileFallback" xml:space="preserve"><value>首选的 {0} 配置不适合此硬件。设置可使用 {1}，上下文为 {2:N0} 个令牌。安装前请在设置中查看此配置。</value></data>
   <data name="LocalAi_Reason_InsufficientSystemMemory" xml:space="preserve"><value>此配置至少需要 {0} 系统内存。</value></data>
   <data name="LocalAi_Reason_InsufficientDiskSpace" xml:space="preserve"><value>此配置要求模型缓存和运行时所在的卷都至少有 {0} 可用空间。</value></data>
-  <data name="Chat_Welcome_Loading" xml:space="preserve"><value>正在从 Gateway 加载欢迎内容...</value></data>
-  <data name="Chat_Welcome_Unsupported" xml:space="preserve"><value>此 Gateway 不提供共享欢迎内容。你仍可在下方开始聊天。</value></data>
-  <data name="Chat_Welcome_Failed" xml:space="preserve"><value>无法加载欢迎内容。请重新连接以重试，或在下方开始聊天。</value></data>
   <data name="Chat_Placement_Unknown" xml:space="preserve">
     <value>未验证</value>
   </data>
@@ -8124,4 +8140,9 @@
   <data name="Chat_Placement_Error_NoLongerEmpty" xml:space="preserve">
     <value>此会话已不再为空，因此已取消待定的位置选择。请检查会话并重新发送，以在当前位置继续。</value>
   </data>
+  <data name="SettingsPage_AppInfoSupport.Content" xml:space="preserve"><value>获取支持</value></data>
+  <data name="Chat_Welcome_WhatCanYouDo" xml:space="preserve"><value>你能做什么？</value></data>
+  <data name="Chat_Welcome_SummarizeRecentSessions" xml:space="preserve"><value>总结我最近的会话</value></data>
+  <data name="Chat_Welcome_ConfigureChannel" xml:space="preserve"><value>帮我配置一个频道</value></data>
+  <data name="Chat_Welcome_CheckSystemHealth" xml:space="preserve"><value>检查系统健康状况</value></data>
 </root>

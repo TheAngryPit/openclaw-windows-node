@@ -473,6 +473,12 @@ public sealed partial class GatewayFixtureProtocolTests
         Assert.Equal(2, models.Models.Count);
         Assert.All(models.Models, model => Assert.True(model.IsAvailable && model.IsConfigured));
         Assert.Contains(models.Models, model => model.Id == "research" && model.Provider == "fixture");
+        Assert.Contains("session-scoped-model-catalog", client.AdvertisedServerCapabilities);
+        var sessionModels = await client.RequestSessionModelsListAsync(GatewayScenario.OtherSessionKey);
+        Assert.Equal("worker", Assert.Single(sessionModels!.Models).Id);
+        Assert.Contains(
+            server.Requests,
+            request => request.Method == "models.list" && request.SessionKey == GatewayScenario.OtherSessionKey);
         await client.RequestSessionPreviewAsync([GatewayScenario.MainSessionKey], limit: 1);
         var previews = await previewsReceived.Task.WaitAsync(Deadline);
         Assert.Equal(GatewayScenario.MainSentinel, Assert.Single(Assert.Single(previews.Previews).Items).Text);
@@ -502,6 +508,35 @@ public sealed partial class GatewayFixtureProtocolTests
         var agents = await client.SendWizardRequestAsync("agents.list");
         Assert.Equal("main", agents.GetProperty("defaultId").GetString());
         Assert.Equal(2, agents.GetProperty("agents").GetArrayLength());
+        Assert.Empty(server.UnexpectedRequests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealClient_ScopedConfiguredCatalogRetainsCurrentModelOutsideManualPolicy(bool publishedModelCatalog)
+    {
+        var token = CreateToken();
+        await using var server = await FixtureGatewayServer.StartAsync(
+            GatewayScenario.CreateBrowse(publishedModelCatalog: publishedModelCatalog), token);
+        await using var connected = await ConnectedClient.OpenAsync(server, token);
+        var client = connected.Client;
+
+        var defaultCatalog = await client.SendWizardRequestAsync(
+            "models.list", new { sessionKey = GatewayScenario.EdgeSessionKey });
+        Assert.Empty(defaultCatalog.GetProperty("models").EnumerateArray());
+
+        var models = await client.RequestSessionModelsListAsync(GatewayScenario.EdgeSessionKey);
+        var current = Assert.Single(Assert.IsType<ModelsListInfo>(models).Models);
+        Assert.Equal("research", current.Id);
+        Assert.Equal("Fixture Retained Research", current.Name);
+        Assert.False(current.ManualSelectionAllowed);
+        Assert.True(current.IsAvailable);
+        Assert.Equal("high", Assert.Single(current.ThinkingContext!.Profile!.Levels!.Value).Id);
+        var request = Assert.Single(server.Requests, request =>
+            request.Method == "models.list" && request.SessionKey == GatewayScenario.EdgeSessionKey
+            && request.ModelCatalogView == "configured");
+        Assert.Equal(publishedModelCatalog ? true : (bool?)null, request.IncludeModelDetails);
         Assert.Empty(server.UnexpectedRequests);
     }
 

@@ -14,7 +14,9 @@ public sealed record GatewayFixtureRequest(
     string Outcome,
     string? Decision = null,
     string? ApprovalId = null,
-    bool AdvertisesExecApprovals = false);
+    bool AdvertisesExecApprovals = false,
+    string? ModelCatalogView = null,
+    bool? IncludeModelDetails = null);
 
 public sealed record GatewayFixtureEvent(string Event, int DeliveredConnections);
 
@@ -568,7 +570,13 @@ public sealed class FixtureGatewayServer : IAsyncDisposable
                         parameters.TryGetProperty("caps", out var caps) &&
                         caps.ValueKind == JsonValueKind.Array &&
                         caps.EnumerateArray().Any(cap =>
-                            cap.ValueKind == JsonValueKind.String && cap.GetString() == "exec-approvals"));
+                            cap.ValueKind == JsonValueKind.String && cap.GetString() == "exec-approvals"),
+                        method == "models.list" && ReadString(parameters, "view") is "default" or "configured" or "all"
+                            ? ReadString(parameters, "view") : null,
+                        method == "models.list" && parameters.ValueKind == JsonValueKind.Object
+                            && parameters.TryGetProperty("includeDetails", out var details)
+                            && details.ValueKind is JsonValueKind.True or JsonValueKind.False
+                                ? details.GetBoolean() : null);
                     if (!authenticated || method == "connect")
                     {
                         try
@@ -671,7 +679,8 @@ public sealed class FixtureGatewayServer : IAsyncDisposable
                 }
                 payload = Interactive is not null && InteractiveGatewayRuntime.Methods.Contains(method, StringComparer.Ordinal)
                     ? await Interactive.RespondAsync(method, parameters, cancellationToken)
-                    : _scenario.Respond(method, parameters);
+                    : _scenario.Respond(method, parameters,
+                        Interactive is null ? null : Interactive.ContainsSession);
                 if (method == "exec.approval.resolve" && Interactive is null)
                 {
                     var approvalId = ReadString(parameters, "id");
@@ -783,12 +792,15 @@ public sealed class FixtureGatewayServer : IAsyncDisposable
         string? key,
         string? decision = null,
         string? approvalId = null,
-        bool advertisesExecApprovals = false)
+        bool advertisesExecApprovals = false,
+        string? modelCatalogView = null,
+        bool? includeModelDetails = null)
     {
         lock (_sync)
         {
             var index = _requests.Count;
-            _requests.Add(new GatewayFixtureRequest(method, key, "pending", decision, approvalId, advertisesExecApprovals));
+            _requests.Add(new GatewayFixtureRequest(method, key, "pending", decision, approvalId,
+                advertisesExecApprovals, modelCatalogView, includeModelDetails));
             SignalRequestChanged();
             return index;
         }

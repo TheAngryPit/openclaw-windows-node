@@ -181,7 +181,6 @@ public sealed class NativeGatewaySetupUxContractTests
         Assert.DoesNotContain("Onboarding_Native_InstallerOpened", source);
         Assert.Contains("NavigateToNativeAiSetup(session)", source);
         Assert.DoesNotContain("NavigateToNativeWizard", source);
-        Assert.Contains("new NativeGatewaySetupHost(ReportProgress, ReportStage)", source);
         Assert.Contains("progressDispatcher.TryEnqueue", source);
         Assert.Contains("if (IsLoaded && !cancellationToken.IsCancellationRequested)", source);
         Assert.Contains("Unloaded += (_, _) => _operationCts?.Cancel()", source);

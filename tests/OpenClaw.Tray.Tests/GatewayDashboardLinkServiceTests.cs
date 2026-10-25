@@ -174,7 +174,7 @@ public sealed class GatewayDashboardLinkServiceTests
     }
 
     [Fact]
-    public async Task BuildAsync_ExistingTokenFragmentCountsAsBrowserCredential()
+    public async Task BuildAsync_ExistingTokenFragmentIsOmittedWithoutBrowserCredentialApproval()
     {
         var service = CreateService((_, _) => Task.FromResult(false));
 
@@ -184,8 +184,8 @@ public sealed class GatewayDashboardLinkServiceTests
             gatewayUrl: "wss://gateway.example.test/mount/#token=stale&view=compact"));
 
         Assert.True(result.Success);
-        Assert.True(result.BrowserCredentialIncluded);
-        Assert.Equal("https://gateway.example.test/mount/settings/profile#token=stale&view=compact", result.Url);
+        Assert.False(result.BrowserCredentialIncluded);
+        Assert.Equal("https://gateway.example.test/mount/settings/profile#view=compact", result.Url);
     }
 
     [Fact]

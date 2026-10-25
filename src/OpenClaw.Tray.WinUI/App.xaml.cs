@@ -54,6 +54,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
     private OpenClawTray.Chat.OpenClawChatCoordinator? _chatCoordinator;
     private ILocalAiRuntime? _localAiRuntime;
     private LocalAiGatewayLifecycle? _localAiGatewayLifecycle;
+    private KokoroVoicePackPrefetcher? _kokoroPrefetcher;
 
     /// <summary>
     /// Root DI composition root, built once during startup and disposed during
@@ -960,6 +961,15 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         if (ShouldInitializeNodeService() && _settings != null)
         {
             EnsureNodeService(_settings);
+        }
+
+        // Kokoro is the default TTS provider; fetch its voice pack in the background
+        // (and again after settings saves) so speech does not fall back to Windows.
+        if (_settings != null && _kokoroPrefetcher == null)
+        {
+            _kokoroPrefetcher = new KokoroVoicePackPrefetcher(
+                _settings, new AppLogger(), SettingsManager.SettingsDirectoryPath, KokoroPrefetchNetwork.IsMeteredConnection);
+            _kokoroPrefetcher.Start();
         }
 
         // Initialize connections — always create operator client for UI data,

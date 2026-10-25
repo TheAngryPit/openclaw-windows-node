@@ -3015,7 +3015,7 @@ Gebruik een van deze opties:
     <value>Welkom bij OpenClaw</value>
   </data>
   <data name="Chat_ZeroState_WelcomeSubtitle" xml:space="preserve">
-    <value>Waarmee kan ik je vandaag helpen?</value>
+    <value>Kies waar deze sessie werkt en geef vervolgens aan wat er moet gebeuren.</value>
   </data>
   <data name="Chat_Status_Done" xml:space="preserve">
     <value>Voltooid</value>
@@ -3109,6 +3109,12 @@ Gebruik een van deze opties:
   </data>
   <data name="Chat_Composer_Accessibility_Model" xml:space="preserve">
     <value>Taalmodel</value>
+  </data>
+  <data name="Chat_Composer_Model_Loading" xml:space="preserve">
+    <value>Modellen laden…</value>
+  </data>
+  <data name="Chat_Composer_Model_Unavailable" xml:space="preserve">
+    <value>Modellen niet beschikbaar</value>
   </data>
   <data name="Chat_Composer_Accessibility_Reasoning" xml:space="preserve">
     <value>Redenering</value>
@@ -5790,6 +5796,9 @@ Controleer of de gateway actief is.</value>
   <data name="ConnectionPage_InvalidUrl" xml:space="preserve">
     <value>Ongeldige URL</value>
   </data>
+  <data name="ConnectionPage_SavedDashboardInvalidAddress" xml:space="preserve">
+    <value>Dit opgeslagen gatewayadres kan het dashboard niet openen. Bewerk de opgeslagen gateway en gebruik een http-, https-, ws- of wss-adres.</value>
+  </data>
   <data name="ConnectionPage_ConnectionFailed" xml:space="preserve">
     <value>Verbinding mislukt</value>
   </data>
@@ -7489,6 +7498,7 @@ Controleer of de gateway actief is.</value>
   <data name="Onboarding_AiSetup_LocalInstalling" xml:space="preserve"><value>Lokale AI instellen</value></data>
   <data name="Onboarding_AiSetup_LocalChanged" xml:space="preserve"><value>De Gateway of de status van lokale AI is gewijzigd. Ga terug naar AI verbinden en controleer opnieuw voordat je installeert.</value></data>
   <data name="Onboarding_AiSetup_LocalStartFailed" xml:space="preserve"><value>Lokale AI kon niet starten. Het opruimen is voltooid. Herstel lokale AI of kies een andere provider.</value></data>
+  <data name="Onboarding_AiSetup_OpenLocalAiLogs" xml:space="preserve"><value>Logboeken van lokale AI openen</value></data>
   <data name="Onboarding_AiSetup_LocalState_Checking" xml:space="preserve"><value>Deze pc wordt gecontroleerd. Je kunt nog steeds een AI-provider kiezen.</value></data>
   <data name="Onboarding_AiSetup_LocalState_SetUp" xml:space="preserve"><value>Compatibele pc. Controleer de instellingen vóór installatie.</value></data>
   <data name="Onboarding_AiSetup_LocalState_StartAndUse" xml:space="preserve"><value>Geïnstalleerd, niet actief</value></data>
@@ -7826,6 +7836,15 @@ Ga na inschrijving terug naar Instellingen &gt; Windows Update en controleer op 
   <data name="Onboarding_Native_StepPrepare" xml:space="preserve"><value>Uw Gateway-profiel voorbereiden</value></data>
   <data name="Onboarding_Native_StepVerify" xml:space="preserve"><value>De Gateway starten en controleren</value></data>
   <data name="Onboarding_Native_Retry.Content" xml:space="preserve"><value>Instelling opnieuw proberen</value></data>
+  <data name="Onboarding_Native_CollectDiagnostics.Content" xml:space="preserve"><value>Gateway-diagnostiek verzamelen</value></data>
+  <data name="Onboarding_Native_ViewLog.Content" xml:space="preserve"><value>Instellingslogboek weergeven</value></data>
+  <data name="Onboarding_Native_RecoveryGuidance" xml:space="preserve"><value>Verzamel Gateway-diagnostiek voor een geschoonde ZIP die u kunt bekijken of delen, of open een terminal in de geïsoleerde Gateway. Kies daarna Instelling opnieuw proberen.</value></data>
+  <data name="Onboarding_Native_StartTimeoutGuidance" xml:space="preserve"><value>De Gateway was niet binnen {0} seconden gereed. De eerste start kan traag zijn. Verzamel Gateway-diagnostiek om te zien waarom en kies daarna Instelling opnieuw proberen. Stel voor een langere start de omgevingsvariabele {1} in op een aantal seconden en start Companion opnieuw.</value></data>
+  <data name="Onboarding_Native_CollectingDiagnostics" xml:space="preserve"><value>Geschoonde Gateway-diagnostiek verzamelen...</value></data>
+  <data name="Onboarding_Native_DiagnosticsSaved" xml:space="preserve"><value>Gateway-diagnostiek opgeslagen in {0}.</value></data>
+  <data name="Onboarding_Native_DiagnosticsNoPath" xml:space="preserve"><value>Het Gateway-pakket heeft diagnostiek verzameld, maar niet gemeld waar deze is opgeslagen.</value></data>
+  <data name="Onboarding_Native_DiagnosticsFailed" xml:space="preserve"><value>Gateway-diagnostiek kon niet worden verzameld: {0}</value></data>
+  <data name="Onboarding_Native_TerminalFailed" xml:space="preserve"><value>De Gateway-terminal kon niet worden geopend: {0}</value></data>
   <data name="Onboarding_Native_Preview" xml:space="preserve"><value>Alleen een voorbeeld. Er wordt geen pakket geïnstalleerd of Gateway gestart.</value></data>
   <data name="Onboarding_Native_FeaturesNote.Text" xml:space="preserve"><value>Deze Windows-functies zijn bruikbaar nadat de nodemodus verbinding heeft gemaakt en met de Gateway is gekoppeld. Windows-machtigingen en opdrachtgoedkeuringen blijven van toepassing.</value></data>
   <data name="Onboarding_Native_ConfiguredTitle" xml:space="preserve"><value>Native Gateway geconfigureerd</value></data>
@@ -7989,7 +8008,7 @@ Ga na inschrijving terug naar Instellingen &gt; Windows Update en controleer op 
   <data name="WorkspaceShell_OpenDashboard" xml:space="preserve"><value>Open gateway dashboard</value></data>
   <data name="WorkspaceShell_Help" xml:space="preserve"><value>Help</value></data>
   <data name="WorkspaceShell_Documentation" xml:space="preserve"><value>Documentation</value></data>
-  <data name="WorkspaceShell_Support" xml:space="preserve"><value>Get help</value></data>
+  <data name="WorkspaceShell_Support" xml:space="preserve"><value>Ondersteuning krijgen</value></data>
   <data name="WorkspaceShell_Community" xml:space="preserve"><value>Community</value></data>
   <data name="WorkspaceShell_ReleaseNotes" xml:space="preserve"><value>Release notes</value></data>
   <data name="WorkspaceShell_GetApps" xml:space="preserve"><value>Get apps</value></data>
@@ -8095,9 +8114,6 @@ Ga na inschrijving terug naar Instellingen &gt; Windows Update en controleer op 
   <data name="LocalAi_ProfileFallback" xml:space="preserve"><value>Het voorkeursprofiel {0} past niet bij deze hardware. De installatie kan {1} gebruiken met {2:N0} contexttokens. Controleer dit profiel in de installatie voordat u het installeert.</value></data>
   <data name="LocalAi_Reason_InsufficientSystemMemory" xml:space="preserve"><value>Dit profiel vereist minimaal {0} systeemgeheugen.</value></data>
   <data name="LocalAi_Reason_InsufficientDiskSpace" xml:space="preserve"><value>Dit profiel vereist minimaal {0} vrije ruimte op zowel het modelcachevolume als het runtimevolume.</value></data>
-  <data name="Chat_Welcome_Loading" xml:space="preserve"><value>Welkomstinhoud wordt geladen vanaf je Gateway...</value></data>
-  <data name="Chat_Welcome_Unsupported" xml:space="preserve"><value>Deze Gateway biedt geen gedeelde welkomstinhoud. Je kunt hieronder wel een chat starten.</value></data>
-  <data name="Chat_Welcome_Failed" xml:space="preserve"><value>De welkomstinhoud kon niet worden geladen. Maak opnieuw verbinding om het nogmaals te proberen of start hieronder een chat.</value></data>
   <data name="Chat_Placement_Unknown" xml:space="preserve">
     <value>Niet geverifieerd</value>
   </data>
@@ -8125,4 +8141,9 @@ Ga na inschrijving terug naar Instellingen &gt; Windows Update en controleer op 
   <data name="Chat_Placement_Error_NoLongerEmpty" xml:space="preserve">
     <value>Deze sessie is niet meer leeg, dus de wachtende locatiekeuze is geannuleerd. Controleer de sessie en verzend opnieuw om op de huidige locatie door te gaan.</value>
   </data>
+  <data name="SettingsPage_AppInfoSupport.Content" xml:space="preserve"><value>Ondersteuning krijgen</value></data>
+  <data name="Chat_Welcome_WhatCanYouDo" xml:space="preserve"><value>Wat kun je doen?</value></data>
+  <data name="Chat_Welcome_SummarizeRecentSessions" xml:space="preserve"><value>Vat mijn recente sessies samen</value></data>
+  <data name="Chat_Welcome_ConfigureChannel" xml:space="preserve"><value>Help me een kanaal te configureren</value></data>
+  <data name="Chat_Welcome_CheckSystemHealth" xml:space="preserve"><value>Controleer de systeemstatus</value></data>
 </root>
