@@ -4,6 +4,21 @@ namespace OpenClaw.Tray.Tests;
 
 public sealed class ChatTimelinePresentationTests
 {
+    [Theory]
+    [InlineData("Light", "SystemAccentColorDark1")]
+    [InlineData("Default", "SystemAccentColorLight2")]
+    [InlineData("HighContrast", "SystemColorWindowTextColor")]
+    public void SandboxOnBrush_UsesNativeThemeColor(string theme, string resource)
+    {
+        var document = System.Xml.Linq.XDocument.Load(Path.Combine(TestRepositoryPaths.GetRepositoryRoot(),
+            "src", "OpenClaw.Tray.WinUI", "Themes", "ChatResources.xaml"));
+        System.Xml.Linq.XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var dictionary = document.Descendants().Single(element =>
+            element.Name.LocalName == "ResourceDictionary" && (string?)element.Attribute(x + "Key") == theme);
+        var brush = dictionary.Elements().Single(element => (string?)element.Attribute(x + "Key") == "ChatSandboxOnBrush");
+        Assert.Equal($"{{ThemeResource {resource}}}", (string?)brush.Attribute("Color"));
+    }
+
     [Fact]
     public void GatewayDashboard_StaysInConnectionCardNotChat()
     {

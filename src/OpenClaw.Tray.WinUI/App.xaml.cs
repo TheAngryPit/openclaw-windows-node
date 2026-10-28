@@ -499,6 +499,8 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
                 ValidateOnBuild = true,
             });
             Logger.Info("Service provider initialized.");
+            if (_sandboxRiskAvailabilityCache is { } availability)
+                _services.GetRequiredService<SandboxStatusStore>().Publish(availability);
         }
         catch (Exception ex)
         {
@@ -838,7 +840,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
 
         // Initialize connection manager before setup flow.
         var credentialResolver = new CredentialResolver(DeviceIdentityFileReader.Instance);
-        var clientFactory = new GatewayClientFactory { SupportsExecApprovals = true };
+        var clientFactory = new GatewayClientFactory { SupportsExecApprovals = true, ClientIdentity = OperatorClientIdentity.Interactive };
         var diagnostics = new ConnectionDiagnostics();
         var nodeConnector = new NodeConnector(appLogger, diagnostics);
         // Bridge: whenever NodeConnector creates a fresh WindowsNodeClient (initial
@@ -3318,6 +3320,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         }
 
         _sandboxRiskAvailabilityCache = availability;
+        _services?.GetRequiredService<SandboxStatusStore>().Publish(availability);
         PublishSandboxRiskNotification(availability);
     }
 

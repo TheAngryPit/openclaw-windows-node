@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -408,6 +409,29 @@ public sealed class AccessibilityAppFixture : IDisposable
             throw new InvalidOperationException("Could not foreground the Hub window for keyboard input.");
     }
 
+    /// <summary>
+    /// Removes every inherited OPENCLAW_* variable, then points every environment-overridable profile root at the run-owned directory so an
+    /// inherited real or legacy variable cannot escape. DATA_DIR is the direct folder;
+    /// APPDATA/LOCALAPPDATA are roots the product appends OpenClawTray to, and the
+    /// legacy local alias is a direct folder that must equal that effective path.
+    /// Everything lives under <paramref name="runDirectory"/>, which Dispose deletes. Callers must
+    /// set fixture-specific OPENCLAW_* variables after this call. Product code that reads the OS
+    /// known folders directly is not redirected by environment variables.
+    /// </summary>
+    internal static void ApplyProfileIsolation(IDictionary<string, string?> environment, string runDirectory)
+    {
+        foreach (var key in environment.Keys.Where(k => k.StartsWith("OPENCLAW_", StringComparison.OrdinalIgnoreCase)).ToList())
+            environment.Remove(key);
+        var appDataRoot = Path.Combine(runDirectory, "roaming-root");
+        var localAppDataRoot = Path.Combine(runDirectory, "local-root");
+        Directory.CreateDirectory(appDataRoot);
+        Directory.CreateDirectory(localAppDataRoot);
+        environment["OPENCLAW_TRAY_DATA_DIR"] = runDirectory;
+        environment["OPENCLAW_TRAY_APPDATA_DIR"] = appDataRoot;
+        environment["OPENCLAW_TRAY_LOCALAPPDATA_DIR"] = localAppDataRoot;
+        environment["OPENCLAW_TRAY_LOCAL_DATA_DIR"] = Path.Combine(localAppDataRoot, "OpenClawTray");
+    }
+
     private Process StartProcess(string? deepLink)
     {
         var startInfo = new ProcessStartInfo(_executablePath)
@@ -417,7 +441,7 @@ public sealed class AccessibilityAppFixture : IDisposable
         };
         if (deepLink is not null)
             startInfo.ArgumentList.Add(deepLink);
-        startInfo.Environment["OPENCLAW_TRAY_DATA_DIR"] = _dataDirectory;
+        ApplyProfileIsolation(startInfo.Environment, _dataDirectory);
         startInfo.Environment["OPENCLAW_SKIP_UPDATE_CHECK"] = "1";
         startInfo.Environment["OPENCLAW_FORCE_ONBOARDING"] = "0";
         startInfo.Environment["OPENCLAW_LANGUAGE"] = "en-US";

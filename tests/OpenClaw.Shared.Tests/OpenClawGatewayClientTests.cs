@@ -13,6 +13,248 @@ namespace OpenClaw.Shared.Tests;
 public class OpenClawGatewayClientTests
 {
     private static readonly TimeSpan CloseHandshakeTimeout = TimeSpan.FromSeconds(3);
+    // Session-event regressions explicitly unset the refresh-window override.
+    private static readonly TimeSpan SessionRefreshQuietInterval = TimeSpan.FromMilliseconds(600);
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task WebLoginFailure_OmitsEchoedPairingImageFromResultAndLogs(bool wait, bool wrapped)
+    {
+        var image = wrapped
+            ? "data:image/png;base64,\r\n c3ludGhldGlj cGFpcmluZ3BheWxvYWQ="
+            : "data:image/png;base64,c3ludGhldGljcGFpcmluZ3BheWxvYWQ=";
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("web-login-error-");
+        await server.StartAsync();
+        var logger = new TestLogger();
+        var helper = new GatewayClientTestHelper(
+            gatewayUrl: server.WebSocketUrl, identityPath: identity.Path, logger: logger);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+        var operation = wait
+            ? CheckWaitAsync()
+            : CheckStartAsync();
+        var request = await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        using var frame = JsonDocument.Parse(request);
+        Assert.Equal(wait ? "web.login.wait" : "web.login.start", frame.RootElement.GetProperty("method").GetString());
+        if (wait)
+            Assert.True(frame.RootElement.GetProperty("params").GetProperty("currentQrDataUrl").GetString() == image,
+                "The Gateway request must retain the synthetic pairing image.");
+        await server.SendTextAsync(JsonSerializer.Serialize(new
+        {
+            type = "res", id = ReadRequestId(request), ok = false,
+            error = new { message = wait ? image + " synthetic login failure" : "synthetic login failure " + image },
+        }));
+        await operation.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(logger.Logs, line => line.Contains(wait
+            ? "<omitted> synthetic login failure" : "synthetic login failure <omitted>", StringComparison.Ordinal));
+        Assert.False(logger.Logs.Any(line => line.Contains("c3ludGhldGlj", StringComparison.Ordinal)),
+            "Logs must omit the echoed synthetic pairing payload.");
+
+        async Task CheckWaitAsync()
+        {
+            var result = Assert.IsType<WebLoginWaitResult>(await client.WebLoginWaitAsync(image));
+            Assert.Equal("<omitted> synthetic login failure", result.Error);
+            Assert.Equal(result.Error, result.RawResponse);
+        }
+
+        async Task CheckStartAsync()
+        {
+            var result = Assert.IsType<WebLoginStartResult>(await client.WebLoginStartAsync());
+            Assert.Equal("synthetic login failure <omitted>", result.Error);
+            Assert.Equal(result.Error, result.RawResponse);
+        }
+    }
+
+    [Fact]
+    public void LateWebLoginError_OmitsPairingImageFromUntrackedResponseLog()
+    {
+        var logger = new TestLogger();
+        var helper = new GatewayClientTestHelper(logger);
+        using var client = helper.Client;
+        helper.ProcessRawMessage(JsonSerializer.Serialize(new
+        {
+            type = "res", id = "expired-web-login-wait", ok = false,
+            error = new { message = "wait expired data:image/png;base64,cGFpcmluZ3BheWxvYWQ=" },
+        }));
+        Assert.Contains("WARN: Gateway request failed (untracked response).", logger.Logs);
+        Assert.False(logger.Logs.Any(line => line.Contains("cGFpcmluZ3", StringComparison.Ordinal)),
+            "Late responses must not log the synthetic pairing payload.");
+    }
+
+    [Theory]
+    [InlineData("QUESTION_NOT_FOUND", true)]
+    [InlineData("PERMISSION_DENIED", false)]
+    [InlineData("", false)]
+    public async Task QuestionGet_UsesStructuredNotFoundReason_NotUntrustedMessageText(string reason, bool unavailable)
+    {
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("question-recovery-");
+        await server.StartAsync();
+        var helper = new GatewayClientTestHelper(gatewayUrl: server.WebSocketUrl, identityPath: identity.Path);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+        var getting = client.GetQuestionAsync("old-question");
+        var request = await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await server.SendTextAsync(JsonSerializer.Serialize(new
+        {
+            type = "res", id = ReadRequestId(request), ok = false,
+            error = new { message = "QUESTION_NOT_FOUND", details = new { reason } },
+        }));
+        if (unavailable)
+            await Assert.ThrowsAsync<GatewayQuestionUnavailableException>(() => getting.WaitAsync(TimeSpan.FromSeconds(5)));
+        else
+        {
+            var error = await Assert.ThrowsAsync<GatewayRequestRejectedException>(() => getting.WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.Equal("QUESTION_NOT_FOUND", error.Message);
+            Assert.Null(error.Code);
+        }
+    }
+
+    [Theory]
+    [InlineData("QUESTION_NOT_FOUND", typeof(GatewayQuestionUnavailableException))]
+    [InlineData("QUESTION_ALREADY_TERMINAL", typeof(GatewayQuestionAlreadyTerminalException))]
+    [InlineData("QUESTION_INVALID_ANSWER", typeof(GatewayQuestionInvalidAnswerException))]
+    [InlineData("PERMISSION_DENIED", typeof(GatewayRequestRejectedException))]
+    [InlineData("", typeof(GatewayRequestRejectedException))]
+    public async Task QuestionResolve_ClassifiesStructuredReason_NotUntrustedMessage(string reason, Type expectedType)
+    {
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("question-error-");
+        await server.StartAsync();
+        var helper = new GatewayClientTestHelper(gatewayUrl: server.WebSocketUrl, identityPath: identity.Path);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+        var sending = client.ResolveQuestionAsync("question-1",
+            new Dictionary<string, string[]> { ["choice"] = ["win"] });
+        var request = await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        await server.SendTextAsync(JsonSerializer.Serialize(new
+        {
+            type = "res", id = ReadRequestId(request), ok = false,
+            error = new
+            {
+                code = "INVALID_REQUEST",
+                message = "private answer: QUESTION_ALREADY_TERMINAL QUESTION_INVALID_ANSWER",
+                details = new { reason },
+            },
+        }));
+        var error = await Record.ExceptionAsync(() => sending.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.IsType(expectedType, error);
+        if (error is GatewayRequestRejectedException rejection)
+        {
+            Assert.Equal("INVALID_REQUEST", rejection.Code);
+            Assert.Equal("private answer: QUESTION_ALREADY_TERMINAL QUESTION_INVALID_ANSWER", rejection.Message);
+        }
+        else
+            Assert.DoesNotContain("private answer", error.Message);
+        Assert.Equal(0, helper.GetPendingRequestCount());
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task QuestionResolve_WireRoundTripUsesNestedAnswersAndRequiresMatchingAcknowledgement(bool cancel, bool badAck)
+    {
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("question-rpc-");
+        await server.StartAsync();
+        var helper = new GatewayClientTestHelper(gatewayUrl: server.WebSocketUrl, identityPath: identity.Path);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+        var sending = client.ResolveQuestionAsync("question-1",
+            cancel ? null : new Dictionary<string, string[]> { ["platform"] = ["win", " win ", "win"] });
+        var request = await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        using var frame = JsonDocument.Parse(request);
+        Assert.Equal("question.resolve", frame.RootElement.GetProperty("method").GetString());
+        var parameters = frame.RootElement.GetProperty("params");
+        Assert.Equal("question-1", parameters.GetProperty("id").GetString());
+        if (cancel)
+        {
+            Assert.True(parameters.GetProperty("cancel").GetBoolean());
+            Assert.False(parameters.TryGetProperty("answers", out _));
+        }
+        else
+            Assert.Equal(new[] { "win", " win ", "win" },
+                parameters.GetProperty("answers").GetProperty("answers").GetProperty("platform")
+                    .EnumerateArray().Select(value => value.GetString()));
+        Assert.False(sending.IsCompleted);
+        await server.SendTextAsync(JsonSerializer.Serialize(new
+        {
+            type = "res", id = ReadRequestId(request), ok = true,
+            payload = new { status = badAck ? "pending" : cancel ? "cancelled" : "answered" },
+        }));
+        if (badAck)
+            await Assert.ThrowsAsync<JsonException>(() => sending.WaitAsync(TimeSpan.FromSeconds(5)));
+        else
+            Assert.Equal(cancel ? "cancelled" : "answered", await sending.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(0, helper.GetPendingRequestCount());
+    }
+
+    [Fact]
+    public void ChatAppendFrames_AreReconstructedBeforeReachingConsumers()
+    {
+        var helper = new GatewayClientTestHelper();
+        var messages = new List<ChatMessageInfo>();
+        helper.Client.ChatMessageReceived += (_, message) => messages.Add(message);
+        helper.ProcessRawMessage("""
+            {"type":"event","event":"chat","payload":{"sessionKey":"main","runId":"r","state":"delta",
+            "message":{"role":"assistant","content":[{"type":"text","text":"hello"}]},"deltaText":"hello"}}
+            """);
+        helper.ProcessRawMessage("""
+            {"type":"event","event":"chat","payload":{"sessionKey":"main","runId":"r","state":"delta","deltaText":" world"}}
+            """);
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("hello", messages[0].Text);
+        Assert.Equal("hello world", messages[1].Text);
+    }
+
+    [Fact]
+    public void ChatLegacyTextDelta_ReachesExistingHandlerWithoutRecoveryNotice()
+    {
+        var helper = new GatewayClientTestHelper();
+        using var client = helper.Client;
+        var messages = new List<ChatMessageInfo>();
+        var notices = new List<AgentEventInfo>();
+        client.ChatMessageReceived += (_, message) => messages.Add(message);
+        client.AgentEventReceived += (_, notice) => notices.Add(notice);
+        helper.ProcessRawMessage("""
+            {"type":"event","event":"chat","payload":{"sessionKey":"main","runId":"r","state":"delta",
+            "role":"assistant","text":"legacy response"}}
+            """);
+        Assert.Equal("legacy response", Assert.Single(messages).Text);
+        Assert.Empty(notices);
+    }
+
+    [Fact]
+    public void QuestionEvents_AreRoutedSeparatelyFromChat_AndMalformedRequestsAreVisible()
+    {
+        var helper = new GatewayClientTestHelper();
+        var events = new List<GatewayQuestionEvent>();
+        var invalid = 0;
+        var chat = 0;
+        helper.Client.QuestionReceived += (_, question) => events.Add(question);
+        helper.Client.QuestionProtocolError += (_, _) => invalid++;
+        helper.Client.ChatMessageReceived += (_, _) => chat++;
+        helper.ProcessRawMessage("""
+            {"type":"event","event":"question.requested","payload":{"id":"q","status":"pending",
+            "sessionKey":"main","createdAtMs":1000,"expiresAtMs":2000,
+            "questions":[{"questionId":"platform","header":"Platform","question":"Choose","options":[{"label":"Windows","value":"win"}]}]}}
+            """);
+        helper.ProcessRawMessage("""
+            {"type":"event","event":"question.resolved","payload":{"id":"q","status":"answered","answers":{"platform":["win"]}}}
+            """);
+        helper.ProcessRawMessage("""{"type":"event","event":"question.requested","payload":{"id":"bad"}}""");
+        Assert.Equal(new[] { "pending", "answered" }, events.Select(evt => evt.Status));
+        Assert.Equal(1, invalid);
+        Assert.Equal(0, chat);
+    }
 
     // Test helper to access private methods through reflection
     private class GatewayClientTestHelper
@@ -22,13 +264,20 @@ public class OpenClawGatewayClientTests
 
         public OpenClawGatewayClient Client => _client;
 
+        public GatewayClientTestHelper(OpenClawGatewayClient client) => _client = client;
+
+        public Task OnConnectedAsync() => (Task)typeof(OpenClawGatewayClient).GetMethod(
+            "OnConnectedAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .Invoke(_client, Array.Empty<object>())!;
+
         public GatewayClientTestHelper(
             bool tokenIsBootstrapToken = false,
             bool bootstrapPairAsNode = false,
             string gatewayUrl = "ws://localhost:18789",
             string? identityPath = null,
             bool persistHandshakeDeviceTokens = true,
-            DeviceTokenReceivedEventArgs? ephemeralOperatorCredential = null)
+            DeviceTokenReceivedEventArgs? ephemeralOperatorCredential = null,
+            IOpenClawLogger? logger = null)
         {
             // Isolate test identities because other test classes can construct
             // gateway clients concurrently under the same AppData root.
@@ -37,7 +286,7 @@ public class OpenClawGatewayClientTests
             _client = new OpenClawGatewayClient(
                 gatewayUrl,
                 "test-token",
-                new TestLogger(),
+                logger ?? new TestLogger(),
                 tokenIsBootstrapToken,
                 bootstrapPairAsNode,
                 identityPath,
@@ -608,6 +857,125 @@ public class OpenClawGatewayClientTests
             ? client.DeleteSessionConfirmedAsync("agent:test:session", client.SessionMutationConnectionEpoch!.Value, timeoutMs)
             : client.PatchSessionConfirmedAsync("agent:test:session", new SessionPatch { Archived = true },
                 client.SessionMutationConnectionEpoch!.Value, timeoutMs);
+
+    [Fact]
+    public async Task SessionEventBurst_CoalescesBothEventKinds_WithoutDelayingExplicitRefresh()
+    {
+        using var refreshWindow = new EnvironmentScope("OPENCLAW_SESSION_REFRESH_WINDOW_MS", null);
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("session-refresh-");
+        await server.StartAsync();
+        var helper = new GatewayClientTestHelper(gatewayUrl: server.WebSocketUrl, identityPath: identity.Path);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+
+        for (var i = 0; i < 50; i++)
+            helper.ProcessRawMessage(i % 2 == 0
+                ? """{"type":"event","event":"sessions.changed","payload":{}}"""
+                : """{"type":"event","event":"session","payload":{}}""");
+
+        // The explicit, agent-filtered refresh is never delayed by event batching.
+        await client.RequestSessionsAsync("research");
+        using var explicitFrame = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("research", explicitFrame.RootElement.GetProperty("params").GetProperty("agentId").GetString());
+        using var automaticFrame = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("sessions.list", automaticFrame.RootElement.GetProperty("method").GetString());
+        Assert.True(automaticFrame.RootElement.GetProperty("params").GetProperty("includeDerivedTitles").GetBoolean());
+        Assert.False(automaticFrame.RootElement.GetProperty("params").TryGetProperty("agentId", out _));
+
+        // Allow a wrongly retained trailing timer to expire before the wire ordering barrier.
+        await Task.Delay(SessionRefreshQuietInterval);
+        await client.RequestSessionsAsync("barrier");
+        using var barrier = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("barrier", barrier.RootElement.GetProperty("params").GetProperty("agentId").GetString());
+
+        helper.ProcessRawMessage("""{"type":"event","event":"sessions.changed","payload":{}}""");
+        using var later = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.False(later.RootElement.GetProperty("params").TryGetProperty("agentId", out _));
+    }
+
+    [Fact]
+    public async Task SessionEventRefresh_DisconnectCancelsOldWindow_AndNewEventsStillRefresh()
+    {
+        using var refreshWindow = new EnvironmentScope("OPENCLAW_SESSION_REFRESH_WINDOW_MS", null);
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("session-refresh-");
+        await server.StartAsync();
+        var helper = new GatewayClientTestHelper(gatewayUrl: server.WebSocketUrl, identityPath: identity.Path);
+        using var client = helper.Client;
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+        helper.ProcessRawMessage("""{"type":"event","event":"sessions.changed","payload":{}}""");
+        helper.OnDisconnected();
+        await helper.OnConnectedAsync();
+        helper.MarkHandshakeReady();
+
+        // Exercise expiration, not transport rejection: the socket remains ready throughout.
+        // This exceeds the default 250 ms batching window and admits no new event until it expires.
+        await Task.Delay(SessionRefreshQuietInterval);
+        await client.RequestSessionsAsync("after-disconnect");
+        using var explicitFrame = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("after-disconnect", explicitFrame.RootElement.GetProperty("params").GetProperty("agentId").GetString());
+        helper.ProcessRawMessage("""{"type":"event","event":"session","payload":{}}""");
+        using var fresh = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("sessions.list", fresh.RootElement.GetProperty("method").GetString());
+        Assert.False(fresh.RootElement.GetProperty("params").TryGetProperty("agentId", out _));
+    }
+
+    private sealed class DelayedRefreshClient(string url, string identityPath, IOpenClawLogger logger)
+        : OpenClawGatewayClient(url, "test-token", logger, identityPath: identityPath)
+    {
+        public TaskCompletionSource FirstSendStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstSend { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int AutomaticSends;
+
+        protected override async Task<bool> SendRawAsync(string message, long generation, CancellationToken cancellationToken)
+        {
+            using var frame = JsonDocument.Parse(message);
+            if (frame.RootElement.GetProperty("method").GetString() == "sessions.list"
+                && !frame.RootElement.GetProperty("params").TryGetProperty("agentId", out _)
+                && Interlocked.Increment(ref AutomaticSends) == 1)
+            {
+                FirstSendStarted.TrySetResult();
+                await ReleaseFirstSend.Task.WaitAsync(cancellationToken);
+                throw new IOException("synthetic transport failure");
+            }
+            return await base.SendRawAsync(message, generation, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task SessionEventRefresh_SlowFailedSend_ObservesFailureAndKeepsOneTrailingRefresh()
+    {
+        using var refreshWindow = new EnvironmentScope("OPENCLAW_SESSION_REFRESH_WINDOW_MS", null);
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("session-refresh-");
+        await server.StartAsync();
+        var logger = new OpenClaw.Shared.Tests.TestLogger();
+        using var client = new DelayedRefreshClient(server.WebSocketUrl, identity.Path, logger);
+        var helper = new GatewayClientTestHelper(client);
+        await client.ConnectAsync();
+        helper.MarkHandshakeReady();
+        helper.ProcessRawMessage("""{"type":"event","event":"sessions.changed","payload":{}}""");
+        await client.FirstSendStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        for (var i = 0; i < 50; i++)
+            helper.ProcessRawMessage("""{"type":"event","event":"session","payload":{}}""");
+
+        // Hold the send past a batching window. Further events may not enqueue more sends.
+        await Task.Delay(SessionRefreshQuietInterval);
+        Assert.Equal(1, Volatile.Read(ref client.AutomaticSends));
+        client.ReleaseFirstSend.TrySetResult();
+        using var trailing = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("sessions.list", trailing.RootElement.GetProperty("method").GetString());
+        Assert.Equal(2, Volatile.Read(ref client.AutomaticSends));
+        Assert.Contains(logger.Logs, message => message.Contains("Session event refresh failed: IOException"));
+        await Task.Delay(SessionRefreshQuietInterval);
+        Assert.Equal(2, Volatile.Read(ref client.AutomaticSends));
+        await client.RequestSessionsAsync("barrier");
+        using var barrier = JsonDocument.Parse(await server.ReceiveTextAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal("barrier", barrier.RootElement.GetProperty("params").GetProperty("agentId").GetString());
+    }
 
     [Theory]
     [InlineData(false)]
@@ -1231,7 +1599,7 @@ public class OpenClawGatewayClientTests
 
         Assert.False(helper.Client.IsAuthFailed);
         Assert.Equal(
-            ["operator.approvals", "operator.read", "operator.talk.secrets", "operator.write"],
+            ["operator.approvals", "operator.questions", "operator.read", "operator.talk.secrets", "operator.write"],
             helper.GetRequestedOperatorScopes());
 
         helper.TrackPendingRequest("req-bootstrap-bounded", "connect");
