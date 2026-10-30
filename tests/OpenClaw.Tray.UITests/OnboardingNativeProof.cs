@@ -847,8 +847,7 @@ internal static class OnboardingNativeProof
                 missingLabels = missing, factor,
             }, new JsonSerializerOptions { WriteIndented = true }));
             phase = "validate-missing-labels";
-            foreach (var label in missing)
-                Assert.Contains(label, new[] { "Set up your AI", "Set up a local model" });
+            AssertManualLabelExceptions(missing, original.Text, result.Text);
             return new(original.Text, result.Text, factor, decoder.PixelWidth, decoder.PixelHeight,
                 transform.ScaledWidth, transform.ScaledHeight, missing);
         }
@@ -895,6 +894,18 @@ internal static class OnboardingNativeProof
             catch { }
             throw;
         }
+    }
+
+    internal static void AssertManualLabelExceptions(string[] missingLabels, string originalText, string scaledText)
+    {
+        static bool HasWelcomeTitleAmbiguity(string text) =>
+            $" {text} ".Contains(" Set up OpenCIaw ", StringComparison.Ordinal);
+
+        foreach (var label in missingLabels)
+            Assert.True(label is "Set up your AI" or "Set up a local model" ||
+                label == "Set up OpenClaw" &&
+                HasWelcomeTitleAmbiguity(originalText) && HasWelcomeTitleAmbiguity(scaledText),
+                $"OCR did not verify expected label: {label}");
     }
 
     internal static async Task<T> RunOcrPassAsync<T>(
