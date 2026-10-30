@@ -26,7 +26,7 @@ public sealed partial class GatewayFixtureProtocolTests
         Assert.True(result.IsSupported);
         Assert.Empty(result.Questions);
         Assert.Contains(server.Requests, request => request.Method == "question.list" && request.Outcome == "ok");
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var error = await Assert.ThrowsAsync<GatewayRequestRejectedException>(() =>
             connected.Client.SendWizardRequestAsync("question.request", new { title = "Not an interactive fixture" }));
         Assert.Contains("Unknown fixture Gateway method", error.Message);
         Assert.Equal("question.request", Assert.Single(server.UnexpectedRequests).Method);
@@ -54,7 +54,7 @@ public sealed partial class GatewayFixtureProtocolTests
         Assert.Empty(catalog.Workspaces);
         foreach (var method in new[] { "projects.list", "agents.list", "environments.list" })
             Assert.Contains(server.Requests, request => request.Method == method && request.Outcome == "ok");
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var error = await Assert.ThrowsAsync<GatewayRequestRejectedException>(() =>
             connected.Client.SendWizardRequestAsync("projects.add", new { gitUrl = "https://example.test/fixture.git" }));
         Assert.Contains("read-only", error.Message);
         Assert.Contains(server.Requests, request => request.Method == "projects.add" && request.Outcome == "error:FIXTURE_READ_ONLY");
@@ -101,7 +101,7 @@ public sealed partial class GatewayFixtureProtocolTests
         Assert.True(result.IsSupported);
         Assert.Empty(result.Questions);
         Assert.DoesNotContain("question.resolve", scenario.ReadMethods);
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var error = await Assert.ThrowsAsync<GatewayRequestRejectedException>(() =>
             connected.Client.SendWizardRequestAsync("question.list", new { unexpected = true }));
         Assert.Contains("Unsupported fixture request parameter", error.Message);
         Assert.Empty(server.UnexpectedRequests);
