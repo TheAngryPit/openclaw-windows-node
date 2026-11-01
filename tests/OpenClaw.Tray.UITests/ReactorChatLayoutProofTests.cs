@@ -46,6 +46,7 @@ public sealed class ReactorChatLayoutProofTests(UIThreadFixture ui)
     [InlineData("fr-fr", "Choisissez où cette session s’exécute, puis indiquez quoi faire.", "Que pouvez-vous faire ?")]
     [InlineData("nl-nl", "Kies waar deze sessie werkt en geef vervolgens aan wat er moet gebeuren.", "Wat kun je doen?")]
     [InlineData("pt-br", "Escolha onde esta sessão será executada e diga o que fazer.", "O que você pode fazer?")]
+    [InlineData("pt-pt", "Escolha onde esta sessão é executada e diga o que pretende fazer.", "O que pode fazer?")]
     [InlineData("zh-cn", "选择此会话的运行位置，然后说明要执行的任务。", "你能做什么？")]
     [InlineData("zh-tw", "選擇此工作階段的執行位置，再說明要做什麼。", "你能做什麼？")]
     public async Task Welcome_BundledCopyUsesUiLanguageAndSendsSelectedPrompt(string language, string hint, string prompt)

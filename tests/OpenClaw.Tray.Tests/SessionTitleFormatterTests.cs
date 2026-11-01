@@ -192,7 +192,7 @@ public sealed class SessionTitleFormatterTests
     public void SessionLocalizationResources_CoverGeneratedTitlesAndSubtitleLabels()
     {
         var root = TestRepositoryPaths.GetRepositoryRoot();
-        foreach (var locale in new[] { "en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br" })
+        foreach (var locale in new[] { "en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br", "pt-pt" })
         {
             var resources = File.ReadAllText(Path.Combine(
                 root,

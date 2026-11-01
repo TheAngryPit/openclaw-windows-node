@@ -620,6 +620,7 @@ public class LocalizationValidationTests
         "fr-fr",
         "nl-nl",
         "pt-br",
+        "pt-pt",
     };
 
     private static bool IsInvariantOrDeferred(string key, string value) =>
@@ -799,7 +800,7 @@ public class LocalizationValidationTests
     public void AllSupportedLocaleDirectories_Exist()
     {
         var stringsDir = GetStringsDirectory();
-        string[] expected = ["en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br"];
+        string[] expected = ["en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br", "pt-pt"];
 
         foreach (var locale in expected)
         {
@@ -1106,14 +1107,34 @@ public class LocalizationValidationTests
 
             if (identicalLocales.Count != localeResw.Count)
             {
-                // These ordinary words are spelled identically in these languages.
                 string[] naturalLoanwordLocales = key switch
                 {
+                    "A2UI_CanvasTitle" => ["pt-pt"],
+                    "AppNotification_CronRunFailed_MessageFormat" => ["pt-pt"],
+                    "ConfigPage_StatusValidationErrorMessageFormat" => ["pt-pt"],
+                    "ConnectionPage_GatewayHostTerminalLabel.Text" => ["pt-pt"],
+                    "ConnectionPage_Gateways.Text" => ["pt-pt"],
+                    "ConnectionPage_PreviewGateway" => ["pt-pt"],
+                    "ConnectionPage_PreviewToken" => ["pt-pt"],
+                    "ConnectionPage_TopologyLocal" => ["pt-pt"],
+                    "ConnectionStatusWindow_GATEWAYS.Text" => ["pt-pt"],
+                    "DebugPage_StatusGatewayFormat" => ["pt-pt"],
+                    "HubWindow_NavigationViewItemHeader_87.Content" => ["pt-pt"],
+                    "HubWindow_NavigationViewItem_97.Content" => ["pt-pt"],
+                    "NotificationsPage_MetadataGateway" => ["pt-pt"],
+                    "NotificationsPage_MetadataSandbox" => ["pt-pt"],
+                    "SkillsPage_Skills.Text" => ["pt-pt"],
+                    "SkillsPage_TextBlock_10.Text" => ["pt-pt"],
+                    "StatusSkillsTitle.Text" => ["pt-pt"],
+                    "UsagePage_TextBlock_45.Text" => ["pt-pt"],
+                    "VoiceSettingsPage_MiniMaxRegionChina.Content" => ["pt-pt"],
+                    "VoiceSettingsPage_MiniMaxRegionGlobal.Content" => ["pt-pt"],
+                    "WindowTitle_Canvas" => ["pt-pt"],
                     "Onboarding_V2_LocalAiModel.Header" => ["nl-nl"],
                     "Onboarding_V2_ProfileReadOnlyTitle.Text" or "SandboxPage_PresetStrict.Text" => ["fr-fr"],
                     "Onboarding_V2_ProfileFullTitle.Text" or "SandboxPage_PresetOpen.Text" => ["nl-nl"],
                     "Onboarding_V2_Microphone" or "Onboarding_V2_Notifications" => ["fr-fr"],
-                    "Onboarding_V2_Tokens" => ["nl-nl", "pt-br"],
+                    "Onboarding_V2_Tokens" => ["nl-nl", "pt-br", "pt-pt"],
                     _ => [],
                 };
                 if (naturalLoanwordLocales.Length > 0 &&

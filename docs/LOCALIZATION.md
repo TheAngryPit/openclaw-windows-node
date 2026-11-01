@@ -10,6 +10,7 @@ OpenClaw Tray uses WinUI `.resw` resource files for localization. Windows automa
 | French (France) | `fr-fr` | `Strings/fr-fr/Resources.resw` |
 | Dutch (Netherlands) | `nl-nl` | `Strings/nl-nl/Resources.resw` |
 | Brazilian Portuguese | `pt-br` | `Strings/pt-br/Resources.resw` |
+| Portuguese (Portugal) | `pt-pt` | `Strings/pt-pt/Resources.resw` |
 | Chinese (Simplified) | `zh-cn` | `Strings/zh-cn/Resources.resw` |
 | Chinese (Traditional) | `zh-tw` | `Strings/zh-tw/Resources.resw` |
 
@@ -27,7 +28,7 @@ OpenClaw Tray uses WinUI `.resw` resource files for localization. Windows automa
    src/OpenClaw.Tray.WinUI/Strings/<locale>/Resources.resw
    ```
 
-   Use the standard BCP-47 locale tag in lowercase (e.g., `de-de`, `fr-fr`, `ja-jp`, `ko-kr`, `pt-br`, `es-es`).
+   Use the standard BCP-47 locale tag in lowercase (e.g., `de-de`, `fr-fr`, `ja-jp`, `ko-kr`, `pt-br`, `pt-pt`, `es-es`).
 
 3. **Translate the `<value>` elements** - do not change the `name` attributes. Each entry looks like:
 
@@ -74,7 +75,7 @@ Windows picks the language automatically based on the user's OS display language
 Set the `OPENCLAW_LANGUAGE` environment variable before launching the app:
 
 ```powershell
-$env:OPENCLAW_LANGUAGE = "fr-fr"  # or nl-nl, pt-br, zh-cn, zh-tw
+$env:OPENCLAW_LANGUAGE = "fr-fr"  # or nl-nl, pt-br, pt-pt, zh-cn, zh-tw
 .\run-app-local.ps1 -NoBuild
 ```
 

@@ -1011,7 +1011,7 @@ public sealed class AppRefactorContractTests
         };
         const string runtimeContractKey = "PermissionsPage_PatternsAreMatchedLeft.Text";
 
-        foreach (var locale in new[] { "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br" })
+        foreach (var locale in new[] { "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br", "pt-pt" })
         {
             var localized = ReadReswValues(Path.Combine(stringsRoot, locale, "Resources.resw"));
             foreach (var key in localizedKeys)
@@ -2207,7 +2207,7 @@ public sealed class AppRefactorContractTests
             Assert.DoesNotContain(retired, xaml);
         }
         Assert.Contains("CloseButtonText = L(\"CancelButton.Content\")", ExtractMethod(source, "ConfirmPresetAsync"));
-        foreach (var locale in new[] { "en-us", "fr-fr", "nl-nl", "pt-br", "zh-cn", "zh-tw" })
+        foreach (var locale in new[] { "en-us", "fr-fr", "nl-nl", "pt-br", "pt-pt", "zh-cn", "zh-tw" })
         {
             var resources = XDocument.Load(Path.Combine(root, "src", "OpenClaw.Tray.WinUI", "Strings", locale, "Resources.resw"));
             var names = resources.Root!.Elements("data").Select(data => (string)data.Attribute("name")!).ToArray();
@@ -2312,6 +2312,7 @@ public sealed class AppRefactorContractTests
     [InlineData("fr-fr", "Équilibré")]
     [InlineData("nl-nl", "Evenwichtig")]
     [InlineData("pt-br", "Equilibrado")]
+    [InlineData("pt-pt", "Equilibrado")]
     [InlineData("zh-cn", "平衡")]
     [InlineData("zh-tw", "平衡")]
     public void SandboxPage_LocalizedBalancedLabelHasNoDefaultQualifier(string locale, string expected)

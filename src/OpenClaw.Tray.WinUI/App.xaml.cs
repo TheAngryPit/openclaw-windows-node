@@ -295,7 +295,7 @@ public partial class App : Application, OpenClawTray.Services.IAppCommands, IPer
         if (!string.IsNullOrEmpty(langOverride))
         {
             // SECURITY: Whitelist known locale codes to prevent locale injection
-            string[] allowedLocales = ["en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br"];
+            string[] allowedLocales = ["en-us", "fr-fr", "nl-nl", "zh-cn", "zh-tw", "pt-br", "pt-pt"];
             if (allowedLocales.Contains(langOverride.ToLowerInvariant()))
                 LocalizationHelper.SetLanguageOverride(langOverride);
             else
