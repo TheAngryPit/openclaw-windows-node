@@ -8263,10 +8263,10 @@ Depois de se inscrever, volte a Definições &gt; Windows Update e procure atual
   <data name="Chat_Welcome_ConfigureChannel" xml:space="preserve"><value>Ajude-me a configurar um canal</value></data>
   <data name="Chat_Welcome_CheckSystemHealth" xml:space="preserve"><value>Verifique o estado do sistema</value></data>
   <data name="Chat_Composer_Sandbox_Title" xml:space="preserve">
-    <value>Sandbox do Node</value>
+    <value>Sandbox do nó</value>
   </data>
   <data name="Chat_Composer_Sandbox_OpenSettings" xml:space="preserve">
-    <value>Definições da sandbox</value>
+    <value>Definições do ambiente isolado</value>
   </data>
   <data name="Chat_Composer_Sandbox_Available" xml:space="preserve">
     <value>Disponível</value>
