@@ -27,15 +27,34 @@ internal static class OnboardingNativeProof
     private static readonly ConditionalWeakTable<Microsoft.UI.Xaml.Controls.Frame, NavigationCaptureState> NavigationStates = new();
     private static readonly List<string> DpiContextTrace = [];
 
+    [ModuleInitializer]
+    internal static void InitializeTesthostDpiBeforeTestDiscovery()
+    {
+        if (OperatingSystem.IsWindows())
+            InitializeProductProcessDpi();
+    }
+
     internal static void InitializeProductProcessDpi()
     {
-        var initialized = SetProcessDpiAwarenessContext(new IntPtr(-4));
-        var error = initialized ? 0 : Marshal.GetLastWin32Error();
+        var presentationCoreLoaded = AppDomain.CurrentDomain.GetAssemblies()
+            .Any(assembly => assembly.GetName().Name == "PresentationCore");
         using var process = Process.GetCurrentProcess();
         var context = GetDpiAwarenessContextForProcess(process.Handle);
+        var initialized = AreDpiAwarenessContextsEqual(context, new IntPtr(-4));
+        Console.WriteLine($"proof-dpi-process-before-initialization: processContext=0x{context:X}; " +
+            $"processPMv2={initialized}; PresentationCoreLoaded={presentationCoreLoaded}");
+        TraceDpiContext("testhost process before initialization");
+        var error = 0;
+        if (!initialized)
+        {
+            Assert.False(presentationCoreLoaded,
+                "PresentationCore loaded before the testhost selected PerMonitorV2.");
+            initialized = SetProcessDpiAwarenessContext(new IntPtr(-4));
+            error = initialized ? 0 : Marshal.GetLastWin32Error();
+            context = GetDpiAwarenessContextForProcess(process.Handle);
+        }
         TraceDpiContext($"testhost process initialization: success={initialized}; error={error}; " +
-            $"processContext=0x{context:X}; PresentationCoreLoaded=" +
-            AppDomain.CurrentDomain.GetAssemblies().Any(assembly => assembly.GetName().Name == "PresentationCore"));
+            $"processContext=0x{context:X}; PresentationCoreLoaded={presentationCoreLoaded}");
         // PresentationCore's module initializer calls SetProcessDPIAware when native UIA
         // first loads WPF. Lock our testhost default before any HWND, like the product manifest.
         Assert.True(AreDpiAwarenessContextsEqual(context, new IntPtr(-4)),

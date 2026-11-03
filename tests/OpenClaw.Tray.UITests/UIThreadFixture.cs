@@ -202,7 +202,6 @@ public sealed class UIThreadFixture : IDisposable
     {
         try
         {
-            OnboardingNativeProof.InitializeProductProcessDpi();
             OnboardingNativeProof.TraceDpiContext("UIThreadProc: before bootstrap");
             _startupPhase = "initializing WinRT COM wrappers";
             Console.WriteLine("UIThreadFixture: initializing WinRT COM wrappers");
