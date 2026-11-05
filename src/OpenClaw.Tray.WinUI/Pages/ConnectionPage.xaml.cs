@@ -1926,6 +1926,8 @@ public sealed partial class ConnectionPage : Page
         ClearAddGatewaySshFields();
         // Direct is default — make sure the selector is on Direct.
         // Pre-fill the most common local gateway URL.
+        DirectOperatorAuthentication.SelectedIndex = 0;
+        DirectPersonalServeUrl.Text = string.Empty;
         DirectUrlBox.Text = "ws://127.0.0.1:18789";
         DirectTokenBox.Text = "";
         DirectNameBox.Text = "";
@@ -2465,6 +2467,8 @@ public sealed partial class ConnectionPage : Page
         _userIntent = UserIntent.AddingGateway;
         DirectUrlBox.Text = rec.Url;
         DirectTokenBox.Text = rec.SharedGatewayToken ?? "";
+        DirectOperatorAuthentication.SelectedIndex = (int)rec.OperatorAuthentication;
+        DirectPersonalServeUrl.Text = rec.PersonalIdentityServeUrl ?? string.Empty;
         DirectNameBox.Text = rec.FriendlyName ?? "";
         if (rec.SshTunnel != null)
         {
@@ -2619,6 +2623,8 @@ public sealed partial class ConnectionPage : Page
         _userIntent = UserIntent.AddingGateway;
         DirectUrlBox.Text = rec.Url;
         DirectTokenBox.Text = rec.SharedGatewayToken ?? "";
+        DirectOperatorAuthentication.SelectedIndex = (int)rec.OperatorAuthentication;
+        DirectPersonalServeUrl.Text = rec.PersonalIdentityServeUrl ?? string.Empty;
         DirectNameBox.Text = rec.FriendlyName ?? "";
         if (rec.SshTunnel != null)
         {
@@ -2688,6 +2694,20 @@ public sealed partial class ConnectionPage : Page
         UpdateRemoteSetupAdvice();
     }
 
+    private void OnDirectOperatorAuthenticationChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (DirectTokenBox is null || DirectAuthHintText is null || DirectPersonalHint is null) return;
+        var personal = DirectOperatorAuthentication.SelectedIndex == 1;
+        DirectTokenBox.Visibility = personal ? Visibility.Collapsed : Visibility.Visible;
+        DirectAuthHintText.Visibility = personal ? Visibility.Collapsed : Visibility.Visible;
+        DirectPersonalHint.Visibility = personal ? Visibility.Visible : Visibility.Collapsed;
+        if (DirectPersonalServeUrl is not null)
+            DirectPersonalServeUrl.Visibility = DirectOperatorAuthentication.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+        if (DirectLocalPersonalHint is not null)
+            DirectLocalPersonalHint.Visibility = DirectOperatorAuthentication.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+        if (AddResultText is not null) AddResultText.Text = string.Empty;
+    }
+
     private void OnDirectUrlLostFocus(object sender, RoutedEventArgs e)
     {
         var url = DirectUrlBox.Text?.Trim();
@@ -2699,6 +2719,7 @@ public sealed partial class ConnectionPage : Page
 
     private void AutoFillTokenForUrl(string? url, bool force = false)
     {
+        if (DirectOperatorAuthentication?.SelectedIndex == 1) return;
         if (string.IsNullOrWhiteSpace(url) || (!force && !string.IsNullOrEmpty(DirectTokenBox.Text)))
             return;
         var match = _gatewayRegistry?.GetAll().FirstOrDefault(g =>
@@ -2830,7 +2851,10 @@ public sealed partial class ConnectionPage : Page
         if (_gatewayDirectConnectService is null) return;
 
         var url = DirectUrlBox.Text?.Trim();
-        var token = DirectTokenBox.Text?.Trim();
+        var personal = DirectOperatorAuthentication.SelectedIndex == 1;
+        var localPersonal = DirectOperatorAuthentication.SelectedIndex == 2;
+        var authentication = (OperatorAuthenticationMode)DirectOperatorAuthentication.SelectedIndex;
+        var token = personal ? null : DirectTokenBox.Text?.Trim();
         var friendly = DirectNameBox.Text?.Trim();
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -2838,6 +2862,17 @@ public sealed partial class ConnectionPage : Page
             return;
         }
 
+        if (personal && !GatewayPersonalAuthenticationPolicy.TryNormalizeGatewayUrl(url, out _, out _))
+        {
+            AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_PersonalRouteRequired");
+            return;
+        }
+        if (localPersonal && (!PersonalIdentityBinding.IsLocalWss(url) ||
+            !GatewayPersonalAuthenticationPolicy.TryNormalizeGatewayUrl(DirectPersonalServeUrl.Text?.Trim(), out _, out _)))
+        {
+            AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_LocalPersonalRouteRequired");
+            return;
+        }
         url = GatewayUrlHelper.NormalizeForWebSocket(url);
 
         if (!TryBuildAddSshTunnelConfig(out var sshConfig, out var sshError))
@@ -2846,6 +2881,11 @@ public sealed partial class ConnectionPage : Page
             return;
         }
 
+        if ((personal || localPersonal) && sshConfig is not null)
+        {
+            AddResultText.Text = LocalizationHelper.GetString("ConnectionPage_PersonalRouteRequired");
+            return;
+        }
         AddSaveButton.IsEnabled = false;
         AddResultText.Text = sshConfig is null
             ? LocalizationHelper.GetString("ConnectionPage_Connecting")
@@ -2874,14 +2914,18 @@ public sealed partial class ConnectionPage : Page
                         friendly,
                         sshConfig,
                         _editingGatewayId,
-                        PreserveExistingSharedTokenWhenMissing: true)
+                        PreserveExistingSharedTokenWhenMissing: true,
+                        OperatorAuthentication: authentication,
+                        PersonalIdentityServeUrl: localPersonal ? DirectPersonalServeUrl.Text?.Trim() : null)
                     : new GatewayDirectConnectRequest(
                         url,
                         submittedToken,
                         friendly,
                         sshConfig,
                         _editingGatewayId,
-                        PreserveExistingSharedTokenWhenMissing: false));
+                        PreserveExistingSharedTokenWhenMissing: personal || localPersonal,
+                        OperatorAuthentication: authentication,
+                        PersonalIdentityServeUrl: localPersonal ? DirectPersonalServeUrl.Text?.Trim() : null));
             if (result.Outcome == GatewayDirectConnectOutcome.Failed)
             {
                 AddResultText.Text = $"✗ {result.Error}";

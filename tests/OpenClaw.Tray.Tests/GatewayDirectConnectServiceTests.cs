@@ -9,6 +9,53 @@ namespace OpenClaw.Tray.Tests;
 public sealed class GatewayDirectConnectServiceTests : IDisposable
 {
     [Theory]
+    [InlineData("ws://127.0.0.1:18789", "wss://fixture.example.ts.net")]
+    [InlineData("wss://127.0.0.1:18789", "ws://fixture.example.ts.net")]
+    [InlineData("wss://remote.example:18789", "wss://fixture.example.ts.net")]
+    public async Task InvalidLocalPersonalRequestCannotRewritePrimaryOrStartConnection(string url, string serve)
+    {
+        var previous = AddPreviousGateway();
+        var result = await CreateService().ConnectAsync(new(url, null, null, null,
+            EditingGatewayId: previous.Id, OperatorAuthentication: OperatorAuthenticationMode.PersonalTailscaleLocal,
+            PersonalIdentityServeUrl: serve));
+        Assert.False(result.GatewayCommitted);
+        Assert.Equal(previous, _registry.GetById(previous.Id));
+        Assert.Equal(0, _manager.ConnectCount);
+    }
+
+    [Fact]
+    public void LocalPersonalCandidateRetainsPrimaryOwnerAndNodeSidecarRealm()
+    {
+        var original = new GatewayRecord { Id = "primary", Url = "wss://localhost:18789", IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway", RequiresV2Signature = true, SharedGatewayToken = "local" };
+        var candidate = GatewayDirectConnectService.BuildCandidate(new(original.Url, null, null, null,
+            OperatorAuthentication: OperatorAuthenticationMode.PersonalTailscaleLocal,
+            PersonalIdentityServeUrl: "wss://fixture.example.ts.net"), original, original.Id, true);
+        Assert.Equal(original.Url, candidate.Url);
+        Assert.Equal(original.Id, candidate.IdentityDirName);
+        Assert.Equal(original.SetupManagedDistroName, candidate.SetupManagedDistroName);
+        Assert.True(candidate.IsLocal);
+        Assert.True(candidate.RequiresV2Signature);
+        Assert.Equal("local", candidate.SharedGatewayToken);
+        Assert.Equal("wss://fixture.example.ts.net", candidate.PersonalIdentityServeUrl);
+    }
+
+    [Theory]
+    [InlineData("ws://fixture.example.ts.net", null, false)]
+    [InlineData("wss://fixture.example.com", null, false)]
+    [InlineData("wss://fixture.example.ts.net", "shared", false)]
+    [InlineData("wss://fixture.example.ts.net", null, true)]
+    public async Task InvalidPersonalRequestCannotMutateRegistryOrStartConnection(string url, string? token, bool nativeSetup)
+    {
+        var previous = AddPreviousGateway();
+        var result = await CreateService().ConnectAsync(new(url, token, null, null,
+            NativeSetup: nativeSetup, OperatorAuthentication: OperatorAuthenticationMode.PersonalTailscale));
+        Assert.False(result.GatewayCommitted);
+        Assert.Equal(previous.Id, _registry.ActiveGatewayId);
+        Assert.Equal(0, _manager.ConnectCount);
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task InitialCommitCasConflictCleansOnlyUnadoptedNewRealmIdentity(bool adoptCandidate)

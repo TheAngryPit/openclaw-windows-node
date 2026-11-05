@@ -88,11 +88,18 @@ public partial class OpenClawGatewayClient
             var payload = await RequestArtifactDownloadAsync(sessionKey, media)
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
+            var downloadBaseUri = lease.HttpBaseUri;
+            if (RequiresPersonalIdentityVerification && !TryGetPersonalHttpBaseUri(lease, out downloadBaseUri))
+                return null;
+            if (!RequiresPersonalIdentityVerification && LocalTlsPin is not null &&
+                (!PersonalTailscaleGatewayRoute.TryNormalizeGatewayUrl(PrimaryPersonalIdentityServeUrl, out var serve, out _) ||
+                 !TryBuildMediaHttpBaseUri(serve, out downloadBaseUri)))
+                return null;
             return IsCurrentMediaLease(lease)
                 && TryReadArtifactMetadata(payload, media.Kind, out _, out _)
                 && payload.TryGetProperty("url", out var urlElement)
                 && urlElement.ValueKind == JsonValueKind.String
-                && TryResolveManagedMediaUri(lease.HttpBaseUri, urlElement.GetString(), out var downloadUri)
+                && TryResolveManagedMediaUri(downloadBaseUri, urlElement.GetString(), out var downloadUri)
                     ? downloadUri
                     : null;
         }
@@ -185,14 +192,24 @@ public partial class OpenClawGatewayClient
             || !AssistantMediaDirectiveParser.IsSendableLegacySource(media.GatewaySource))
             return AssistantMediaResolutionResult.Unavailable;
 
+        var httpBaseUri = lease.HttpBaseUri;
+        if (RequiresPersonalIdentityVerification && !TryGetPersonalHttpBaseUri(lease, out httpBaseUri))
+            return AssistantMediaResolutionResult.Unavailable;
+        if (RequiresPersonalIdentityVerification &&
+            !await VerifyCurrentPersonalHttpIdentityAsync(lease, cancellationToken).ConfigureAwait(false))
+            return AssistantMediaResolutionResult.Unavailable;
+
         var metadataUri = BuildLegacyMediaUri(
-            lease.HttpBaseUri,
+            httpBaseUri,
             media.GatewaySource,
             mediaTicket: null,
             metadata: true,
             playback: false);
-        using var metadataRequest = CreateAuthenticatedMediaRequest(metadataUri, "application/json");
-        using var metadataResponse = await _assistantMediaHttpClient.SendAsync(
+        using var metadataRequest = RequiresPersonalIdentityVerification
+            ? CreatePersonalServeReadRequest(metadataUri, "application/json")
+            : CreateAuthenticatedMediaRequest(metadataUri, "application/json");
+        if (!IsCurrentMediaLease(lease)) return AssistantMediaResolutionResult.Unavailable;
+        using var metadataResponse = await (RequiresPersonalIdentityVerification ? _personalServeHttpClient : _assistantMediaHttpClient).SendAsync(
             metadataRequest,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
@@ -229,7 +246,7 @@ public partial class OpenClawGatewayClient
             && playbackElement.ValueKind == JsonValueKind.String
             && string.Equals(playbackElement.GetString(), "transcode", StringComparison.Ordinal);
         var bytesUri = BuildLegacyMediaUri(
-            lease.HttpBaseUri,
+            httpBaseUri,
             media.GatewaySource,
             ticketElement.GetString(),
             metadata: false,
@@ -239,7 +256,7 @@ public partial class OpenClawGatewayClient
             bytesUri,
             media.Kind,
             maximumBytes,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken, personalServe: RequiresPersonalIdentityVerification).ConfigureAwait(false);
     }
 
     private async Task<AssistantMediaResolutionResult> DownloadMediaBytesAsync(
@@ -247,10 +264,12 @@ public partial class OpenClawGatewayClient
         Uri uri,
         ChatMediaContentKind kind,
         int maximumBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool personalServe = false)
     {
-        using var request = CreateAuthenticatedMediaRequest(uri, $"{MimePrefix(kind)}/*");
-        using var response = await _assistantMediaHttpClient.SendAsync(
+        using var request = personalServe ? CreatePersonalServeReadRequest(uri, $"{MimePrefix(kind)}/*")
+            : CreateAuthenticatedMediaRequest(uri, $"{MimePrefix(kind)}/*");
+        if (!IsCurrentMediaLease(lease)) return AssistantMediaResolutionResult.Unavailable;
+        using var response = await (personalServe ? _personalServeHttpClient : _assistantMediaHttpClient).SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
@@ -296,13 +315,17 @@ public partial class OpenClawGatewayClient
         lease = default;
         if (!IsConnectedToGateway || !TryBuildMediaHttpBaseUri(_currentGatewayUrl, out var baseUri))
             return false;
-        lease = new GatewayConnectionLease(_mediaClientId, ConnectionGeneration, baseUri);
+        lease = new GatewayConnectionLease(_mediaClientId, ConnectionGeneration, baseUri)
+        {
+            PersonalAuthority = RequiresPersonalIdentityVerification ? Volatile.Read(ref _personalHandshake) : null
+        };
         return true;
     }
 
     private bool IsCurrentMediaLease(GatewayConnectionLease lease) =>
         lease.ClientId == _mediaClientId
         && lease.Generation == ConnectionGeneration
+        && (!RequiresPersonalIdentityVerification || ReferenceEquals(lease.PersonalAuthority, Volatile.Read(ref _personalHandshake)))
         && IsConnectedToGateway;
 
     internal static bool TryBuildMediaHttpBaseUri(string gatewayUrl, out Uri baseUri)

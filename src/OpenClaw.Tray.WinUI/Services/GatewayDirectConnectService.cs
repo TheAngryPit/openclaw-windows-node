@@ -18,7 +18,9 @@ internal sealed record GatewayDirectConnectRequest(
     string? EditingGatewayId = null,
     bool PreserveExistingSharedTokenWhenMissing = false,
     string? BootstrapToken = null,
-    bool NativeSetup = false);
+    bool NativeSetup = false,
+    OperatorAuthenticationMode OperatorAuthentication = OperatorAuthenticationMode.GatewayCredential,
+    string? PersonalIdentityServeUrl = null);
 
 internal sealed record GatewayDirectConnectResult(
     GatewayDirectConnectOutcome Outcome,
@@ -63,6 +65,14 @@ internal sealed class GatewayDirectConnectService
         CancellationToken cancellationToken = default,
         GatewayValidationIdentity? preparedIdentity = null)
     {
+        if (!Enum.IsDefined(request.OperatorAuthentication) ||
+            request.OperatorAuthentication == OperatorAuthenticationMode.PersonalTailscale &&
+            (request.NativeSetup || request.SshTunnel is not null ||
+             !string.IsNullOrWhiteSpace(request.SharedToken) || !string.IsNullOrWhiteSpace(request.BootstrapToken) ||
+             !GatewayPersonalAuthenticationPolicy.TryNormalizeGatewayUrl(request.GatewayUrl, out _, out _)))
+            return Failed(GatewayConnectionSnapshot.Idle, false,
+                "Personal Tailscale authentication requires a direct credential-free wss:// host.ts.net route.");
+
         if (!GatewayUrlHelper.IsValidGatewayUrl(request.GatewayUrl))
         {
             return Failed(
@@ -70,6 +80,13 @@ internal sealed class GatewayDirectConnectService
                 gatewayCommitted: false,
                 "Invalid gateway URL.");
         }
+
+        if (request.OperatorAuthentication == OperatorAuthenticationMode.PersonalTailscaleLocal &&
+            (request.NativeSetup || request.SshTunnel is not null || !string.IsNullOrWhiteSpace(request.BootstrapToken) ||
+             !PersonalIdentityBinding.IsLocalWss(request.GatewayUrl) ||
+             !GatewayPersonalAuthenticationPolicy.TryNormalizeGatewayUrl(request.PersonalIdentityServeUrl, out _, out _)))
+            return Failed(GatewayConnectionSnapshot.Idle, false,
+                "Personal Primary identity requires local WSS and a trusted Tailscale Serve address.");
 
         using var lifecycleLease = await _connectionManager
             .BeginManualGatewayLifecycleOperationAsync(cancellationToken);
@@ -148,7 +165,8 @@ internal sealed class GatewayDirectConnectService
             else records.Add(candidate);
             committedRegistry = _registry.ReplaceSnapshotAndSave(previousRegistry, new(records, recordId));
 
-            if (!request.NativeSetup && !string.IsNullOrWhiteSpace(request.SharedToken))
+            if (!request.NativeSetup && request.OperatorAuthentication != OperatorAuthenticationMode.PersonalTailscaleLocal &&
+                !string.IsNullOrWhiteSpace(request.SharedToken))
             {
                 var identityDir = _registry.GetIdentityDirectory(recordId);
                 var clearResult = DeviceIdentityStore.BeginTransactionalTokenClear(identityDir, _logger);
@@ -365,6 +383,8 @@ internal sealed class GatewayDirectConnectService
         {
             Id = recordId,
             Url = request.GatewayUrl,
+            OperatorAuthentication = request.OperatorAuthentication,
+            PersonalIdentityServeUrl = request.PersonalIdentityServeUrl,
             FriendlyName = string.IsNullOrWhiteSpace(request.FriendlyName)
                 ? existing?.FriendlyName
                 : request.FriendlyName,

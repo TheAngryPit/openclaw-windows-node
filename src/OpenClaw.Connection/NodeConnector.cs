@@ -103,7 +103,10 @@ public sealed class NodeConnector : INodeConnector, INodeConnectorTelemetryEvent
             credential.IsBootstrapToken ? "" : credential.Token,
             identityPath,
             nodeLogger,
-            bootstrapToken: credential.IsBootstrapToken ? credential.Token : null);
+            bootstrapToken: credential.IsBootstrapToken ? credential.Token : null)
+        {
+            LocalTlsPin = credential.LocalTlsPin
+        };
         client.HandshakeAuthorizationAsync = HandshakeAuthorizationAsync;
         client.ReconnectAuthorizationAsync = ReconnectAuthorizationAsync;
 

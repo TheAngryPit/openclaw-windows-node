@@ -218,6 +218,31 @@ public abstract class WebSocketClientBase : IDisposable
     /// </summary>
     protected virtual bool ShouldAutoReconnect() => true;
 
+    /// <summary>Configure only this transport before the HTTP upgrade. Default TLS is unchanged.</summary>
+    public LocalGatewayTlsPin? LocalTlsPin { get; init; }
+
+    protected virtual Task PrepareTransportAsync(ClientWebSocket socket, Uri uri, long generation, CancellationToken cancellationToken)
+    {
+        if (LocalTlsPin is { } pin)
+        {
+            if (!pin.MatchesEndpoint(uri.AbsoluteUri))
+                throw new InvalidOperationException("The local Gateway TLS pin does not match this endpoint.");
+            socket.Options.RemoteCertificateValidationCallback = (_, certificate, _, _) => pin.ValidateCertificate(certificate);
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Publish transport-specific admission only while this exact socket owns the generation.</summary>
+    protected bool TryApplyToCurrentTransport(ClientWebSocket socket, long generation, Action apply)
+    {
+        lock (_connectionStateLock)
+        {
+            if (!IsCurrentConnection(socket, generation)) return false;
+            apply();
+            return true;
+        }
+    }
+
     /// <summary>Maximum time allowed for one WebSocket HTTP upgrade attempt.</summary>
     protected virtual TimeSpan ConnectAttemptTimeout => DefaultConnectAttemptTimeout;
 
@@ -233,11 +258,11 @@ public abstract class WebSocketClientBase : IDisposable
     /// <summary>A protocol-specific retry delay for the rejected socket, or normal transport backoff.</summary>
     protected virtual int? GetReconnectDelayMs(long sourceConnectionGeneration) => null;
 
-    protected WebSocketClientBase(string gatewayUrl, string token, IOpenClawLogger? logger = null)
+    protected WebSocketClientBase(string gatewayUrl, string token, IOpenClawLogger? logger = null, bool allowEmptyToken = false)
     {
         if (string.IsNullOrEmpty(gatewayUrl))
             throw new ArgumentException("Gateway URL is required.", nameof(gatewayUrl));
-        if (string.IsNullOrEmpty(token))
+        if (!allowEmptyToken && string.IsNullOrEmpty(token))
             throw new ArgumentException("Token is required.", nameof(token));
 
         _gatewayUrl = GatewayUrlHelper.NormalizeForWebSocket(gatewayUrl);
@@ -316,6 +341,8 @@ public abstract class WebSocketClientBase : IDisposable
             // The first frames carry the gateway token. A loopback URI must not
             // traverse the process proxy. A remote URI keeps the default proxy.
             ConfigureConnectProxy(ws, uri);
+
+            await PrepareTransportAsync(ws, uri, connectGeneration, _cts.Token).ConfigureAwait(false);
 
             var connectTimeout = ConnectAttemptTimeout;
             using var connectCancellation =

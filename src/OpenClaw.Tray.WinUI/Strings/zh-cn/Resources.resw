@@ -8213,4 +8213,17 @@
   <data name="GatewayVoice_TimedOut" xml:space="preserve"><value>Gateway 语音已超时。合成可能已完成。再次尝试前请检查 Gateway；未进行自动重试。</value></data>
   <data name="GatewayVoice_SynthesisFailed" xml:space="preserve"><value>Gateway 语音失败。请检查其语音配置和提供商配额。未回退到本地或自动重试。</value></data>
   <data name="GatewayVoice_PlaybackFailed" xml:space="preserve"><value>Windows 无法播放语音音频。请检查输出设备。未进行自动重试。</value></data>
+  <data name="ConnectionPage_OperatorAuthentication.Header" xml:space="preserve"><value>操作员身份验证</value></data>
+  <data name="ConnectionPage_SharedAuthentication.Content" xml:space="preserve"><value>网关凭据</value></data>
+  <data name="ConnectionPage_PersonalAuthentication.Content" xml:space="preserve"><value>个人 Tailscale 身份</value></data>
+  <data name="ConnectionPage_PersonalHint.Text" xml:space="preserve"><value>需要安全的 Tailscale 网关地址，且网关支持个人身份。不会发送共享令牌。</value></data>
+  <data name="PersonalDashboard_RecoveryTitle.Text" xml:space="preserve"><value>个人登录已更改</value></data>
+  <data name="PersonalDashboard_RecoveryDetail.Text" xml:space="preserve"><value>请在 OpenClaw Companion 中重新连接此网关，然后重新打开仪表板。</value></data>
+  <data name="PersonalDashboard_Unavailable" xml:space="preserve"><value>个人登录不可用。请在应用中重新连接。</value></data>
+  <data name="ConnectionPage_PersonalRouteRequired" xml:space="preserve"><value>个人登录需要以 .ts.net 结尾的安全 wss:// Tailscale Gateway 地址，且不能使用 SSH 隧道。</value></data>
+  <data name="ConnectionPage_LocalPersonalAuthentication.Content" xml:space="preserve"><value>本地 Primary 的个人 Tailscale 身份</value></data>
+  <data name="ConnectionPage_PersonalServeUrl.Header" xml:space="preserve"><value>Tailscale Serve 地址</value></data>
+  <data name="ConnectionPage_LocalPersonalHint.Text" xml:space="preserve"><value>Primary 和节点继续使用本地 WSS。短暂连接 Tailscale Serve 以验证个人身份。需要已配对的设备和本地 Gateway TLS。</value></data>
+  <data name="ConnectionPage_LocalPersonalRouteRequired" xml:space="preserve"><value>请使用本地 wss:// Primary 地址及以 .ts.net 结尾的安全 wss:// Tailscale Serve 地址。</value></data>
+  <data name="ConnectionPage_PersonalServeUrl.PlaceholderText" xml:space="preserve"><value>wss://gateway.example.ts.net</value></data>
 </root>

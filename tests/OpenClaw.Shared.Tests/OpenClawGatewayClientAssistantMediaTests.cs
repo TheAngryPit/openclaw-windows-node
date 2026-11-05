@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -157,6 +158,47 @@ public sealed class OpenClawGatewayClientAssistantMediaTests
         Assert.Null(uri);
         await Assert.ThrowsAsync<TimeoutException>(
             () => server.ReceiveTextAsync().WaitAsync(TimeSpan.FromMilliseconds(300)));
+    }
+
+    [Theory]
+    [InlineData("wss://fixture.example.ts.net", "https://fixture.example.ts.net")]
+    [InlineData(null, null)]
+    [InlineData("wss://untrusted.example.com", null)]
+    public async Task PinnedLocalFileDownloadUsesOnlyConfiguredServeTicketOrRefusesExternalOpen(string? serve, string? expectedOrigin)
+    {
+        using var server = new LoopbackWebSocketServer();
+        using var identity = new TempDirectory("pinned-file-ticket-");
+        await server.StartAsync();
+        using var client = new PinnedFileClient(server.WebSocketUrl, identity.Path)
+        {
+            LocalTlsPin = new("primary", "wss://127.0.0.1:18789", new string('a', 64)),
+            PrimaryPersonalIdentityServeUrl = serve
+        };
+        await client.ConnectAsync();
+        MarkHandshakeReady(client);
+        var download = client.ResolveAssistantFileDownloadUriAsync("main", new ChatMediaContentInfo
+        {
+            Kind = ChatMediaContentKind.File, Source = ChatMediaContentSource.Structured, ArtifactId = "fixture-file"
+        });
+        using var request = JsonDocument.Parse(await server.ReceiveTextAsync());
+        Assert.Equal("artifacts.download", request.RootElement.GetProperty("method").GetString());
+        await server.SendTextAsync(JsonSerializer.Serialize(new { type = "res", id = request.RootElement.GetProperty("id").GetString(), ok = true,
+            payload = new { artifact = new { type = "file", mimeType = "application/pdf", sizeBytes = 3 },
+                url = "/api/chat/media/outgoing/main/file/full?mediaTicket=fixture-file-ticket" } }));
+        var result = await download;
+        if (expectedOrigin is null) Assert.Null(result);
+        else Assert.Equal(expectedOrigin + "/api/chat/media/outgoing/main/file/full?mediaTicket=fixture-file-ticket", result!.AbsoluteUri);
+    }
+
+    private sealed class PinnedFileClient : OpenClawGatewayClient
+    {
+        public PinnedFileClient(string transportUrl, string identityPath)
+            : base("wss://127.0.0.1:18789", "fixture-token", identityPath: identityPath)
+        {
+            typeof(WebSocketClientBase).GetField("_gatewayUrl", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(this, transportUrl);
+        }
+        // This test owns URL/ticket projection; TLS leaf enforcement is tested separately.
+        protected override Task PrepareTransportAsync(ClientWebSocket socket, Uri uri, long generation, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     [Fact]

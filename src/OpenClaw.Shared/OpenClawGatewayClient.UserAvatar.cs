@@ -74,6 +74,11 @@ public partial class OpenClawGatewayClient
             return UserAvatarResult.Of(UserAvatarStatus.Failed);
         if (!TryCaptureMediaLease(out var lease))
             return UserAvatarResult.Of(UserAvatarStatus.Cancelled);
+        var httpBaseUri = lease.HttpBaseUri;
+        if (RequiresPersonalIdentityVerification &&
+            (!TryGetPersonalHttpBaseUri(lease, out httpBaseUri) ||
+             lease.PersonalAuthority is not PersonalHandshake personal || personal.ProfileId != profileId))
+            return UserAvatarResult.Of(UserAvatarStatus.Cancelled);
 
         try
         {
@@ -81,14 +86,20 @@ public partial class OpenClawGatewayClient
                 cancellationToken, CancellationToken);
             // A timeout cancels only this linked source, so it stays distinguishable from caller/connection cancellation.
             linkedCancellation.CancelAfter(UserAvatarTimeout);
-            var basePath = lease.HttpBaseUri.AbsolutePath.TrimEnd('/');
-            var builder = new UriBuilder(lease.HttpBaseUri)
+            if (RequiresPersonalIdentityVerification &&
+                !await VerifyCurrentPersonalHttpIdentityAsync(lease, linkedCancellation.Token).ConfigureAwait(false))
+                return UserAvatarResult.Of(UserAvatarStatus.Cancelled);
+            var basePath = httpBaseUri.AbsolutePath.TrimEnd('/');
+            var builder = new UriBuilder(httpBaseUri)
             {
                 Path = $"{basePath}{UserAvatarPathPrefix}{Uri.EscapeDataString(profileId)}{UserAvatarPathSuffix}",
                 Query = string.IsNullOrWhiteSpace(revision) ? string.Empty : "v=" + Uri.EscapeDataString(revision),
             };
-            using var request = CreateAuthenticatedMediaRequest(builder.Uri, "image/*");
-            using var response = await _assistantMediaHttpClient.SendAsync(
+            using var request = RequiresPersonalIdentityVerification
+                ? CreatePersonalServeReadRequest(builder.Uri, "image/*")
+                : CreateAuthenticatedMediaRequest(builder.Uri, "image/*");
+            if (!IsCurrentMediaLease(lease)) return UserAvatarResult.Of(UserAvatarStatus.Cancelled);
+            using var response = await (RequiresPersonalIdentityVerification ? _personalServeHttpClient : _assistantMediaHttpClient).SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 linkedCancellation.Token).ConfigureAwait(false);

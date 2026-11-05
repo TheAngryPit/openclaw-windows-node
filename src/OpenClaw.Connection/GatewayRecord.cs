@@ -6,6 +6,13 @@ namespace OpenClaw.Connection;
 /// </summary>
 public sealed record GatewayRecord
 {
+    public OpenClaw.Shared.OperatorAuthenticationMode OperatorAuthentication { get; init; }
+
+    /// <summary>Auxiliary trusted Serve route for personal admission; never the node target.</summary>
+    public string? PersonalIdentityServeUrl { get; init; }
+    /// <summary>Explicit verified TLS upgrade state, scoped to this exact managed local endpoint.</summary>
+    public OpenClaw.Shared.LocalGatewayTlsPin? LocalTlsPin { get; init; }
+
     /// <summary>Stable GUID, primary key.</summary>
     public string Id { get; init; } = "";
 
@@ -87,7 +94,13 @@ public static class GatewayRecordEditing
         if (existing is null)
             return rebuilt;
 
-        var result = rebuilt with { BrowserControlPort = rebuilt.BrowserControlPort ?? existing.BrowserControlPort };
+        var result = rebuilt with
+        {
+            BrowserControlPort = rebuilt.BrowserControlPort ?? existing.BrowserControlPort,
+            PersonalIdentityServeUrl = rebuilt.PersonalIdentityServeUrl ??
+                (AreEquivalentManagedEndpoints(rebuilt.Url, existing.Url) ? existing.PersonalIdentityServeUrl : null),
+            LocalTlsPin = rebuilt.LocalTlsPin ?? existing.LocalTlsPin
+        };
 
         if (existing.NativePackageFamilyName is not null)
         {
@@ -150,6 +163,21 @@ public static class GatewayRecordEditing
         }
 
         return AreEquivalentManagedEndpoints(leftUri, rightUri);
+    }
+
+    /// <summary>Explicit TLS upgrade, never called by personal selection or discovery.</summary>
+    public static GatewayRecord UpgradeManagedLocalTls(GatewayRecord existing, OpenClaw.Shared.LocalGatewayTlsPin verifiedPin)
+    {
+        if (!IsSetupManagedLocalRecord(existing) || existing.SshTunnel is not null ||
+            !Uri.TryCreate(existing.Url, UriKind.Absolute, out var current) || !current.IsLoopback ||
+            current.Scheme is not ("ws" or "wss") || !verifiedPin.Matches(existing.Id, verifiedPin.GatewayUrl))
+            throw new InvalidOperationException("A verified managed local Gateway is required for this TLS upgrade.");
+        var target = new Uri(verifiedPin.GatewayUrl);
+        if (!string.Equals(current.Host, target.Host, StringComparison.OrdinalIgnoreCase) || current.Port != target.Port ||
+            current.AbsolutePath != target.AbsolutePath || current.Query != target.Query || current.Fragment != target.Fragment ||
+            current.UserInfo != target.UserInfo)
+            throw new InvalidOperationException("A local Gateway TLS upgrade cannot change the endpoint or credential realm.");
+        return existing with { Url = verifiedPin.GatewayUrl, LocalTlsPin = verifiedPin };
     }
 
     private static bool AreEquivalentManagedEndpoints(string? left, string? right) =>

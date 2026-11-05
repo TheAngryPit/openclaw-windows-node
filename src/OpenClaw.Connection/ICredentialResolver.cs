@@ -7,6 +7,10 @@ namespace OpenClaw.Connection;
 /// </summary>
 public sealed record GatewayCredential(string Token, bool IsBootstrapToken, string Source)
 {
+    public OperatorAuthenticationMode OperatorAuthentication { get; init; }
+    public string? PersonalIdentityServeUrl { get; init; }
+    public LocalGatewayTlsPin? LocalTlsPin { get; init; }
+
     public GatewayCredentialResolutionStatus ResolutionStatus { get; init; } =
         GatewayCredentialResolutionStatus.Resolved;
     public bool FallbackUsed { get; init; }

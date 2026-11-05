@@ -845,6 +845,22 @@ public class DeviceIdentity
         return $"v3|{_deviceId}|{clientId}|{clientMode}|{role}|{scopesCsv}|{signedAtMs}|{safeToken}|{safeNonce}|{NormalizeAuthMetadata(platform)}|{NormalizeAuthMetadata(deviceFamily)}";
     }
 
+    /// <summary>Build the owner-defined V4 ordered JSON payload for a personal bind/use.</summary>
+    public string BuildConnectPayloadV4(string nonce, long signedAtMs, string clientId, string clientMode,
+        string role, IEnumerable<string> scopes, string authToken, string platform, string deviceFamily,
+        PersonalIdentityIntent intent) => JsonSerializer.Serialize(new object[]
+        {
+            "openclaw-device-auth", "v4", DeviceId, clientId, clientMode, role, scopes.ToArray(),
+            signedAtMs.ToString(System.Globalization.CultureInfo.InvariantCulture), authToken ?? string.Empty,
+            nonce, NormalizeAuthMetadata(platform), NormalizeAuthMetadata(deviceFamily), intent.SignatureValue
+        }, PersonalIdentityIntent.SignatureJson);
+
+    /// <summary>Sign V4 without changing the V2/V3 node and ordinary operator contracts.</summary>
+    public string SignConnectPayloadV4(string nonce, long signedAtMs, string clientId, string clientMode,
+        string role, IReadOnlyList<string> scopes, string authToken, string platform, string deviceFamily,
+        PersonalIdentityIntent intent) => Base64UrlEncode(SignEd25519(Encoding.UTF8.GetBytes(
+            BuildConnectPayloadV4(nonce, signedAtMs, clientId, clientMode, role, scopes, authToken, platform, deviceFamily, intent))));
+
     private static string NormalizeAuthMetadata(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

@@ -14,7 +14,7 @@ namespace OpenClaw.Connection;
 /// Node, bootstrap-token, and device-pair workflows are delegated to their
 /// dedicated connection-domain owners through typed internal ports.
 /// </summary>
-public sealed class GatewayConnectionManager :
+public sealed partial class GatewayConnectionManager :
     IGatewayConnectionManager,
     INodeLifecycleSource,
     INodeConnectionStateSink,
@@ -2442,6 +2442,10 @@ public sealed class GatewayConnectionManager :
         CancellationToken cancellationToken,
         bool requireSshTunnelOwnership = false)
     {
+        if (record.LocalTlsPin is { } pin && (record.SshTunnel is not null ||
+            !GatewayRecordEditing.IsSetupManagedLocalRecord(record) || !pin.Matches(record.Id, record.Url)) ||
+            record.OperatorAuthentication == OperatorAuthenticationMode.PersonalTailscaleLocal && record.LocalTlsPin is null)
+            return new(false, GatewayErrorKind.Tls, "The local Gateway TLS pin is missing or no longer matches this managed endpoint.");
         if (record.NativePackageFamilyName is not null)
         {
             return await NativeGatewayEndpointSecurity.AuthorizeAsync(
@@ -2623,6 +2627,9 @@ public sealed class GatewayConnectionManager :
     private static bool IsSameCredentialHandoffRecord(
         GatewayRecord current,
         GatewayRecord expected) =>
+        current.OperatorAuthentication == expected.OperatorAuthentication &&
+        current.LocalTlsPin == expected.LocalTlsPin &&
+        current.PersonalIdentityServeUrl == expected.PersonalIdentityServeUrl &&
         string.Equals(current.Id, expected.Id, StringComparison.Ordinal) &&
         string.Equals(current.Url, expected.Url, StringComparison.Ordinal) &&
         string.Equals(
@@ -2648,16 +2655,53 @@ public sealed class GatewayConnectionManager :
     private async Task HandleHandshakeSucceededAsync(long gen)
     {
         NodeAutomaticStartPlan? nodeStartPlan = null;
+        if (Interlocked.Read(ref _generation) != gen) return;
+        var personalClient = _activeLifecycle?.DataClient;
+        var personal = await VerifyPersonalOperatorAsync(gen).ConfigureAwait(false);
         await _transitionSemaphore.WaitAsync();
         try
         {
             if (Interlocked.Read(ref _generation) != gen) return;
+            if (!ReferenceEquals(personalClient, _activeLifecycle?.DataClient)) return;
+            if (personal.Disposition == PersonalVerification.Stale) return;
+            if (personal.Disposition == PersonalVerification.Verified)
+            {
+                if (personal.Lease is not { } lease || personalClient is null ||
+                    personalClient.SessionMutationConnectionEpoch != lease.TransportEpoch ||
+                    personalClient.PersonalRecoveryScope != lease.RecoveryScope)
+                    return;
+                Volatile.Write(ref _personalOperatorLease, lease);
+                if (CurrentPersonalOperatorLease is null)
+                {
+                    Interlocked.CompareExchange(ref _personalOperatorLease, null, lease);
+                    return;
+                }
+            }
+            else if (personal.Disposition == PersonalVerification.NotRequired)
+            {
+                Volatile.Write(ref _personalOperatorLease, null);
+            }
+            if (personal.Disposition == PersonalVerification.Rejected)
+            {
+                _stateMachine.TryTransition(_stateMachine.Current.OperatorState == RoleConnectionState.Connected
+                        ? ConnectionTrigger.WebSocketError : ConnectionTrigger.AuthenticationFailed,
+                    "Personal Tailscale identity could not be verified. Reconnect this Gateway.");
+                _stateMachine.Current = _stateMachine.Current with { PersonalIdentityProfileId = null };
+                CompleteOperatorTelemetryAttempt(gen, "failure", ConnectionErrorCategory.AuthFailure);
+                await DisposeActiveClientAsync().ConfigureAwait(false);
+                EmitStateChanged();
+                return;
+            }
 
             var prev = _stateMachine.Current.OverallState;
             _diagnostics.Record("state", "Handshake succeeded (hello-ok)");
             _stateMachine.SetOperatorProtocolCompatibility(
                 ReadOperatorProtocolCompatibility(gen));
             _stateMachine.TryTransition(ConnectionTrigger.HandshakeSucceeded);
+            _stateMachine.Current = _stateMachine.Current with
+            {
+                PersonalIdentityProfileId = CurrentPersonalOperatorLease?.IdentityProfileId
+            };
             CompleteOperatorTelemetryAttempt(gen, "success");
             var nodeModeIntended = SyncNodeIntentFromSettings();
             _bootstrapTokenLifecycle.ResetOperatorRecoveryAfterHandshake(
@@ -3673,6 +3717,7 @@ public sealed class GatewayConnectionManager :
 
     private async Task DisposeActiveClientAsync()
     {
+        Volatile.Write(ref _personalOperatorLease, null);
         await _nodeConnectionCoordinator.RetireAsync().ConfigureAwait(false);
         _devicePairApprovalCoordinator.Reset();
 

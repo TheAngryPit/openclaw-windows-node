@@ -35,11 +35,49 @@ public sealed class CredentialResolver : ICredentialResolver
     {
         ArgumentNullException.ThrowIfNull(record);
 
-        return ResolveRole(
+        if (record.OperatorAuthentication == OperatorAuthenticationMode.PersonalTailscale)
+        {
+            if (record.SshTunnel is not null ||
+                !GatewayPersonalAuthenticationPolicy.TryNormalizeGatewayUrl(record.Url, out _, out var error))
+                return new(null, GatewayCredentialResolutionStatus.Missing,
+                    Detail: "Personal authentication requires a direct credential-free wss:// host.ts.net route.");
+            return GatewayCredentialResolution.FromLegacy(new GatewayCredential(
+                string.Empty, false, GatewayPersonalAuthenticationPolicy.CredentialSource)
+            {
+                OperatorAuthentication = OperatorAuthenticationMode.PersonalTailscale
+            });
+        }
+        if (record.OperatorAuthentication == OperatorAuthenticationMode.PersonalTailscaleLocal)
+        {
+            if (!IsValidLocalPin(record) || record.LocalTlsPin is null ||
+                record.SshTunnel is not null || !PersonalIdentityBinding.IsLocalWss(record.Url) ||
+                !GatewayPersonalAuthenticationPolicy.TryNormalizeGatewayUrl(record.PersonalIdentityServeUrl, out var serve, out _))
+                return new(null, GatewayCredentialResolutionStatus.Missing,
+                    Detail: "Personal Primary identity requires local WSS and an auxiliary trusted Serve route.");
+            var local = ResolveRole(_identityReader.ReadStoredDeviceToken(identityPath), SourceDeviceToken,
+                record.SharedGatewayToken, bootstrapToken: null);
+            return local.Credential is { } credential
+                ? local with { Credential = credential with
+                    {
+                        OperatorAuthentication = OperatorAuthenticationMode.PersonalTailscaleLocal,
+                        PersonalIdentityServeUrl = serve,
+                        LocalTlsPin = record.LocalTlsPin
+                    } }
+                : local;
+        }
+        if (record.OperatorAuthentication != OperatorAuthenticationMode.GatewayCredential)
+            return new(null, GatewayCredentialResolutionStatus.Corrupt,
+                Detail: "The saved operator authentication mode is unsupported.");
+
+        if (!IsValidLocalPin(record)) return MissingPin();
+        var resolved = ResolveRole(
             _identityReader.ReadStoredDeviceToken(identityPath),
             SourceDeviceToken,
             record.SharedGatewayToken,
             record.BootstrapToken);
+        return WithPin(resolved, record.LocalTlsPin) is { Credential: { } resolvedCredential } result
+            ? result with { Credential = resolvedCredential with { PersonalIdentityServeUrl = record.PersonalIdentityServeUrl } }
+            : resolved;
     }
 
     public GatewayCredential? ResolveNode(GatewayRecord record, string identityPath) =>
@@ -49,12 +87,25 @@ public sealed class CredentialResolver : ICredentialResolver
     {
         ArgumentNullException.ThrowIfNull(record);
 
-        return ResolveRole(
+        if (!IsValidLocalPin(record) || record.OperatorAuthentication == OperatorAuthenticationMode.PersonalTailscaleLocal && record.LocalTlsPin is null)
+            return MissingPin();
+        var resolved = ResolveRole(
             _identityReader.ReadStoredNodeDeviceToken(identityPath),
             SourceNodeDeviceToken,
             record.SharedGatewayToken,
             record.BootstrapToken);
+        return WithPin(resolved, record.LocalTlsPin);
     }
+
+    private static bool IsValidLocalPin(GatewayRecord record) => record.LocalTlsPin is null ||
+        record.SshTunnel is null && GatewayRecordEditing.IsSetupManagedLocalRecord(record) &&
+        record.LocalTlsPin.Matches(record.Id, record.Url);
+
+    private static GatewayCredentialResolution MissingPin() => new(null, GatewayCredentialResolutionStatus.Missing,
+        Detail: "The verified local Gateway TLS pin is missing or does not match this record and endpoint.");
+
+    private static GatewayCredentialResolution WithPin(GatewayCredentialResolution resolved, LocalGatewayTlsPin? pin) =>
+        resolved.Credential is { } credential ? resolved with { Credential = credential with { LocalTlsPin = pin } } : resolved;
 
     private static GatewayCredentialResolution ResolveRole(
         DeviceTokenReadResult storedToken,

@@ -1,5 +1,6 @@
 using OpenClaw.Shared;
 using OpenClaw.Connection;
+using OpenClaw.TestSupport;
 
 namespace OpenClaw.Connection.Tests;
 
@@ -13,7 +14,116 @@ public class CredentialResolverTests
         _resolver = new CredentialResolver(_mockReader);
     }
 
+    [Fact]
+    public void PersonalOperatorIgnoresStoredOperatorCredentialsAndPreservesNodeResolution()
+    {
+        var record = new GatewayRecord { Id = "personal", Url = "wss://fixture.example.ts.net",
+            OperatorAuthentication = OperatorAuthenticationMode.PersonalTailscale,
+            SharedGatewayToken = "shared", BootstrapToken = "bootstrap" };
+        _mockReader.OperatorReadResult = DeviceTokenReadResult.Corrupt("must not be used");
+        _mockReader.NodeToken = "node-token";
+        var personal = Assert.IsType<GatewayCredential>(_resolver.ResolveOperator(record, "/fixture"));
+        Assert.Empty(personal.Token);
+        Assert.Equal(OperatorAuthenticationMode.PersonalTailscale, personal.OperatorAuthentication);
+        Assert.Equal("node-token", _resolver.ResolveNode(record, "/fixture")!.Token);
+        Assert.Equal("shared", record.SharedGatewayToken);
+    }
+
     // ─── Operator resolution ───
+
+    [Fact]
+    public void LocalPersonalSelectionPreservesManagedRecordAndIndependentNodeCredentials()
+    {
+        var original = new GatewayRecord { Id = "primary", Url = "wss://127.0.0.1:18789",
+            IsLocal = true, SetupManagedDistroName = "OpenClawGateway", RequiresV2Signature = true,
+            LocalTlsPin = new("primary", "wss://127.0.0.1:18789", new string('a', 64)),
+            SharedGatewayToken = "local-shared", BootstrapToken = "bootstrap" };
+        var personal = (new GatewayRecord { Id = original.Id, Url = original.Url,
+            OperatorAuthentication = OperatorAuthenticationMode.PersonalTailscaleLocal,
+            PersonalIdentityServeUrl = "wss://fixture.example.ts.net", SharedGatewayToken = original.SharedGatewayToken,
+            BootstrapToken = original.BootstrapToken }).PreserveAdvancedFields(original);
+        _mockReader.OperatorToken = "operator-device";
+        _mockReader.NodeToken = "node-device";
+        var result = _resolver.ResolveOperator(personal, "/fixture")!;
+        Assert.Equal("operator-device", result.Token);
+        Assert.Equal(OperatorAuthenticationMode.PersonalTailscaleLocal, result.OperatorAuthentication);
+        Assert.Equal("node-device", _resolver.ResolveNode(personal, "/fixture")!.Token);
+        Assert.Equal(original.Url, personal.Url);
+        Assert.Equal(original.Id, personal.Id);
+        Assert.Equal(original.SetupManagedDistroName, personal.SetupManagedDistroName);
+        Assert.True(personal.IsLocal);
+        Assert.True(personal.RequiresV2Signature);
+        Assert.Equal(original.LocalTlsPin, personal.LocalTlsPin);
+        Assert.Equal(original.LocalTlsPin, _resolver.ResolveNode(personal, "/fixture")!.LocalTlsPin);
+        var rejected = personal with { Url = "ws://127.0.0.1:18789" };
+        Assert.Null(_resolver.ResolveOperator(rejected, "/fixture"));
+        Assert.Null(_resolver.ResolveNode(rejected, "/fixture"));
+        Assert.Null(_resolver.ResolveNode(personal with { LocalTlsPin = null }, "/fixture"));
+        Assert.Null(_resolver.ResolveNode(personal with { Id = "different-record" }, "/fixture"));
+        Assert.Null(_resolver.ResolveNode(personal with { Url = "wss://127.0.0.1:18790" }, "/fixture"));
+        Assert.Equal(original.LocalTlsPin, rejected.LocalTlsPin);
+        _mockReader.OperatorToken = null;
+        Assert.Null(_resolver.ResolveOperator(personal with { SharedGatewayToken = null }, "/missing"));
+    }
+
+    [Fact]
+    public void ExplicitTlsUpgradePreservesManagedOwnershipAndCredentialsAndCannotRepointRecord()
+    {
+        var original = new GatewayRecord { Id = "primary", Url = "ws://127.0.0.1:18789", IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway", SharedGatewayToken = "shared", BootstrapToken = "bootstrap",
+            RequiresV2Signature = true, BrowserControlPort = 19200 };
+        var pin = new LocalGatewayTlsPin("primary", "wss://127.0.0.1:18789", new string('a', 64));
+        var upgraded = GatewayRecordEditing.UpgradeManagedLocalTls(original, pin);
+        Assert.Equal(original with { Url = pin.GatewayUrl, LocalTlsPin = pin }, upgraded);
+        Assert.Throws<InvalidOperationException>(() => GatewayRecordEditing.UpgradeManagedLocalTls(original,
+            pin with { GatewayRecordId = "other" }));
+        Assert.Throws<InvalidOperationException>(() => GatewayRecordEditing.UpgradeManagedLocalTls(original,
+            pin with { GatewayUrl = "wss://127.0.0.1:18790" }));
+        Assert.Throws<InvalidOperationException>(() => GatewayRecordEditing.UpgradeManagedLocalTls(original,
+            pin with { GatewayUrl = "wss://localhost:18789" }));
+        var editing = (new GatewayRecord { Id = upgraded.Id, Url = "wss://other.example", FriendlyName = "edited" })
+            .PreserveAdvancedFields(upgraded);
+        Assert.Equal(pin, editing.LocalTlsPin);
+        Assert.Null(_resolver.ResolveNode(editing, "/fixture"));
+    }
+
+    [Fact]
+    public void ExplicitTlsUpgradeAndPersonalSelectionRoundTripThroughRegistryWithoutChangingNodeCredentials()
+    {
+        using var directory = new TempDirectory("personal-tls-registry-");
+        var registry = new GatewayRegistry(directory.Path);
+        var original = new GatewayRecord { Id = "primary", Url = "ws://127.0.0.1:18789", IsLocal = true,
+            SetupManagedDistroName = "OpenClawGateway", RequiresV2Signature = true,
+            SharedGatewayToken = "synthetic-private-shared", BootstrapToken = "synthetic-private-bootstrap" };
+        registry.AddOrUpdate(original);
+        registry.SetActive(original.Id);
+        registry.Save();
+        var identity = new DeviceIdentity(registry.GetIdentityDirectory(original.Id));
+        identity.Initialize();
+        identity.StoreDeviceTokenWithScopes("synthetic-operator-device", ["operator.read"]);
+        identity.StoreDeviceTokenForRole("node", "synthetic-node-device", []);
+        var identityFile = Path.Combine(registry.GetIdentityDirectory(original.Id), "device-key-ed25519.json");
+        var before = File.ReadAllBytes(identityFile);
+        var pin = new LocalGatewayTlsPin(original.Id, "wss://127.0.0.1:18789", new string('a', 64));
+        registry.UpdateAndSave(original.Id, current => GatewayRecordEditing.UpgradeManagedLocalTls(current, pin) with
+        {
+            OperatorAuthentication = OperatorAuthenticationMode.PersonalTailscaleLocal,
+            PersonalIdentityServeUrl = "wss://fixture.example.ts.net"
+        });
+        var reloaded = new GatewayRegistry(directory.Path);
+        reloaded.Load();
+        Assert.Equal(original with { Url = pin.GatewayUrl, LocalTlsPin = pin,
+            OperatorAuthentication = OperatorAuthenticationMode.PersonalTailscaleLocal,
+            PersonalIdentityServeUrl = "wss://fixture.example.ts.net" }, reloaded.GetActive());
+        Assert.Equal(before, File.ReadAllBytes(identityFile));
+        var resolver = new CredentialResolver(new DeviceIdentityFileReader());
+        Assert.Equal("synthetic-node-device", resolver.ResolveNode(reloaded.GetActive()!, reloaded.GetIdentityDirectory(original.Id))!.Token);
+        Assert.Equal(pin, resolver.ResolveNode(reloaded.GetActive()!, reloaded.GetIdentityDirectory(original.Id))!.LocalTlsPin);
+        var ordinary = resolver.ResolveOperator(reloaded.GetActive()! with { OperatorAuthentication = OperatorAuthenticationMode.GatewayCredential },
+            reloaded.GetIdentityDirectory(original.Id))!;
+        Assert.Equal(pin, ordinary.LocalTlsPin);
+        Assert.Equal("wss://fixture.example.ts.net", ordinary.PersonalIdentityServeUrl);
+    }
 
     [Fact]
     public void ResolveOperator_PrefersDeviceToken_OverSharedAndBootstrap()

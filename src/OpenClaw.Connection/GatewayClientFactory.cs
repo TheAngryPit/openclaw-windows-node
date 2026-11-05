@@ -28,10 +28,13 @@ public sealed class GatewayClientFactory : IGatewayClientFactory
             bootstrapPairAsNode: false,
             identityPath: identityPath,
             ignoreStoredDeviceToken: credential.IsBootstrapToken,
-            assistantMediaAuthToken: credential.InteractiveHttpToken)
+            assistantMediaAuthToken: credential.InteractiveHttpToken,
+            operatorAuthentication: credential.OperatorAuthentication)
         {
             SupportsExecApprovals = SupportsExecApprovals,
             ClientIdentity = ClientIdentity,
+            PrimaryPersonalIdentityServeUrl = credential.PersonalIdentityServeUrl,
+            LocalTlsPin = credential.LocalTlsPin,
         };
 
         return new GatewayClientLifecycleAdapter(client);

@@ -19,11 +19,17 @@ internal abstract class ConnectCredential
     internal string Value { get; }
     internal abstract string FieldName { get; }
 
-    internal Dictionary<string, string> ToAuthPayload() =>
+    internal virtual Dictionary<string, string> ToAuthPayload() =>
         new() { [FieldName] = Value };
 
     public sealed override string ToString() =>
         $"ConnectCredential {{ Kind = {FieldName} }}";
+}
+
+internal sealed class TailscaleConnectCredential() : ConnectCredential(string.Empty)
+{
+    internal override string FieldName => "tailscale";
+    internal override Dictionary<string, string> ToAuthPayload() => [];
 }
 
 internal sealed class TokenConnectCredential(string token)
@@ -48,6 +54,9 @@ internal interface IConnectEnvelopeSigner
 {
     string DeviceId { get; }
     string PublicKeyBase64Url { get; }
+
+    string SignConnectPayloadV4(ConnectEnvelopeSigningArguments arguments, PersonalIdentityIntent intent) =>
+        throw new NotSupportedException("This signer does not support personal identity.");
 
     string SignConnectPayloadV2(
         string nonce,
@@ -75,6 +84,10 @@ internal sealed class DeviceIdentityConnectEnvelopeSigner(DeviceIdentity identit
 {
     public string DeviceId => identity.DeviceId;
     public string PublicKeyBase64Url => identity.PublicKeyBase64Url;
+
+    public string SignConnectPayloadV4(ConnectEnvelopeSigningArguments a, PersonalIdentityIntent intent) =>
+        identity.SignConnectPayloadV4(a.Nonce, a.SignedAtMs, a.ClientId, a.ClientMode, a.Role,
+            a.Scopes, a.AuthToken, a.Platform, a.DeviceFamily, intent);
 
     public string SignConnectPayloadV2(
         string nonce,
@@ -125,7 +138,8 @@ internal sealed record OperatorConnectEnvelopeOptions(
     long? ChallengeTimestampMs,
     bool UseV2Signature,
     bool SupportsExecApprovals = false,
-    OperatorClientIdentity ClientIdentity = OperatorClientIdentity.Cli);
+    OperatorClientIdentity ClientIdentity = OperatorClientIdentity.Cli,
+    Func<long, PersonalIdentityIntent>? PersonalIdentity = null);
 
 /// <summary>
 /// Operator connect identity serialized on the wire and covered by the device signature.
@@ -165,7 +179,7 @@ internal sealed class ConnectEnvelopeSigningArguments
         IReadOnlyList<string> scopes,
         string authToken,
         string platform,
-        string deviceFamily)
+        string deviceFamily, PersonalIdentityIntent? personalIdentity = null)
     {
         UseV2Signature = useV2Signature;
         Nonce = nonce;
@@ -177,6 +191,7 @@ internal sealed class ConnectEnvelopeSigningArguments
         AuthToken = authToken;
         Platform = platform;
         DeviceFamily = deviceFamily;
+        PersonalIdentity = personalIdentity;
     }
 
     internal bool UseV2Signature { get; }
@@ -189,9 +204,12 @@ internal sealed class ConnectEnvelopeSigningArguments
     internal string AuthToken { get; }
     internal string Platform { get; }
     internal string DeviceFamily { get; }
+    internal PersonalIdentityIntent? PersonalIdentity { get; }
 
     internal string BuildPayload(DeviceIdentity identity) =>
-        UseV2Signature
+        PersonalIdentity is { } intent
+            ? identity.BuildConnectPayloadV4(Nonce, SignedAtMs, ClientId, ClientMode, Role, Scopes, AuthToken, Platform, DeviceFamily, intent)
+            : UseV2Signature
             ? identity.BuildConnectPayloadV2(
                 Nonce,
                 SignedAtMs,
@@ -281,7 +299,9 @@ internal sealed class PreparedConnectEnvelope
         }
 
         var arguments = SigningArguments;
-        return arguments.UseV2Signature
+        return arguments.PersonalIdentity is { } intent
+            ? _signer.SignConnectPayloadV4(arguments, intent)
+            : arguments.UseV2Signature
             ? _signer.SignConnectPayloadV2(
                 arguments.Nonce,
                 arguments.SignedAtMs,
@@ -329,6 +349,7 @@ internal sealed class PreparedConnectEnvelope
                 commands = _commands,
                 permissions = _permissions,
                 auth = _credential.ToAuthPayload(),
+                personalIdentity = SigningArguments.PersonalIdentity,
                 locale = "en-US",
                 userAgent = isOperator
                     ? $"openclaw-windows-tray/{_version}"
@@ -344,9 +365,10 @@ internal sealed class PreparedConnectEnvelope
             },
         };
 
-        return isOperator
-            ? JsonSerializer.Serialize(message)
-            : JsonSerializer.Serialize(message, s_ignoreNullOptions);
+        var document = JsonSerializer.SerializeToNode(message, isOperator ? null : s_ignoreNullOptions)!;
+        if (SigningArguments.PersonalIdentity is null)
+            document["params"]!.AsObject().Remove("personalIdentity");
+        return document.ToJsonString();
     }
 }
 
@@ -385,7 +407,8 @@ internal static class ConnectEnvelopeBuilder
             scopes,
             options.Credential.Value,
             WindowsClientMetadata.Platform,
-            WindowsClientMetadata.DeviceFamily);
+            WindowsClientMetadata.DeviceFamily,
+            options.PersonalIdentity?.Invoke(signedAt));
 
         return new PreparedConnectEnvelope(
             signer,

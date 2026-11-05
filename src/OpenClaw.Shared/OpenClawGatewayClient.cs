@@ -292,6 +292,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     protected override Task OnConnectedAsync()
     {
         Volatile.Write(ref _startupRejection, null);
+        Volatile.Write(ref _personalHandshake, null);
         CancelScheduledSessionRefresh();
         lock (_sessionsLock)
         {
@@ -319,7 +320,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     protected override bool ShouldAutoReconnect()
     {
         // PairingRequired must stay visible, but approval only takes effect on a fresh socket.
-        return !_authFailed && !_protocolMismatch;
+        return !_authFailed && !_protocolMismatch && !_oneShotPersonalBinding;
     }
 
     private sealed record StartupRejection(long Generation, GatewayStartupUnavailable Startup);
@@ -349,6 +350,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
     protected override void OnDisconnected()
     {
+        Volatile.Write(ref _personalHandshake, null);
+        RetirePrimaryPersonalBinding();
         CancelScheduledSessionRefresh();
         // Invalidate the handshake snapshot — the next hello-ok must
         // re-establish the canonical session key, scopes, etc. Without this,
@@ -373,11 +376,14 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     protected override void OnDisposing()
     {
         Volatile.Write(ref _startupRejection, null);
+        Volatile.Write(ref _personalHandshake, null);
+        RetirePrimaryPersonalBinding();
         CancelScheduledSessionRefresh();
         Volatile.Write(ref _pendingSigningIdentity, null);
         Volatile.Write(ref _authenticatedSigningIdentity, null);
         _pendingRequests.Drain();
         _assistantMediaHttpClient.Dispose();
+        _personalServeHttpClient.Dispose();
     }
 
     protected override void OnError(Exception ex)
@@ -493,7 +499,11 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     public long ServerHandshakeGeneration => Interlocked.Read(ref _serverHandshakeGeneration);
     public int? LastRemoteCloseStatusCode => RemoteCloseStatusCode;
 
-    private bool TryGetReadyConnectionGeneration(out long connectionGeneration)
+    private bool TryGetReadyConnectionGeneration(out long connectionGeneration) =>
+        TryGetHandshakeConnectionGeneration(out connectionGeneration) &&
+        (!RequiresPersonalIdentityVerification || HasVerifiedPersonalIdentity(connectionGeneration));
+
+    private bool TryGetHandshakeConnectionGeneration(out long connectionGeneration)
     {
         connectionGeneration = CurrentConnectionGeneration;
         return IsConnected &&
@@ -545,31 +555,53 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         HttpMessageHandler? assistantMediaHandler = null,
         DeviceTokenReceivedEventArgs? ephemeralOperatorCredential = null,
         bool useBoundedBootstrapScopes = false,
-        bool requireExistingIdentity = false)
-        : base(gatewayUrl, token, logger)
+        bool requireExistingIdentity = false,
+        OperatorAuthenticationMode operatorAuthentication = OperatorAuthenticationMode.GatewayCredential)
+        : base(gatewayUrl, token, logger, allowEmptyToken: operatorAuthentication == OperatorAuthenticationMode.PersonalTailscale)
     {
+        _operatorAuthentication = operatorAuthentication;
+        if (IsLocalPersonalAuthentication && (!PersonalIdentityBinding.IsLocalWss(gatewayUrl) || tokenIsBootstrapToken || bootstrapPairAsNode))
+            throw new ArgumentException("Personal Primary identity requires local WSS and a durable local credential.", nameof(gatewayUrl));
+        if (IsPersonalTailscaleAuthentication &&
+            (!string.IsNullOrEmpty(token) || !PersonalTailscaleGatewayRoute.TryNormalizeGatewayUrl(gatewayUrl, out _, out _)))
+            throw new ArgumentException("Personal authentication requires a credential-free managed Tailscale route.", nameof(gatewayUrl));
+        if (!Enum.IsDefined(operatorAuthentication) ||
+            IsPersonalTailscaleAuthentication && (tokenIsBootstrapToken || bootstrapPairAsNode || ephemeralOperatorCredential is not null))
+            throw new ArgumentException("Personal authentication cannot use bootstrap or operator credentials.", nameof(operatorAuthentication));
         _tokenIsBootstrapToken = tokenIsBootstrapToken;
         _bootstrapPairAsNode = bootstrapPairAsNode;
-        _ignoreStoredDeviceToken = ignoreStoredDeviceToken;
+        _ignoreStoredDeviceToken = ignoreStoredDeviceToken || IsPersonalTailscaleAuthentication;
         _persistHandshakeDeviceTokens = persistHandshakeDeviceTokens;
         if (ephemeralOperatorCredential is not null &&
             (ephemeralOperatorCredential.Role != "operator" || string.IsNullOrWhiteSpace(ephemeralOperatorCredential.Token)))
             throw new ArgumentException("An ephemeral operator credential must have an operator role and a nonempty token.", nameof(ephemeralOperatorCredential));
         _ephemeralOperatorCredential = ephemeralOperatorCredential;
         _useBoundedBootstrapScopes = useBoundedBootstrapScopes;
-        _assistantMediaHttpClient = assistantMediaHandler is null
-            ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-            : new HttpClient(assistantMediaHandler, disposeHandler: true);
-        SetAssistantMediaAuthToken(assistantMediaAuthToken);
         _currentGatewayUrl = gatewayUrl;
+        _personalServeHttpClient = assistantMediaHandler is null
+            ? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false })
+            : new HttpClient(assistantMediaHandler, disposeHandler: false);
+        _assistantMediaHttpClient = assistantMediaHandler is null
+            ? new HttpClient(new HttpClientHandler
+            {
+                AllowAutoRedirect = false,
+                ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
+                    LocalTlsPin is { } pin
+                        ? pin.MatchesEndpoint(_currentGatewayUrl) && pin.MatchesHttpRequest(request.RequestUri) && pin.ValidateCertificate(certificate)
+                        : errors == System.Net.Security.SslPolicyErrors.None
+            })
+            : new HttpClient(assistantMediaHandler, disposeHandler: true);
+        SetAssistantMediaAuthToken(RequiresPersonalIdentityVerification ? null : assistantMediaAuthToken);
         var dataPath = identityPath ?? OpenClawAppIdentity.ResolveRoamingDataDirectory(
             Environment.GetEnvironmentVariable);
+        _deviceIdentityPath = dataPath;
 
         _deviceIdentity = new DeviceIdentity(dataPath, _logger);
         if (requireExistingIdentity) _deviceIdentity.LoadExisting();
         else _deviceIdentity.Initialize();
         _connectEnvelopeSigner = new DeviceIdentityConnectEnvelopeSigner(_deviceIdentity);
-        _connectAuthToken = HasUsableOperatorDeviceToken ? EffectiveOperatorDeviceToken! : (_tokenIsBootstrapToken ? string.Empty : _token);
+        _connectAuthToken = IsPersonalTailscaleAuthentication ? string.Empty :
+            HasUsableOperatorDeviceToken ? EffectiveOperatorDeviceToken! : (_tokenIsBootstrapToken ? string.Empty : _token);
         _useV2Signature |= _tokenIsBootstrapToken && !HasUsableOperatorDeviceToken;
     }
 
@@ -580,7 +612,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
     public void SetAssistantMediaAuthToken(string? token) =>
         Volatile.Write(
             ref _assistantMediaAuthToken,
-            string.IsNullOrWhiteSpace(token) ? null : token);
+            RequiresPersonalIdentityVerification || string.IsNullOrWhiteSpace(token) ? null : token);
 
     /// <summary>Closes the active transport, drains pending requests, and publishes disconnected state.</summary>
     public async Task DisconnectAsync()
@@ -1509,12 +1541,14 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
     private async Task<JsonElement> SendResponseRequestAsync(
         string method, object? parameters, int timeoutMs, long? expectedConnectionEpoch = null,
-        CancellationToken requestCancellationToken = default)
+        CancellationToken requestCancellationToken = default, bool allowPersonalIdentityRead = false)
     {
         using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken, requestCancellationToken);
         var requestToken = requestCancellation.Token;
         requestToken.ThrowIfCancellationRequested();
-        var connectionGeneration = GetReadyConnectionGeneration(method);
+        var connectionGeneration = allowPersonalIdentityRead && method == "users.self" &&
+            TryGetHandshakeConnectionGeneration(out var handshakeEpoch)
+                ? handshakeEpoch : GetReadyConnectionGeneration(method);
         if (expectedConnectionEpoch.HasValue && connectionGeneration != expectedConnectionEpoch.Value)
             throw new InvalidOperationException(ConnectionChangedBeforeSendError);
 
@@ -2364,7 +2398,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 _challengeTimestampMs,
                 _useV2Signature,
                 SupportsExecApprovals,
-                ClientIdentity),
+                RequiresPersonalIdentityVerification ? OperatorClientIdentity.Interactive : ClientIdentity,
+                _personalIdentityIntent),
             _connectEnvelopeSigner);
         var signedAt = envelope.SignedAt;
         var connectNonce = envelope.Nonce!;
@@ -2382,7 +2417,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
         _logger.Info($"  signature format={(_useV2Signature ? "v2" : "v3")}, platform={WindowsClientMetadata.Platform}, family={WindowsClientMetadata.DeviceFamily}");
 
         var signedPayload = envelope.SigningArguments.BuildPayload(_deviceIdentity);
-        _logger.Info($"[HANDSHAKE] signed: {TokenSanitizer.Sanitize(signedPayload)}");
+        if (_personalIdentityIntent is null)
+            _logger.Info($"[HANDSHAKE] signed: {TokenSanitizer.Sanitize(signedPayload)}");
 
         // Also log what auth field we're sending
         var authObj = BuildAuthPayload();
@@ -2429,6 +2465,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
     private string[] GetRequestedScopes(string role)
     {
+        if (_personalBindingScopes is not null) return _personalBindingScopes;
         if (role == "node")
             return [];
 
@@ -2464,6 +2501,9 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
     private ConnectCredential SelectConnectCredential()
     {
+        if (IsPersonalTailscaleAuthentication)
+            return new TailscaleConnectCredential();
+
         if (HasUsableOperatorDeviceToken)
             return new DeviceTokenConnectCredential(EffectiveOperatorDeviceToken!);
 
@@ -2740,6 +2780,13 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 return;
             }
 
+            if (RequiresPersonalIdentityVerification && !TryAcceptPersonalHandshake(payload, sourceConnectionGeneration))
+            {
+                _authFailed = true;
+                RaiseAuthenticationFailed("The Gateway did not verify personal Tailscale authentication.");
+                return;
+            }
+
             _logger.Info($"[HANDSHAKE] Received hello-ok!");
             Volatile.Write(ref _startupRejection, null);
             Volatile.Write(ref _pairingRequiredAwaitingApproval, false);
@@ -2783,6 +2830,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             var persistedRoleTokens = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var roleToken in EnumerateHandshakeDeviceTokens(payload))
             {
+                if (IsPersonalTailscaleAuthentication && roleToken.Role != "node")
+                    continue;
                 var stored = TryStoreHandshakeDeviceToken(roleToken.Role, roleToken.Token, roleToken.Scopes);
                 persistedRoleTokens.Add(roleToken.Role);
                 if (stored && roleToken.Role.Equals("node", StringComparison.OrdinalIgnoreCase))
@@ -2806,7 +2855,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                 }
             }
 
-            var newDeviceToken = !_bootstrapPairAsNode
+            var newDeviceToken = IsPersonalTailscaleAuthentication ? null : !_bootstrapPairAsNode
                 ? (persistedRoleTokens.Contains(OperatorRole) ? null : TryGetHandshakeDeviceTokenCore(payload, preferredRole: null))
                 : TryGetHandshakeDeviceTokenCore(payload, OperatorRole, allowDirectDeviceTokenFallback: false);
             if (!string.IsNullOrWhiteSpace(newDeviceToken))
@@ -2839,17 +2888,8 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
 
             RaiseStatusChanged(ConnectionStatus.Connected);
 
-            // Request initial state after handshake
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(500);
-                await CheckHealthAsync();
-                await RequestSessionsAsync();
-                await SubscribeSessionEventsAsync();
-                await RequestUsageAsync();
-                await RequestNodesAsync();
-                await RequestAgentsListAsync();
-            });
+            if (!RequiresPersonalIdentityVerification)
+                RequestInitialState(sourceConnectionGeneration);
         }
 
         // Handle health response — channels
@@ -3122,7 +3162,7 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
             (message.Contains("device signature invalid", StringComparison.OrdinalIgnoreCase) ||
              detailCode == "DEVICE_AUTH_SIGNATURE_INVALID"))
         {
-            if (!_useV2Signature)
+            if (!_useV2Signature && _personalIdentityIntent is null)
             {
                 // v3 rejected — set flag so next connect uses v2.
                 // Don't retry on this socket — gateway closes it after rejection.
@@ -3809,6 +3849,11 @@ public partial class OpenClawGatewayClient : WebSocketClientBase, IOperatorGatew
                         && changeReason.ValueKind == JsonValueKind.String
                         && changeReason.GetString() == "profile-identity")
                     {
+                        if (RequiresPersonalIdentityVerification && Volatile.Read(ref _personalHandshake) is { } personal)
+                        {
+                            Volatile.Write(ref _personalHandshake, personal with { ProfileId = null });
+                            HandshakeSucceeded?.Invoke(this, EventArgs.Empty);
+                        }
                         SelfProfileChanged?.Invoke(this, EventArgs.Empty);
                     }
                     if (sessionChange.TryGetProperty("catalogChanged", out var catalogChanged)

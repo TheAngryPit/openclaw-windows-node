@@ -8265,4 +8265,17 @@ Após a inscrição, volte para Configurações &gt; Windows Update e verifique 
   <data name="GatewayVoice_TimedOut" xml:space="preserve"><value>O tempo da fala da Gateway esgotou. A síntese pode ter terminado. Verifique a Gateway antes de tentar de novo. Não houve nova tentativa automática.</value></data>
   <data name="GatewayVoice_SynthesisFailed" xml:space="preserve"><value>A fala da Gateway falhou. Verifique a configuração de voz e a cota do provedor. Não houve alternativa local nem nova tentativa automática.</value></data>
   <data name="GatewayVoice_PlaybackFailed" xml:space="preserve"><value>O Windows não conseguiu reproduzir o áudio. Verifique o dispositivo de saída. Não houve nova tentativa automática.</value></data>
+  <data name="ConnectionPage_OperatorAuthentication.Header" xml:space="preserve"><value>Autenticação do operador</value></data>
+  <data name="ConnectionPage_SharedAuthentication.Content" xml:space="preserve"><value>Credencial do Gateway</value></data>
+  <data name="ConnectionPage_PersonalAuthentication.Content" xml:space="preserve"><value>Identidade pessoal Tailscale</value></data>
+  <data name="ConnectionPage_PersonalHint.Text" xml:space="preserve"><value>Requer um endereço Tailscale seguro e suporte à identidade pessoal no Gateway. Nenhum token compartilhado é enviado.</value></data>
+  <data name="PersonalDashboard_RecoveryTitle.Text" xml:space="preserve"><value>O acesso pessoal mudou</value></data>
+  <data name="PersonalDashboard_RecoveryDetail.Text" xml:space="preserve"><value>Reconecte este Gateway no OpenClaw Companion e reabra o painel.</value></data>
+  <data name="PersonalDashboard_Unavailable" xml:space="preserve"><value>O acesso pessoal está indisponível. Reconecte no aplicativo.</value></data>
+  <data name="ConnectionPage_PersonalRouteRequired" xml:space="preserve"><value>O acesso pessoal requer um endereço seguro wss:// do Gateway Tailscale terminado em .ts.net, sem túnel SSH.</value></data>
+  <data name="ConnectionPage_LocalPersonalAuthentication.Content" xml:space="preserve"><value>Tailscale pessoal no Primary local</value></data>
+  <data name="ConnectionPage_PersonalServeUrl.Header" xml:space="preserve"><value>Endereço do Tailscale Serve</value></data>
+  <data name="ConnectionPage_LocalPersonalHint.Text" xml:space="preserve"><value>Mantém o Primary e o nó no WSS local. Usa brevemente o Tailscale Serve para verificar sua identidade pessoal. Requer dispositivo pareado e TLS local no Gateway.</value></data>
+  <data name="ConnectionPage_LocalPersonalRouteRequired" xml:space="preserve"><value>Use um endereço wss:// local do Primary e um endereço wss:// seguro do Tailscale Serve terminado em .ts.net.</value></data>
+  <data name="ConnectionPage_PersonalServeUrl.PlaceholderText" xml:space="preserve"><value>wss://gateway.example.ts.net</value></data>
 </root>
