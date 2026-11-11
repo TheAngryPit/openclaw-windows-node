@@ -73,7 +73,7 @@ public sealed partial class GatewayFixtureUiTests
                         }
                         return control;
                     }
-                    void AssertPointOwner(CronPoint point) =>
+                    void AssertPointOwner(FixturePoint point) =>
                         Assert.Equal(hwnd, GetAncestor(WindowFromPoint(point), 2));
                     async Task ClickToggleAsync(string id, string expectedId)
                     {
@@ -82,7 +82,7 @@ public sealed partial class GatewayFixtureUiTests
                         // PrintWindow captures an owned HWND even behind other windows. Desktop
                         // point queries need a separately qualified foreground and physical-DPI context.
                         await NativeKeyboardProof.ActivateAsync(hwnd);
-                        var point = new CronPoint();
+                        var point = new FixturePoint();
                         var belongsToButton = false;
                         uint sent = 0;
                         var previousDpi = DashboardSetThreadDpiAwarenessContext(new IntPtr(-4));
@@ -96,7 +96,7 @@ public sealed partial class GatewayFixtureUiTests
                             Assert.True(button.Current.IsEnabled);
                             var bounds = button.Current.BoundingRectangle;
                             Assert.True(bounds.Width > 0 && bounds.Height > 0);
-                            point = new CronPoint
+                            point = new FixturePoint
                             {
                                 X = (int)Math.Round(bounds.Left + bounds.Width / 2),
                                 Y = (int)Math.Round(bounds.Top + bounds.Height / 2)
@@ -131,12 +131,12 @@ public sealed partial class GatewayFixtureUiTests
                             AssertPointOwner(cursor);
                             var input = new[]
                             {
-                                new CronInput { Mouse = new CronMouse { Flags = 2 } },
-                                new CronInput { Mouse = new CronMouse { Flags = 4 } },
+                                new FixtureInput { Mouse = new FixtureMouse { Flags = 2 } },
+                                new FixtureInput { Mouse = new FixtureMouse { Flags = 4 } },
                             };
-                            sent = SendInput(2, input, System.Runtime.InteropServices.Marshal.SizeOf<CronInput>());
+                            sent = SendInput(2, input, System.Runtime.InteropServices.Marshal.SizeOf<FixtureInput>());
                             if (sent == 1)
-                                SendInput(1, [input[1]], System.Runtime.InteropServices.Marshal.SizeOf<CronInput>());
+                                SendInput(1, [input[1]], System.Runtime.InteropServices.Marshal.SizeOf<FixtureInput>());
                             Assert.Equal(2u, sent);
                         }
                         finally { DashboardSetThreadDpiAwarenessContext(previousDpi); }
@@ -153,7 +153,7 @@ public sealed partial class GatewayFixtureUiTests
                     }
                     await NativeKeyboardProof.ActivateAsync(hwnd);
                     var negativeBounds = FindChrome("WorkspaceTogglePane")!.Current.BoundingRectangle;
-                    var negativePoint = new CronPoint
+                    var negativePoint = new FixturePoint
                     {
                         X = (int)Math.Round(negativeBounds.Left + negativeBounds.Width / 2),
                         Y = (int)Math.Round(negativeBounds.Top + negativeBounds.Height / 2)
@@ -364,13 +364,28 @@ public sealed partial class GatewayFixtureUiTests
                             ((SelectionItemPattern)(FindById(run, "DashboardTab_mixed")
                                 ?? throw new InvalidOperationException("Mixed content tab is missing."))
                                 .GetCurrentPattern(SelectionItemPattern.Pattern)).Select();
-                            await WaitUiAsync(run, () => FindById(run, "BoardWebsiteOpen_mixed-website") is not null,
-                                "mixed report and website ready");
-                            var reportBounds = FindDashboardWidget(run, "mixed", "BoardWidget_mixed-report")!.Current.BoundingRectangle;
-                            var websiteBounds = FindDashboardWidget(run, "mixed", "BoardWidget_mixed-website")!.Current.BoundingRectangle;
-                            Assert.True(reportBounds.Right <= websiteBounds.Left);
-                            Assert.InRange(Math.Abs(reportBounds.Top - websiteBounds.Top) / scale, 0, 1);
-                            Assert.InRange(Math.Abs(reportBounds.Bottom - websiteBounds.Bottom) / scale, 0, 1);
+                            DashboardPairBounds? previous = null;
+                            await WaitUiAsync(run, () =>
+                            {
+                                var prior = previous;
+                                previous = null;
+                                var report = FindDashboardWidget(run, "mixed", "BoardWidget_mixed-report");
+                                var website = FindDashboardWidget(run, "mixed", "BoardWidget_mixed-website");
+                                if (report is null || website is null)
+                                    return false;
+                                var reportState = report.Current;
+                                var websiteState = website.Current;
+                                var reportId = report.GetRuntimeId();
+                                var websiteId = website.GetRuntimeId();
+                                if (reportState.IsOffscreen || websiteState.IsOffscreen ||
+                                    reportId is not { Length: > 0 } || websiteId is not { Length: > 0 })
+                                    return false;
+                                previous = new DashboardPairBounds(
+                                    string.Join(",", reportId) + "|" + string.Join(",", websiteId),
+                                    reportState.BoundingRectangle, websiteState.BoundingRectangle);
+                                return DashboardPairIsSettled(prior, previous);
+                            }, "settled mixed report and website bounds");
+                            AssertDashboardPairAligned(previous!.Value, scale);
                             await WaitForDashboardPixelsAsync(run, hub, $"dashboards-{theme}-pinned-mixed.png",
                                 ["A saved report line", "status.example.com"]);
                         }
@@ -382,6 +397,53 @@ public sealed partial class GatewayFixtureUiTests
         {
             Environment.SetEnvironmentVariable("OPENCLAW_FIXTURE_APP_THEME", previousTheme);
         }
+    }
+
+    private readonly record struct DashboardPairBounds(
+        string Identity, System.Windows.Rect Report, System.Windows.Rect Website);
+
+    private static bool DashboardPairIsSettled(DashboardPairBounds? previous, DashboardPairBounds? current)
+    {
+        static bool Usable(System.Windows.Rect rect) =>
+            !rect.IsEmpty && rect.Width > 0 && rect.Height > 0 &&
+            double.IsFinite(rect.Left) && double.IsFinite(rect.Top) &&
+            double.IsFinite(rect.Right) && double.IsFinite(rect.Bottom);
+        return previous is { } before && current is { } after &&
+            !string.IsNullOrEmpty(after.Identity) &&
+            Usable(after.Report) && Usable(after.Website) && before == after;
+    }
+
+    private static void AssertDashboardPairAligned(DashboardPairBounds pair, double scale)
+    {
+        Assert.True(pair.Report.Right <= pair.Website.Left);
+        Assert.InRange(Math.Abs(pair.Report.Top - pair.Website.Top) / scale, 0, 1);
+        Assert.InRange(Math.Abs(pair.Report.Bottom - pair.Website.Bottom) / scale, 0, 1);
+    }
+
+    [Fact]
+    public void DashboardPairReadiness_RequiresConsecutiveCompleteBoundsAndIdentity()
+    {
+        var pair = new DashboardPairBounds("1|2",
+            new System.Windows.Rect(0, 0, 100, 100), new System.Windows.Rect(120, 0, 100, 100));
+        Assert.False(DashboardPairIsSettled(null, pair));
+        Assert.False(DashboardPairIsSettled(pair, pair with { Report = new System.Windows.Rect(0, 8, 100, 100) }));
+        Assert.False(DashboardPairIsSettled(pair, pair with { Website = new System.Windows.Rect(120, 0, 100, 108) }));
+        Assert.False(DashboardPairIsSettled(pair, pair with { Identity = "1|3" }));
+        var missing = pair with { Report = System.Windows.Rect.Empty };
+        Assert.False(DashboardPairIsSettled(missing, missing));
+        Assert.True(DashboardPairIsSettled(pair, pair));
+        AssertDashboardPairAligned(pair, 1.25);
+    }
+
+    [Theory]
+    [InlineData(2.5, 0)]
+    [InlineData(0, 2.5)]
+    public void DashboardPairReadiness_DoesNotApproveStableMisalignment(double topOffset, double extraHeight)
+    {
+        var pair = new DashboardPairBounds("1|2",
+            new System.Windows.Rect(0, 0, 100, 100), new System.Windows.Rect(120, topOffset, 100, 100 + extraHeight));
+        Assert.True(DashboardPairIsSettled(pair, pair));
+        Assert.Throws<Xunit.Sdk.InRangeException>(() => AssertDashboardPairAligned(pair, 1.25));
     }
 
     [GatewayFixtureUiFact]
